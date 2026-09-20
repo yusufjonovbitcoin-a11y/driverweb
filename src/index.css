@@ -5,7 +5,7 @@
 @layer base {
   :root {
     color-scheme: light;
-    font-size: 18px; /* Large, crisp PC / Desktop Root Size */
+    font-size: 16px; /* Standart web root shrift o'lchami */
   }
   
   html.dark {
@@ -16,6 +16,7 @@
     font-size: 1rem;
     line-height: 1.5;
     letter-spacing: -0.01em;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
     transition: background-color 0.15s ease, color 0.15s ease;
   }
 }
