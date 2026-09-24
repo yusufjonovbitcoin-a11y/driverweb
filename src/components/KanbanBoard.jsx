@@ -18,7 +18,8 @@ export default function KanbanBoard({
   loads, 
   drivers, 
   onOpenDocs, 
-  onDropOnOffer
+  onDropOnOffer,
+  isAiProcessing = false,
 }) {
   const [viewMode, setViewMode] = useState('table');
   const [isDraggingOverOffer, setIsDraggingOverOffer] = useState(false);
@@ -87,7 +88,7 @@ export default function KanbanBoard({
                     e.preventDefault();
                     setIsDraggingOverOffer(false);
                     const file = e.dataTransfer.files?.[0];
-                    if (file && onDropOnOffer) {
+                    if (file && onDropOnOffer && !isAiProcessing) {
                       onDropOnOffer(file);
                     }
                   }
@@ -152,9 +153,10 @@ export default function KanbanBoard({
                           className="hidden"
                           onChange={(e) => {
                             const file = e.target.files?.[0];
-                            if (file && onDropOnOffer) {
+                            if (file && onDropOnOffer && !isAiProcessing) {
                               onDropOnOffer(file);
                             }
+                            e.target.value = '';
                           }}
                         />
                       </label>
@@ -179,9 +181,10 @@ export default function KanbanBoard({
                             className="hidden"
                             onChange={(e) => {
                               const file = e.target.files?.[0];
-                              if (file && onDropOnOffer) {
+                              if (file && onDropOnOffer && !isAiProcessing) {
                                 onDropOnOffer(file);
                               }
+                              e.target.value = '';
                             }}
                           />
                         </label>
@@ -293,7 +296,7 @@ export default function KanbanBoard({
               e.preventDefault();
               setIsDraggingOverOffer(false);
               const file = e.dataTransfer.files?.[0];
-              if (file && onDropOnOffer) {
+              if (file && onDropOnOffer && !isAiProcessing) {
                 onDropOnOffer(file);
               }
             }}
@@ -330,9 +333,10 @@ export default function KanbanBoard({
                 className="hidden"
                 onChange={(e) => {
                   const file = e.target.files?.[0];
-                  if (file && onDropOnOffer) {
+                  if (file && onDropOnOffer && !isAiProcessing) {
                     onDropOnOffer(file);
                   }
+                  e.target.value = '';
                 }}
               />
             </label>

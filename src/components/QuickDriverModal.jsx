@@ -5,8 +5,26 @@ import {
   Send, 
   Check, 
   Search,
-  FileImage
+  FileImage,
+  TriangleAlert,
 } from 'lucide-react';
+
+const FIELD_LABELS = {
+  'broker.contactName': 'broker kontakt shaxsi',
+  'broker.phone': 'broker telefoni',
+  'pickup.appointmentFrom': 'pickup vaqti',
+  'pickup.appointmentTo': 'pickup vaqt oralig‘i',
+  'pickup.contactName': 'pickup kontakt shaxsi',
+  'pickup.contactPhone': 'pickup telefoni',
+  'delivery.appointmentFrom': 'delivery vaqti',
+  'delivery.appointmentTo': 'delivery vaqt oralig‘i',
+  'delivery.contactName': 'delivery kontakt shaxsi',
+  'delivery.contactPhone': 'delivery telefoni',
+  brokerRate: 'yuk narxi',
+  loadedMiles: 'yuk masofasi',
+  equipmentType: 'treyler turi',
+  weightLbs: 'yuk vazni',
+};
 
 export default function QuickDriverModal({ 
   isOpen, 
@@ -15,17 +33,17 @@ export default function QuickDriverModal({
   drivers, 
   onConfirm 
 }) {
-  const [selectedDriverIds, setSelectedDriverIds] = useState([drivers[0]?.id || 'd1']);
+  const [selectedDriverIds, setSelectedDriverIds] = useState([]);
   const [isSelectAll, setIsSelectAll] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const missingFields = loadData?.missingFields || [];
 
   if (!isOpen || !loadData) return null;
 
   const toggleDriver = (id) => {
     if (selectedDriverIds.includes(id)) {
-      if (selectedDriverIds.length > 1) {
-        setSelectedDriverIds(selectedDriverIds.filter(d => d !== id));
-      }
+      setSelectedDriverIds(selectedDriverIds.filter(d => d !== id));
     } else {
       setSelectedDriverIds([...selectedDriverIds, id]);
     }
@@ -34,7 +52,7 @@ export default function QuickDriverModal({
   const toggleSelectAll = () => {
     if (isSelectAll) {
       setIsSelectAll(false);
-      setSelectedDriverIds([drivers[0]?.id || 'd1']);
+      setSelectedDriverIds([]);
     } else {
       setIsSelectAll(true);
       setSelectedDriverIds(drivers.map(d => d.id));
@@ -51,9 +69,15 @@ export default function QuickDriverModal({
     );
   });
 
-  const handleSend = (e) => {
+  const handleSend = async (e) => {
     e.preventDefault();
-    onConfirm(selectedDriverIds);
+    if (selectedDriverIds.length === 0 || isSubmitting) return;
+    setIsSubmitting(true);
+    try {
+      await onConfirm(selectedDriverIds);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -107,6 +131,19 @@ export default function QuickDriverModal({
               </span>
             </div>
           </div>
+
+          {missingFields.length > 0 && (
+            <div className="flex items-start gap-2.5 rounded-xl border border-amber-200 bg-amber-50 px-3.5 py-3 text-xs text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200">
+              <TriangleAlert className="mt-0.5 h-4 w-4 flex-shrink-0" />
+              <div>
+                <div className="font-bold">AI aniqlashtira olmagan maydonlar</div>
+                <div className="mt-1 leading-relaxed">
+                  {missingFields.map((field) => FIELD_LABELS[field] || field).join(', ')}.
+                  Taklif ogohlantirish bilan yuboriladi.
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Haydovchi(lar)ni tanlash */}
           <div className="space-y-2.5 pt-1">
@@ -211,11 +248,14 @@ export default function QuickDriverModal({
               </button>
               <button
                 type="submit"
-                className="inline-flex items-center space-x-2 bg-zinc-900 hover:bg-zinc-800 text-white dark:bg-zinc-100 dark:hover:bg-white dark:text-zinc-950 px-5 py-2 rounded-xl font-bold text-sm transition-colors shadow-xs"
+                disabled={selectedDriverIds.length === 0 || isSubmitting}
+                className="inline-flex items-center space-x-2 bg-zinc-900 hover:bg-zinc-800 disabled:opacity-50 disabled:cursor-not-allowed text-white dark:bg-zinc-100 dark:hover:bg-white dark:text-zinc-950 px-5 py-2 rounded-xl font-bold text-sm transition-colors shadow-xs"
               >
                 <Send className="w-4 h-4" />
                 <span>
-                  {selectedDriverIds.length > 1
+                  {isSubmitting
+                    ? 'Yuborilmoqda…'
+                    : selectedDriverIds.length > 1
                     ? `${selectedDriverIds.length} drayverga yuborish`
                     : 'Haydovchiga yuborish'}
                 </span>

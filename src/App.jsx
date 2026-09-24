@@ -4,6 +4,7 @@ import Sidebar from './components/Sidebar';
 import TopHeader from './components/TopHeader';
 import KanbanBoard from './components/KanbanBoard';
 import CreateLoadModal from './components/CreateLoadModal';
+import QuickDriverModal from './components/QuickDriverModal';
 import DocumentViewerModal from './components/DocumentViewerModal';
 import FleetMap from './components/FleetMap';
 import DriverRoster from './components/DriverRoster';
@@ -11,17 +12,21 @@ import AnalyticsOverview from './components/AnalyticsOverview';
 import ProfileView from './components/ProfileView';
 import DocumentsView from './components/DocumentsView';
 import BrokerInbox from './components/BrokerInbox';
+import DispatchChat from './components/DispatchChat';
 import PlatformAdminPanel from './components/PlatformAdminPanel';
 import AuthView from './components/AuthView';
 import { useAuth } from './hooks/useAuth';
 import {
   createAndOfferLoad,
+  prepareLoadFromDocument,
+  sendOffersForLoad,
   fetchWorkspace,
   createMember,
   subscribeWorkspace,
 } from './services/operationsService';
+import { fetchUnreadChatCount, subscribeUnreadChats } from './services/chatService';
 
-const tabs = ['kanban', 'drivers', 'map', 'analytics', 'docs', 'inbox', 'profile'];
+const tabs = ['kanban', 'drivers', 'map', 'analytics', 'docs', 'inbox', 'chat', 'profile'];
 
 export default function App() {
   const { currentUser, loading: authLoading, configured, authError, login, logout } = useAuth();
@@ -35,9 +40,12 @@ export default function App() {
   const [workspaceError, setWorkspaceError] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [aiPreparedLoad, setAiPreparedLoad] = useState(null);
+  const [aiProcessing, setAiProcessing] = useState(false);
   const [selectedLoadForDocs, setSelectedLoadForDocs] = useState(null);
   const [toast, setToast] = useState({ show: false, message: '' });
   const [theme, setTheme] = useState(() => localStorage.getItem('apex_theme') || 'light');
+  const [unreadChatCount, setUnreadChatCount] = useState(0);
 
   const showToast = useCallback((message) => {
     setToast({ show: true, message });
@@ -56,6 +64,15 @@ export default function App() {
       setWorkspaceError(error.message || 'Ma\'lumotlarni yuklab bo\'lmadi.');
     } finally {
       if (!quiet) setWorkspaceLoading(false);
+    }
+  }, [currentUser]);
+
+  const refreshUnreadChats = useCallback(async () => {
+    if (!currentUser || currentUser.roleCode === 'driver') return;
+    try {
+      setUnreadChatCount(await fetchUnreadChatCount());
+    } catch {
+      // The page stays usable if the badge cannot refresh.
     }
   }, [currentUser]);
 
@@ -78,6 +95,12 @@ export default function App() {
     refreshWorkspace();
     return subscribeWorkspace(() => refreshWorkspace({ quiet: true }));
   }, [currentUser, refreshWorkspace]);
+
+  useEffect(() => {
+    if (!currentUser || currentUser.roleCode === 'driver') return undefined;
+    refreshUnreadChats();
+    return subscribeUnreadChats(refreshUnreadChats);
+  }, [currentUser, refreshUnreadChats]);
 
   const handleSelectTab = (tab) => {
     setActiveTab(tab);
@@ -113,6 +136,54 @@ export default function App() {
       companyId: currentUser.companyId,
     });
     await refreshWorkspace({ quiet: true });
+  };
+
+  const handleAiDocument = async (file) => {
+    if (!file || aiProcessing) return;
+    setAiProcessing(true);
+    setWorkspaceLoading(true);
+    try {
+      const result = await prepareLoadFromDocument(file);
+      await refreshWorkspace({ quiet: true });
+      setAiPreparedLoad(result.preparedLoad);
+      const warningCount = result.preparedLoad.missingFields?.length || 0;
+      showToast(
+        result.duplicate
+          ? 'Bu hujjat oldin tahlil qilingan. Tayyor taklif ochildi.'
+          : warningCount
+            ? `AI yukni tayyorladi. ${warningCount} ta maydon aniqlashtirish talab qiladi.`
+            : 'AI yukni tayyorladi. Endi haydovchini tanlang.',
+      );
+    } catch (error) {
+      showToast(error.message || 'AI hujjatni tahlil qila olmadi.');
+    } finally {
+      setAiProcessing(false);
+      setWorkspaceLoading(false);
+    }
+  };
+
+  const handleSendAiOffer = async (driverIds) => {
+    if (!aiPreparedLoad) return;
+    setWorkspaceLoading(true);
+    try {
+      const offers = await sendOffersForLoad(
+        aiPreparedLoad.id,
+        driverIds,
+        aiPreparedLoad.missingFields,
+      );
+      const deliveredCount = offers.filter((offer) => offer.status === 'pending').length;
+      const offlineCount = offers.filter((offer) => offer.status === 'missed_offline').length;
+      await refreshWorkspace({ quiet: true });
+      setAiPreparedLoad(null);
+      showToast(
+        `${deliveredCount} ta online haydovchiga taklif yuborildi${offlineCount ? `, ${offlineCount} ta oflayn haydovchi o\'tkazib yuborildi` : ''}.`,
+      );
+    } catch (error) {
+      showToast(error.message || 'Taklifni yuborib bo\'lmadi.');
+      throw error;
+    } finally {
+      setWorkspaceLoading(false);
+    }
   };
 
   const filteredLoads = useMemo(() => loads.filter((load) => {
@@ -182,6 +253,7 @@ export default function App() {
         setActiveTab={handleSelectTab}
         loadsCount={loads.length}
         driversCount={drivers.length}
+        unreadChatCount={unreadChatCount}
         onDropFile={() => showToast('Broker fayllari Gmail/AI worker orqali avtomatik keladi.')}
         currentUser={currentUser}
         onLogout={logout}
@@ -223,7 +295,8 @@ export default function App() {
               drivers={drivers}
               onAdvanceStatus={() => showToast('Load statusini driver mobil ilovadan o‘zgartiradi.')}
               onOpenDocs={setSelectedLoadForDocs}
-              onDropOnOffer={() => showToast('Fayl Gmail/AI worker orqali qayta ishlanadi. Worker integratsiyasi keyingi bosqichda ulanadi.')}
+              onDropOnOffer={handleAiDocument}
+              isAiProcessing={aiProcessing}
             />
           )}
           {activeTab === 'map' && <FleetMap drivers={drivers} loads={loads} onSelectLoad={setSelectedLoadForDocs} />}
@@ -238,6 +311,13 @@ export default function App() {
           {activeTab === 'docs' && <DocumentsView loads={loads} drivers={drivers} onOpenDocs={setSelectedLoadForDocs} />}
           {activeTab === 'inbox' && <BrokerInbox onCreateLoad={() => setIsCreateModalOpen(true)} />}
           {activeTab === 'analytics' && <AnalyticsOverview loads={loads} />}
+          {activeTab === 'chat' && (
+            <DispatchChat
+              drivers={drivers}
+              currentUser={currentUser}
+              onUnreadChange={refreshUnreadChats}
+            />
+          )}
           {activeTab === 'profile' && (
             currentUser.roleCode === 'super_admin' ? <PlatformAdminPanel onLogout={logout} /> : (
               <ProfileView
@@ -258,6 +338,14 @@ export default function App() {
         onClose={() => setIsCreateModalOpen(false)}
         drivers={drivers}
         onCreateLoad={handleCreateLoad}
+      />
+      <QuickDriverModal
+        key={aiPreparedLoad?.id || 'closed'}
+        isOpen={Boolean(aiPreparedLoad)}
+        onClose={() => setAiPreparedLoad(null)}
+        loadData={aiPreparedLoad}
+        drivers={drivers}
+        onConfirm={handleSendAiOffer}
       />
       <DocumentViewerModal
         isOpen={Boolean(selectedLoadForDocs)}

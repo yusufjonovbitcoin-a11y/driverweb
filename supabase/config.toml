@@ -42,3 +42,9 @@ verify_jwt = true
 
 [functions.create-company]
 verify_jwt = true
+
+[functions.lookup-load-contacts]
+verify_jwt = true
+
+[functions.parse-load-document]
+verify_jwt = true

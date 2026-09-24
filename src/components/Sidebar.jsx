@@ -5,6 +5,7 @@ import {
   MapPin, 
   Users, 
   FileText, 
+  MessageSquare,
   Inbox,
   BarChart3, 
   User,
@@ -18,6 +19,7 @@ export default function Sidebar({
   setActiveTab, 
   loadsCount, 
   driversCount, 
+  unreadChatCount,
   onDropFile,
   currentUser,
   onLogout
@@ -51,6 +53,12 @@ export default function Sidebar({
       id: 'inbox',
       label: 'Broker Inbox',
       icon: Inbox,
+    },
+    {
+      id: 'chat',
+      label: 'Chat',
+      icon: MessageSquare,
+      badge: unreadChatCount || null,
     },
     { 
       id: 'analytics', 

@@ -256,6 +256,51 @@ export async function createAndOfferLoad(newLoad) {
   return { loadId, offers };
 }
 
+export async function prepareLoadFromDocument(file) {
+  if (!(file instanceof File)) throw new Error('PDF yoki surat tanlang.');
+  const client = requireSupabase();
+  const formData = new FormData();
+  formData.append('file', file, file.name);
+  const { data, error } = await client.functions.invoke('parse-load-document', {
+    body: formData,
+  });
+  if (error) await throwFunctionError(error, 'AI hujjatni tahlil qila olmadi.');
+  if (data?.error) throw new Error(data.error);
+  if (!data?.loadId || !data?.preparedLoad) {
+    throw new Error('AI tayyorlagan yuk ma\'lumoti qaytmadi.');
+  }
+  return data;
+}
+
+export async function sendOffersForLoad(loadId, driverIds, missingFields = []) {
+  const targets = [...new Set((driverIds || []).filter(Boolean))];
+  if (!loadId || targets.length === 0) {
+    throw new Error('Kamida bitta haydovchini tanlang.');
+  }
+  const client = requireSupabase();
+  const compatibilityWarnings = [...new Set(missingFields)]
+    .filter((field) => typeof field === 'string')
+    .map((field) => ({
+      code: 'ai_missing_field',
+      field,
+      message: `AI hujjatdan ${field} maydonini aniq topa olmadi.`,
+    }));
+  const offers = [];
+  for (const driverId of targets) {
+    const { data, error } = await client.rpc('send_offer', {
+      load_id: loadId,
+      driver_id: driverId,
+      origin_latitude: null,
+      origin_longitude: null,
+      estimated_deadhead_miles: 0,
+      compatibility_warnings: compatibilityWarnings,
+    });
+    if (error) throw error;
+    offers.push(data);
+  }
+  return offers;
+}
+
 export function subscribeWorkspace(onChange) {
   const client = requireSupabase();
   const channel = client
