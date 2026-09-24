@@ -47,24 +47,27 @@ Deno.serve(async (request) => {
   }
   const companyName = String(payload.companyName ?? '').trim();
   const adminEmail = String(payload.adminEmail ?? '').trim().toLowerCase();
+  const adminPassword = String(payload.adminPassword ?? '');
   const adminFullName = String(payload.adminFullName ?? '').trim();
   const adminPhone = String(payload.adminPhone ?? '').trim() || null;
   if (!companyName || !adminFullName || !adminEmail.includes('@')) {
     return json({ error: 'Company name, admin name, and admin email are required' }, 400);
   }
+  if (adminPassword.length < 6) {
+    return json({ error: 'Admin password must contain at least 6 characters' }, 400);
+  }
 
   const adminClient = createClient(supabaseUrl, serviceRoleKey, {
     auth: { autoRefreshToken: false, persistSession: false },
   });
-  const { data: invite, error: inviteError } = await adminClient.auth.admin.inviteUserByEmail(
-    adminEmail,
-    {
-      data: { full_name: adminFullName, role: 'company_admin' },
-      redirectTo: Deno.env.get('INVITE_REDIRECT_URL') || undefined,
-    },
-  );
-  if (inviteError || !invite.user) {
-    return json({ error: inviteError?.message || 'Could not invite company admin' }, 400);
+  const { data: created, error: createError } = await adminClient.auth.admin.createUser({
+    email: adminEmail,
+    password: adminPassword,
+    email_confirm: true,
+    user_metadata: { full_name: adminFullName, role: 'company_admin' },
+  });
+  if (createError || !created.user) {
+    return json({ error: createError?.message || 'Could not create company admin' }, 400);
   }
 
   const { data: companyId, error: companyError } = await adminClient.rpc(
@@ -72,14 +75,14 @@ Deno.serve(async (request) => {
     {
       requested_by: requester.id,
       company_name: companyName,
-      admin_user_id: invite.user.id,
+      admin_user_id: created.user.id,
       admin_full_name: adminFullName,
       admin_email: adminEmail,
       admin_phone: adminPhone,
     },
   );
   if (companyError) {
-    await adminClient.auth.admin.deleteUser(invite.user.id);
+    await adminClient.auth.admin.deleteUser(created.user.id);
     return json({ error: companyError.message }, 400);
   }
   return json({ companyId }, 201);

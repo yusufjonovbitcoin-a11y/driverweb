@@ -1,5 +1,16 @@
 import { requireSupabase } from '../lib/supabase';
 
+async function throwFunctionError(error, fallback) {
+  let message = error?.message || fallback;
+  try {
+    const payload = await error?.context?.json();
+    if (payload?.error) message = payload.error;
+  } catch {
+    // The function response may not contain JSON; keep the SDK message.
+  }
+  throw new Error(message);
+}
+
 const STATUS_TO_UI = {
   draft: 'OFFER',
   review: 'OFFER',
@@ -169,12 +180,12 @@ export async function fetchBrokerInbox() {
   }));
 }
 
-export async function inviteMember({ email, fullName, phone, role = 'driver', companyId }) {
+export async function createMember({ email, password, fullName, phone, role = 'driver', companyId }) {
   const client = requireSupabase();
-  const { data, error } = await client.functions.invoke('invite-member', {
-    body: { email, fullName, phone, role, companyId },
+  const { data, error } = await client.functions.invoke('create-member', {
+    body: { email, password, fullName, phone, role, companyId },
   });
-  if (error) throw error;
+  if (error) await throwFunctionError(error, 'Could not create account');
   if (data?.error) throw new Error(data.error);
   return data?.profile;
 }
@@ -186,12 +197,12 @@ export async function fetchCompanies() {
   return data || [];
 }
 
-export async function createCompany({ companyName, adminFullName, adminEmail, adminPhone }) {
+export async function createCompany({ companyName, adminFullName, adminEmail, adminPassword, adminPhone }) {
   const client = requireSupabase();
   const { data, error } = await client.functions.invoke('create-company', {
-    body: { companyName, adminFullName, adminEmail, adminPhone },
+    body: { companyName, adminFullName, adminEmail, adminPassword, adminPhone },
   });
-  if (error) throw error;
+  if (error) await throwFunctionError(error, 'Could not create company');
   if (data?.error) throw new Error(data.error);
   return data?.companyId;
 }

@@ -39,4 +39,4 @@ Supabase yadro va deploy tartibi [supabase/README.md](supabase/README.md) da yoz
 5. Driver bosqichlari, hujjat versiyalari, GPS presence va audit webda Realtime orqali yangilanadi.
 
 Production deploy uchun service-role kalitini brauzerga bermang. Web faqat public publishable/anon key bilan ishlaydi.
-`invite-member` va `create-company` Edge Function’lari service-role kalitini faqat server muhitida ishlatadi.
+`create-member` va `create-company` Edge Function’lari service-role kalitini faqat server muhitida ishlatadi. Admin kiritgan boshlang‘ich parol bilan akkaunt darhol faol holatda yaratiladi; email taklif yuborilmaydi.

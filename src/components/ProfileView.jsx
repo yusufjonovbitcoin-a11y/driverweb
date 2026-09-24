@@ -34,6 +34,8 @@ export default function ProfileView({
   // Form State for Adding Driver
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [role, setRole] = useState('driver');
   const [phone, setPhone] = useState('');
   const [driverNumber, setDriverNumber] = useState('');
   const [truck, setTruck] = useState('');
@@ -45,6 +47,8 @@ export default function ProfileView({
     setDriverNumber(nextNum);
     setName('');
     setEmail('');
+    setPassword('');
+    setRole('driver');
     setFormError('');
     setPhone('+1 (773) 555-');
     setTruck('Freightliner Cascadia (#' + Math.floor(100 + Math.random() * 900) + ')');
@@ -63,11 +67,13 @@ export default function ProfileView({
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!name.trim() || !email.trim()) return;
+    if (!name.trim() || !email.trim() || password.length < 6) return;
 
     const newDriver = {
       name: name.trim(),
       email: email.trim().toLowerCase(),
+      password,
+      role,
       driverNumber: driverNumber.trim() || `#10${Math.floor(10 + Math.random() * 90)}`,
       phone: phone.trim() || '+1 (555) 000-0000',
       truck: truck.trim() || 'Volvo VNL 860',
@@ -92,10 +98,11 @@ export default function ProfileView({
     try {
       await onAddDriver(newDriver);
       setIsAddFormOpen(false);
-      setSuccessToast(`${newDriver.name} uchun taklif yuborildi.`);
+      const roleName = role === 'dispatcher' ? 'Dispecher' : 'Haydovchi';
+      setSuccessToast(`${roleName} hisobi yaratildi: ${newDriver.name}.`);
       setTimeout(() => setSuccessToast(''), 4000);
     } catch (error) {
-      setFormError(error.message || 'Haydovchini taklif qilib bo‘lmadi.');
+      setFormError(error.message || 'Foydalanuvchi hisobini yaratib bo‘lmadi.');
     } finally {
       setIsSubmitting(false);
     }
@@ -172,20 +179,6 @@ export default function ProfileView({
                     <span>Chiqish</span>
                   </button>
                 )}
-              </div>
-
-              <div>
-                <label className="block text-xs font-mono font-bold text-zinc-500 dark:text-zinc-400 uppercase mb-1.5">
-                  Email *
-                </label>
-                <input
-                  type="email"
-                  required
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="driver@company.com"
-                  className="w-full bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl px-3.5 py-2.5 text-sm text-zinc-900 dark:text-zinc-100 placeholder-zinc-400 focus:outline-none focus:border-zinc-400 transition-colors"
-                />
               </div>
 
               <div className="flex items-center space-x-3 text-sm text-zinc-600 dark:text-zinc-300 font-medium flex-wrap gap-y-1">
@@ -269,7 +262,7 @@ export default function ProfileView({
           ) : (
             <>
               <Plus className="w-4 h-4" />
-              <span>Yangi haydovchi qo'shish</span>
+              <span>Yangi foydalanuvchi yaratish</span>
             </>
           )}
         </button>
@@ -285,10 +278,10 @@ export default function ProfileView({
               </div>
               <div>
                 <h4 className="font-bold text-base text-zinc-900 dark:text-zinc-100">
-                  Yangi Haydovchi Ro'yxatdan O'tkazish
+                  Yangi foydalanuvchi yaratish
                 </h4>
                 <p className="text-xs text-zinc-500 dark:text-zinc-400">
-                  To'g'ridan-to'g'ri sahifada to'ldiring — modal oynasiz to'liq rejim
+                  Akkaunt email taklifisiz darhol faol holatda yaratiladi
                 </p>
               </div>
             </div>
@@ -321,6 +314,52 @@ export default function ProfileView({
                 />
               </div>
 
+              {currentUser?.roleCode === 'company_admin' && (
+                <div>
+                  <label className="block text-xs font-mono font-bold text-zinc-500 dark:text-zinc-400 uppercase mb-1.5">
+                    Rol *
+                  </label>
+                  <select
+                    value={role}
+                    onChange={(e) => setRole(e.target.value)}
+                    className="w-full bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl px-3.5 py-2.5 text-sm text-zinc-900 dark:text-zinc-100 focus:outline-none focus:border-zinc-400 transition-colors cursor-pointer"
+                  >
+                    <option value="driver">Haydovchi</option>
+                    <option value="dispatcher">Dispecher</option>
+                  </select>
+                </div>
+              )}
+
+              <div>
+                <label className="block text-xs font-mono font-bold text-zinc-500 dark:text-zinc-400 uppercase mb-1.5">
+                  Email *
+                </label>
+                <input
+                  type="email"
+                  required
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder={role === 'dispatcher' ? 'dispatcher@company.com' : 'driver@company.com'}
+                  className="w-full bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl px-3.5 py-2.5 text-sm text-zinc-900 dark:text-zinc-100 placeholder-zinc-400 focus:outline-none focus:border-zinc-400 transition-colors"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-mono font-bold text-zinc-500 dark:text-zinc-400 uppercase mb-1.5">
+                  Boshlang'ich parol *
+                </label>
+                <input
+                  type="password"
+                  required
+                  minLength={6}
+                  autoComplete="new-password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="Kamida 6 ta belgi"
+                  className="w-full bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl px-3.5 py-2.5 text-sm text-zinc-900 dark:text-zinc-100 placeholder-zinc-400 focus:outline-none focus:border-zinc-400 transition-colors"
+                />
+              </div>
+
               {/* Telefon */}
               <div>
                 <label className="block text-xs font-mono font-bold text-zinc-500 dark:text-zinc-400 uppercase mb-1.5">
@@ -336,6 +375,8 @@ export default function ProfileView({
                 />
               </div>
 
+              {role === 'driver' && (
+                <>
               {/* Drayver ID */}
               <div>
                 <label className="block text-xs font-mono font-bold text-zinc-500 dark:text-zinc-400 uppercase mb-1.5">
@@ -394,12 +435,14 @@ export default function ProfileView({
                   className="w-full bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl px-3.5 py-2.5 text-sm text-zinc-900 dark:text-zinc-100 placeholder-zinc-400 focus:outline-none focus:border-zinc-400 transition-colors"
                 />
               </div>
+                </>
+              )}
             </div>
 
             {/* Actions */}
             <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-3 border-t border-zinc-100 dark:border-zinc-800">
               <p className="text-xs text-zinc-500 dark:text-zinc-400">
-                * Drayver ma'lumotlari to'ldirilgach, saqlash tugmasini bosing — u darhol pastdagi jadvalga qo'shiladi.
+                * Hisob darhol faol bo'ladi. Foydalanuvchi email va boshlang'ich parol bilan kiradi.
               </p>
               <div className="flex items-center space-x-3 self-end sm:self-auto">
                 <button
@@ -414,7 +457,7 @@ export default function ProfileView({
                   disabled={isSubmitting}
                   className="px-5 py-2 rounded-xl bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-950 text-sm font-bold shadow-xs hover:bg-zinc-800 dark:hover:bg-white transition-colors cursor-pointer"
                 >
-                  {isSubmitting ? 'Taklif yuborilmoqda…' : 'Drayverni taklif qilish'}
+                  {isSubmitting ? 'Hisob yaratilmoqda…' : 'Hisob yaratish'}
                 </button>
               </div>
             </div>

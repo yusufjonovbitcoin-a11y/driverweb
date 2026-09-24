@@ -5,7 +5,7 @@ import { createCompany, fetchCompanies } from '../services/operationsService';
 export default function PlatformAdminPanel({ onLogout }) {
   const [companies, setCompanies] = useState([]);
   const [form, setForm] = useState({
-    companyName: '', adminFullName: '', adminEmail: '', adminPhone: '',
+    companyName: '', adminFullName: '', adminEmail: '', adminPassword: '', adminPhone: '',
   });
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -25,9 +25,9 @@ export default function PlatformAdminPanel({ onLogout }) {
     setMessage('');
     try {
       await createCompany(form);
-      setForm({ companyName: '', adminFullName: '', adminEmail: '', adminPhone: '' });
+      setForm({ companyName: '', adminFullName: '', adminEmail: '', adminPassword: '', adminPhone: '' });
       await refresh();
-      setMessage('Kompaniya yaratildi va administratorga taklif yuborildi.');
+      setMessage('Kompaniya va faol administrator hisobi yaratildi.');
     } catch (error) {
       setMessage(error.message || 'Kompaniyani yaratib bo‘lmadi.');
     } finally {
@@ -41,6 +41,8 @@ export default function PlatformAdminPanel({ onLogout }) {
       <input
         required={key !== 'adminPhone'}
         type={type}
+        minLength={type === 'password' ? 6 : undefined}
+        autoComplete={type === 'password' ? 'new-password' : undefined}
         value={form[key]}
         onChange={(event) => setForm((current) => ({ ...current, [key]: event.target.value }))}
         className="w-full rounded-xl border border-zinc-200 bg-white px-3.5 py-2.5 text-zinc-900 outline-none focus:border-zinc-500 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100"
@@ -53,7 +55,7 @@ export default function PlatformAdminPanel({ onLogout }) {
       <div className="flex items-start justify-between gap-4">
         <div>
           <h2 className="text-xl font-black text-zinc-900 dark:text-zinc-100">Platforma boshqaruvi</h2>
-          <p className="mt-1 text-sm text-zinc-500">Kompaniya yarating va uning birinchi administratorini taklif qiling.</p>
+          <p className="mt-1 text-sm text-zinc-500">Kompaniya va uning birinchi faol administrator hisobini yarating.</p>
         </div>
         <button onClick={onLogout} className="rounded-xl border border-zinc-200 px-3 py-2 text-sm font-semibold text-zinc-600 dark:border-zinc-700 dark:text-zinc-300">Chiqish</button>
       </div>
@@ -61,6 +63,7 @@ export default function PlatformAdminPanel({ onLogout }) {
         {input('companyName', 'Kompaniya nomi')}
         {input('adminFullName', 'Administrator F.I.Sh')}
         {input('adminEmail', 'Administrator emaili', 'email')}
+        {input('adminPassword', "Administrator uchun boshlang'ich parol", 'password')}
         {input('adminPhone', 'Telefon (ixtiyoriy)', 'tel')}
         <div className="md:col-span-2 flex items-center justify-between gap-4">
           <span className="text-sm text-zinc-500">{message}</span>

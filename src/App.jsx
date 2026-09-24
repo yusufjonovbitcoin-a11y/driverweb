@@ -17,7 +17,7 @@ import { useAuth } from './hooks/useAuth';
 import {
   createAndOfferLoad,
   fetchWorkspace,
-  inviteMember,
+  createMember,
   subscribeWorkspace,
 } from './services/operationsService';
 
@@ -103,12 +103,13 @@ export default function App() {
     }
   };
 
-  const handleAddDriver = async (driver) => {
-    await inviteMember({
-      email: driver.email,
-      fullName: driver.name,
-      phone: driver.phone,
-      role: 'driver',
+  const handleCreateMember = async (member) => {
+    await createMember({
+      email: member.email,
+      password: member.password,
+      fullName: member.name,
+      phone: member.phone,
+      role: member.role || 'driver',
       companyId: currentUser.companyId,
     });
     await refreshWorkspace({ quiet: true });
@@ -231,7 +232,7 @@ export default function App() {
               drivers={drivers}
               loads={loads}
               onAssignLoad={() => setIsCreateModalOpen(true)}
-              onAddDriver={handleAddDriver}
+              onAddDriver={handleCreateMember}
             />
           )}
           {activeTab === 'docs' && <DocumentsView loads={loads} drivers={drivers} onOpenDocs={setSelectedLoadForDocs} />}
@@ -242,7 +243,7 @@ export default function App() {
               <ProfileView
                 drivers={drivers}
                 loads={loads}
-                onAddDriver={handleAddDriver}
+                onAddDriver={handleCreateMember}
                 onDeleteDriver={() => showToast('Foydalanuvchi o‘chirilmaydi; admin uni suspended holatiga o‘tkazadi.')}
                 currentUser={currentUser}
                 onLogout={logout}

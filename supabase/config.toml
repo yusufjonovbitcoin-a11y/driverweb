@@ -37,7 +37,7 @@ enabled = true
 [analytics]
 enabled = false
 
-[functions.invite-member]
+[functions.create-member]
 verify_jwt = true
 
 [functions.create-company]

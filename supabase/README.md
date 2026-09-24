@@ -94,7 +94,7 @@ Worker-only, `service_role`:
 
 Edge Function’lar:
 
-- `invite-member` — company admin/dispatcher ruxsatiga qarab Auth invite va profil yaratadi.
+- `create-member` — company admin/dispatcher ruxsatiga qarab driver yoki dispatcher hisobini parol bilan darhol yaratadi.
 - `create-company` — super admin uchun kompaniya va birinchi company admin taklifini yaratadi; profil xatosida Auth invite qaytarib olinadi.
 
 `service_role` kaliti web yoki mobil klientga hech qachon berilmaydi.

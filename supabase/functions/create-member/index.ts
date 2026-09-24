@@ -47,7 +47,9 @@ Deno.serve(async (request) => {
   } catch {
     return json({ error: 'Invalid JSON body' }, 400);
   }
+
   const email = String(payload.email ?? '').trim().toLowerCase();
+  const password = String(payload.password ?? '');
   const fullName = String(payload.fullName ?? '').trim();
   const phone = String(payload.phone ?? '').trim() || null;
   const role = String(payload.role ?? 'driver');
@@ -56,6 +58,10 @@ Deno.serve(async (request) => {
   if (!email.includes('@') || !fullName || !companyId) {
     return json({ error: 'Email, full name, and company are required' }, 400);
   }
+  if (password.length < 6) {
+    return json({ error: 'Password must contain at least 6 characters' }, 400);
+  }
+
   const allowed = requester.role === 'super_admin'
     ? ['company_admin', 'dispatcher', 'driver'].includes(role)
     : requester.role === 'company_admin'
@@ -68,22 +74,21 @@ Deno.serve(async (request) => {
   const adminClient = createClient(supabaseUrl, serviceRoleKey, {
     auth: { autoRefreshToken: false, persistSession: false },
   });
-  const { data: invite, error: inviteError } = await adminClient.auth.admin.inviteUserByEmail(
+  const { data: created, error: createError } = await adminClient.auth.admin.createUser({
     email,
-    {
-      data: { full_name: fullName, role, company_id: companyId },
-      redirectTo: Deno.env.get('INVITE_REDIRECT_URL') || undefined,
-    },
-  );
-  if (inviteError || !invite.user) {
-    return json({ error: inviteError?.message || 'Could not create invite' }, 400);
+    password,
+    email_confirm: true,
+    user_metadata: { full_name: fullName, role, company_id: companyId },
+  });
+  if (createError || !created.user) {
+    return json({ error: createError?.message || 'Could not create account' }, 400);
   }
 
   const { data: profile, error: registerError } = await adminClient.rpc(
     'register_company_member_as',
     {
       requested_by: requester.id,
-      user_id: invite.user.id,
+      user_id: created.user.id,
       company_id: companyId,
       role,
       full_name: fullName,
@@ -92,7 +97,7 @@ Deno.serve(async (request) => {
     },
   );
   if (registerError) {
-    await adminClient.auth.admin.deleteUser(invite.user.id);
+    await adminClient.auth.admin.deleteUser(created.user.id);
     return json({ error: registerError.message }, 400);
   }
 
