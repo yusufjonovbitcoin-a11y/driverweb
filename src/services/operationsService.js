@@ -11,6 +11,43 @@ async function throwFunctionError(error, fallback) {
   throw new Error(message);
 }
 
+async function getFunctionAccessToken(client, forceRefresh = false) {
+  const { data, error } = forceRefresh
+    ? await client.auth.refreshSession()
+    : await client.auth.getSession();
+  if (error) throw new Error('Sessiyani yangilab bo‘lmadi. Hisobdan chiqib, qayta kiring.');
+  let session = data.session;
+  const expiresSoon = !session?.expires_at || session.expires_at * 1000 <= Date.now() + 5 * 60 * 1000;
+  if (!forceRefresh && expiresSoon) {
+    const refreshed = await client.auth.refreshSession();
+    if (refreshed.error || !refreshed.data.session) {
+      throw new Error('Sessiya tugagan. Hisobdan chiqib, qayta kiring.');
+    }
+    session = refreshed.data.session;
+  }
+  if (!session?.access_token) {
+    throw new Error('Sessiya topilmadi. Hisobga qayta kiring.');
+  }
+  return session.access_token;
+}
+
+async function invokeAuthenticatedFunction(name, body) {
+  const client = requireSupabase();
+  let accessToken = await getFunctionAccessToken(client);
+  let result = await client.functions.invoke(name, {
+    body,
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  if (result.error?.context?.status === 401) {
+    accessToken = await getFunctionAccessToken(client, true);
+    result = await client.functions.invoke(name, {
+      body,
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+  }
+  return result;
+}
+
 const STATUS_TO_UI = {
   draft: 'OFFER',
   review: 'OFFER',
@@ -253,10 +290,10 @@ export async function fetchBrokerInbox() {
 }
 
 export async function createMember({ email, password, fullName, phone, role = 'driver', companyId }) {
-  const client = requireSupabase();
-  const { data, error } = await client.functions.invoke('create-member', {
-    body: { email, password, fullName, phone, role, companyId },
-  });
+  const { data, error } = await invokeAuthenticatedFunction(
+    'create-member',
+    { email, password, fullName, phone, role, companyId },
+  );
   if (error) await throwFunctionError(error, 'Could not create account');
   if (data?.error) throw new Error(data.error);
   return data?.profile;
@@ -270,10 +307,10 @@ export async function fetchCompanies() {
 }
 
 export async function createCompany({ companyName, adminFullName, adminEmail, adminPassword, adminPhone }) {
-  const client = requireSupabase();
-  const { data, error } = await client.functions.invoke('create-company', {
-    body: { companyName, adminFullName, adminEmail, adminPassword, adminPhone },
-  });
+  const { data, error } = await invokeAuthenticatedFunction(
+    'create-company',
+    { companyName, adminFullName, adminEmail, adminPassword, adminPhone },
+  );
   if (error) await throwFunctionError(error, 'Could not create company');
   if (data?.error) throw new Error(data.error);
   return data?.companyId;
@@ -321,9 +358,7 @@ export async function prepareLoadFromDocument(file) {
   const client = requireSupabase();
   const formData = new FormData();
   formData.append('file', file, file.name);
-  const { data, error } = await client.functions.invoke('parse-load-document', {
-    body: formData,
-  });
+  const { data, error } = await invokeAuthenticatedFunction('parse-load-document', formData);
   if (error) await throwFunctionError(error, 'AI hujjatni tahlil qila olmadi.');
   if (data?.error) throw new Error(data.error);
   if (!data?.loadId || !data?.preparedLoad) {
@@ -352,9 +387,10 @@ export async function sendOffersForLoad(loadId, driverIds, missingFields = []) {
     throw new Error('Kamida bitta haydovchini tanlang.');
   }
   const client = requireSupabase();
-  const { data: route, error: routeError } = await client.functions.invoke('calculate-load-route', {
-    body: { loadId, driverIds: targets },
-  });
+  const { data: route, error: routeError } = await invokeAuthenticatedFunction(
+    'calculate-load-route',
+    { loadId, driverIds: targets },
+  );
   if (routeError) await throwFunctionError(routeError, 'Marshrut masofasini hisoblay olmadi.');
   if (route?.error) throw new Error(route.error);
   if (!route?.loadedMiles || !Array.isArray(route?.targets)) {
