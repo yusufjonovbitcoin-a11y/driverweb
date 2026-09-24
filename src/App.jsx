@@ -117,7 +117,7 @@ export default function App() {
       await refreshWorkspace({ quiet: true });
       setIsCreateModalOpen(false);
       showToast(
-        `Yuk yaratildi. Google masofa: ${result.route.loadedMiles} mil. ${deliveredCount} ta online haydovchiga yetkazildi${offlineCount ? `, ${offlineCount} ta oflayn haydovchi o\'tkazib yuborildi` : ''}.`,
+        `Yuk yaratildi. Yo‘l masofasi: ${result.route.loadedMiles} mil${result.route.attribution ? ` (${result.route.attribution})` : ''}. ${deliveredCount} ta online haydovchiga yetkazildi${offlineCount ? `, ${offlineCount} ta oflayn haydovchi o\'tkazib yuborildi` : ''}.`,
       );
     } catch (error) {
       showToast(error.message || 'Yukni yaratib bo\'lmadi.');
@@ -185,7 +185,7 @@ export default function App() {
           ? deliveredCount
             ? 'Yuk yangi haydovchiga qayta tayinlash uchun yuborildi.'
             : 'Tanlangan haydovchi oflayn. Taklif o‘tkazib yuborildi.'
-          : `Google masofa: ${dispatch.route.loadedMiles} mil. ${deliveredCount} ta online haydovchiga taklif yuborildi${offlineCount ? `, ${offlineCount} ta oflayn haydovchi o\'tkazib yuborildi` : ''}.`,
+          : `Yo‘l masofasi: ${dispatch.route.loadedMiles} mil${dispatch.route.attribution ? ` (${dispatch.route.attribution})` : ''}. ${deliveredCount} ta online haydovchiga taklif yuborildi${offlineCount ? `, ${offlineCount} ta oflayn haydovchi o\'tkazib yuborildi` : ''}.`,
       );
     } catch (error) {
       showToast(error.message || 'Taklifni yuborib bo\'lmadi.');

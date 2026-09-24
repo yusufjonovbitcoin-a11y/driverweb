@@ -8,6 +8,7 @@ const corsHeaders = {
 const metersPerMile = 1609.344;
 
 type Stop = {
+  id: string;
   type: "pickup" | "delivery";
   address_line: string;
   city: string;
@@ -21,6 +22,11 @@ type Stop = {
 type RouteResult = {
   distanceMiles: number;
   durationSeconds: number;
+};
+
+type Coordinates = {
+  latitude: number;
+  longitude: number;
 };
 
 function json(body: unknown, status = 200) {
@@ -95,6 +101,58 @@ async function computeRoute(
   };
 }
 
+function stopAddress(stop: Stop) {
+  return [stop.address_line, stop.city, stop.region, stop.postal_code, "USA"]
+    .filter(Boolean)
+    .join(", ");
+}
+
+async function geocodeWithCensus(stop: Stop): Promise<Coordinates> {
+  if (stop.latitude != null && stop.longitude != null) {
+    return { latitude: Number(stop.latitude), longitude: Number(stop.longitude) };
+  }
+  const url = new URL(
+    "https://geocoding.geo.census.gov/geocoder/locations/onelineaddress",
+  );
+  url.searchParams.set("address", stopAddress(stop));
+  url.searchParams.set("benchmark", "Public_AR_Current");
+  url.searchParams.set("format", "json");
+  const response = await fetch(url, {
+    signal: AbortSignal.timeout(10_000),
+  });
+  const payload = await response.json().catch(() => ({}));
+  const coordinates = payload?.result?.addressMatches?.[0]?.coordinates;
+  const latitude = Number(coordinates?.y);
+  const longitude = Number(coordinates?.x);
+  if (!response.ok || !Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+    throw new Error(`${stop.type} manzilining koordinatasi topilmadi`);
+  }
+  return { latitude, longitude };
+}
+
+async function computeOsrmRoute(
+  origin: Coordinates,
+  destination: Coordinates,
+): Promise<RouteResult> {
+  const coordinates = `${origin.longitude},${origin.latitude};${destination.longitude},${destination.latitude}`;
+  const response = await fetch(
+    `https://router.project-osrm.org/route/v1/driving/${coordinates}?overview=false&steps=false`,
+    {
+      headers: { "User-Agent": "ApexHaul-DriverPlatform/1.0" },
+      signal: AbortSignal.timeout(10_000),
+    },
+  );
+  const payload = await response.json().catch(() => ({}));
+  const route = payload?.routes?.[0];
+  if (!response.ok || payload?.code !== "Ok" || !route?.distance) {
+    throw new Error("Zaxira marshrut xizmati yo‘lni topa olmadi");
+  }
+  return {
+    distanceMiles: Math.round((route.distance / metersPerMile) * 100) / 100,
+    durationSeconds: Math.max(0, Math.round(Number(route.duration) || 0)),
+  };
+}
+
 Deno.serve(async (request) => {
   if (request.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
@@ -162,7 +220,7 @@ Deno.serve(async (request) => {
   const [{ data: stops, error: stopsError }, { data: presence, error: presenceError }] =
     await Promise.all([
       adminClient.from("load_stops")
-        .select("type,address_line,city,region,postal_code,latitude,longitude,contact_place_id")
+        .select("id,type,address_line,city,region,postal_code,latitude,longitude,contact_place_id")
         .eq("load_id", loadId)
         .order("sequence"),
       adminClient.from("driver_presence")
@@ -176,12 +234,33 @@ Deno.serve(async (request) => {
 
   try {
     const pickupWaypoint = stopWaypoint(pickup);
-    const route = await computeRoute(googleKey, pickupWaypoint, stopWaypoint(delivery));
+    let route: RouteResult;
+    let provider = "google_routes";
+    let pickupCoordinates: Coordinates | null = null;
+    try {
+      route = await computeRoute(googleKey, pickupWaypoint, stopWaypoint(delivery));
+    } catch (googleError) {
+      console.warn("Google Routes unavailable; using OpenStreetMap fallback", googleError);
+      pickupCoordinates = await geocodeWithCensus(pickup);
+      const deliveryCoordinates = await geocodeWithCensus(delivery);
+      route = await computeOsrmRoute(pickupCoordinates, deliveryCoordinates);
+      provider = "openstreetmap_osrm";
+      await Promise.all([
+        adminClient.from("load_stops").update({
+          latitude: pickupCoordinates.latitude,
+          longitude: pickupCoordinates.longitude,
+        }).eq("id", pickup.id),
+        adminClient.from("load_stops").update({
+          latitude: deliveryCoordinates.latitude,
+          longitude: deliveryCoordinates.longitude,
+        }).eq("id", delivery.id),
+      ]);
+    }
     const { error: saveError } = await callerClient.rpc("apply_route_estimate", {
       load_id: loadId,
       calculated_distance_miles: route.distanceMiles,
       calculated_duration_seconds: route.durationSeconds,
-      calculated_provider: "google_routes",
+      calculated_provider: provider,
     });
     if (saveError) throw new Error(saveError.message);
 
@@ -204,18 +283,20 @@ Deno.serve(async (request) => {
         };
       }
       try {
-        const deadhead = await computeRoute(
-          googleKey,
-          {
-            location: {
-              latLng: {
-                latitude: Number(current.latitude),
-                longitude: Number(current.longitude),
-              },
-            },
-          },
-          pickupWaypoint,
-        );
+        const currentCoordinates = {
+          latitude: Number(current.latitude),
+          longitude: Number(current.longitude),
+        };
+        const deadhead = provider === "google_routes"
+          ? await computeRoute(
+            googleKey,
+            { location: { latLng: currentCoordinates } },
+            pickupWaypoint,
+          )
+          : await computeOsrmRoute(
+            currentCoordinates,
+            pickupCoordinates ?? await geocodeWithCensus(pickup),
+          );
         return {
           driverId,
           originLatitude: Number(current.latitude),
@@ -236,7 +317,10 @@ Deno.serve(async (request) => {
     return json({
       loadedMiles: route.distanceMiles,
       durationSeconds: route.durationSeconds,
-      provider: "google_routes",
+      provider,
+      attribution: provider === "openstreetmap_osrm"
+        ? "© OpenStreetMap contributors"
+        : null,
       targets,
     });
   } catch (error) {

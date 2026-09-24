@@ -355,10 +355,10 @@ export async function sendOffersForLoad(loadId, driverIds, missingFields = []) {
   const { data: route, error: routeError } = await client.functions.invoke('calculate-load-route', {
     body: { loadId, driverIds: targets },
   });
-  if (routeError) await throwFunctionError(routeError, 'Google marshrut masofasini hisoblay olmadi.');
+  if (routeError) await throwFunctionError(routeError, 'Marshrut masofasini hisoblay olmadi.');
   if (route?.error) throw new Error(route.error);
   if (!route?.loadedMiles || !Array.isArray(route?.targets)) {
-    throw new Error('Google marshrut masofasini qaytarmadi. Routes API sozlamasini tekshiring.');
+    throw new Error('Marshrut xizmati masofani qaytarmadi. Manzillarni tekshiring.');
   }
   const compatibilityWarnings = [...new Set(missingFields)]
     .filter((field) => typeof field === 'string')
