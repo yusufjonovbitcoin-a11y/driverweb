@@ -341,7 +341,21 @@ export async function prepareLoadFromDocument(file) {
   if (!data?.loadId || !data?.preparedLoad) {
     throw new Error('AI tayyorlagan yuk ma\'lumoti qaytmadi.');
   }
-  return data;
+  const { data: lifecycle, error: lifecycleError } = await client
+    .from('load_overview')
+    .select('status,current_assignment_id,driver_id')
+    .eq('id', data.loadId)
+    .single();
+  if (lifecycleError) throw lifecycleError;
+  return {
+    ...data,
+    preparedLoad: {
+      ...data.preparedLoad,
+      lifecycleStatus: lifecycle.status,
+      currentAssignmentId: lifecycle.current_assignment_id,
+      currentDriverId: lifecycle.driver_id,
+    },
+  };
 }
 
 export async function sendOffersForLoad(loadId, driverIds, missingFields = []) {
@@ -357,20 +371,43 @@ export async function sendOffersForLoad(loadId, driverIds, missingFields = []) {
       field,
       message: `AI hujjatdan ${field} maydonini aniq topa olmadi.`,
     }));
-  const offers = [];
-  for (const driverId of targets) {
-    const { data, error } = await client.rpc('send_offer', {
-      load_id: loadId,
-      driver_id: driverId,
-      origin_latitude: null,
-      origin_longitude: null,
-      estimated_deadhead_miles: 0,
-      compatibility_warnings: compatibilityWarnings,
-    });
-    if (error) throw error;
-    offers.push(data);
+  const { data, error } = await client.rpc('send_offers', {
+    load_id: loadId,
+    driver_ids: targets,
+    compatibility_warnings: compatibilityWarnings,
+  });
+  if (error) {
+    if (error.message?.includes('Load is not available for offers')) {
+      throw new Error('Bu yuk allaqachon tayinlangan yoki yakunlangan. Qayta tayinlash rejimidan foydalaning.');
+    }
+    if (error.message?.includes('Driver is not eligible')) {
+      throw new Error('Tanlangan haydovchilardan biri faol emas yoki sizga biriktirilmagan.');
+    }
+    throw error;
   }
-  return offers;
+  return data || [];
+}
+
+export async function reassignLoad(loadId, driverId) {
+  if (!loadId || !driverId) throw new Error('Qayta tayinlash uchun haydovchini tanlang.');
+  const client = requireSupabase();
+  const { data, error } = await client.rpc('reassign_load', {
+    load_id: loadId,
+    new_driver_id: driverId,
+    origin_latitude: null,
+    origin_longitude: null,
+    estimated_deadhead_miles: 0,
+  });
+  if (error) {
+    if (error.message?.includes('Load cannot be reassigned')) {
+      throw new Error('Bu yukni qayta tayinlab bo‘lmaydi. Yuk yakunlangan yoki bekor qilingan.');
+    }
+    if (error.message?.includes('Driver is not eligible')) {
+      throw new Error('Tanlangan haydovchi faol emas.');
+    }
+    throw error;
+  }
+  return data;
 }
 
 export function subscribeWorkspace(onChange) {

@@ -40,10 +40,21 @@ export default function QuickDriverModal({
   const [searchQuery, setSearchQuery] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const missingFields = loadData?.missingFields || [];
+  const isReassignment = ['assigned', 'in_progress'].includes(loadData?.lifecycleStatus);
+  const isClosed = Boolean(loadData?.lifecycleStatus) && ![
+    'ready_for_offer',
+    'offered',
+    'assigned',
+    'in_progress',
+  ].includes(loadData.lifecycleStatus);
 
   if (!isOpen || !loadData) return null;
 
   const toggleDriver = (id) => {
+    if (isReassignment) {
+      setSelectedDriverIds((current) => current[0] === id ? [] : [id]);
+      return;
+    }
     if (selectedDriverIds.includes(id)) {
       setSelectedDriverIds(selectedDriverIds.filter(d => d !== id));
     } else {
@@ -61,7 +72,10 @@ export default function QuickDriverModal({
     }
   };
 
-  const filteredDrivers = drivers.filter((d) => {
+  const availableDrivers = isReassignment
+    ? drivers.filter((driver) => driver.id !== loadData.currentDriverId)
+    : drivers;
+  const filteredDrivers = availableDrivers.filter((d) => {
     if (!searchQuery.trim()) return true;
     const q = searchQuery.toLowerCase();
     return (
@@ -94,10 +108,12 @@ export default function QuickDriverModal({
             </div>
             <div>
               <h2 className="text-base lg:text-lg font-bold text-zinc-900 dark:text-zinc-100">
-                AI Yukni Tayyorladi
+                {isReassignment ? 'Yukni Qayta Tayinlash' : 'AI Yukni Tayyorladi'}
               </h2>
               <p className="text-xs lg:text-sm text-zinc-400">
-                Faqat haydovchini tanlang va yuboring
+                {isReassignment
+                  ? 'Yangi haydovchini tanlang. Joriy tayinlov almashtiriladi.'
+                  : 'Faqat haydovchini tanlang va yuboring'}
               </p>
             </div>
           </div>
@@ -160,19 +176,27 @@ export default function QuickDriverModal({
             </div>
           )}
 
+          {isClosed && (
+            <div className="rounded-xl border border-rose-200 bg-rose-50 px-3.5 py-3 text-xs font-semibold text-rose-800 dark:border-rose-900/60 dark:bg-rose-950/30 dark:text-rose-200">
+              Bu yuk yakunlangan yoki bekor qilingan. Unga yangi taklif yuborib bo‘lmaydi.
+            </div>
+          )}
+
           {/* Haydovchi(lar)ni tanlash */}
           <div className="space-y-2.5 pt-1">
             <div className="flex items-center justify-between text-sm">
               <span className="font-bold text-zinc-800 dark:text-zinc-200">
                 Haydovchini tanlang
               </span>
-              <button
-                type="button"
-                onClick={toggleSelectAll}
-                className="text-xs lg:text-sm text-blue-600 dark:text-blue-400 hover:underline font-bold"
-              >
-                {isSelectAll ? 'Alohida tanlash' : 'Barchasiga yuborish'}
-              </button>
+              {!isReassignment && !isClosed && (
+                <button
+                  type="button"
+                  onClick={toggleSelectAll}
+                  className="text-xs lg:text-sm text-blue-600 dark:text-blue-400 hover:underline font-bold"
+                >
+                  {isSelectAll ? 'Alohida tanlash' : 'Barchasiga yuborish'}
+                </button>
+              )}
             </div>
 
             {/* Search Input */}
@@ -201,7 +225,11 @@ export default function QuickDriverModal({
             <div className="space-y-1.5 max-h-52 overflow-y-auto pr-1">
               {filteredDrivers.length === 0 ? (
                 <div className="py-4 text-center text-sm text-zinc-400 font-medium">
-                  "{searchQuery}" bo'yicha haydovchi topilmadi
+                  {searchQuery
+                    ? `"${searchQuery}" bo‘yicha haydovchi topilmadi`
+                    : isReassignment
+                      ? 'Qayta tayinlash uchun boshqa haydovchi mavjud emas'
+                      : 'Faol haydovchi mavjud emas'}
                 </div>
               ) : (
                 filteredDrivers.map((driver) => {
@@ -263,13 +291,15 @@ export default function QuickDriverModal({
               </button>
               <button
                 type="submit"
-                disabled={selectedDriverIds.length === 0 || isSubmitting}
+                disabled={selectedDriverIds.length === 0 || isSubmitting || isClosed}
                 className="inline-flex items-center space-x-2 bg-zinc-900 hover:bg-zinc-800 disabled:opacity-50 disabled:cursor-not-allowed text-white dark:bg-zinc-100 dark:hover:bg-white dark:text-zinc-950 px-5 py-2 rounded-xl font-bold text-sm transition-colors shadow-xs"
               >
                 <Send className="w-4 h-4" />
                 <span>
                   {isSubmitting
                     ? 'Yuborilmoqda…'
+                    : isReassignment
+                    ? 'Qayta tayinlash'
                     : selectedDriverIds.length > 1
                     ? `${selectedDriverIds.length} drayverga yuborish`
                     : 'Haydovchiga yuborish'}

@@ -19,6 +19,7 @@ import { useAuth } from './hooks/useAuth';
 import {
   createAndOfferLoad,
   prepareLoadFromDocument,
+  reassignLoad,
   sendOffersForLoad,
   fetchWorkspace,
   createMember,
@@ -166,21 +167,27 @@ export default function App() {
     if (!aiPreparedLoad) return;
     setWorkspaceLoading(true);
     try {
-      const offers = await sendOffersForLoad(
-        aiPreparedLoad.id,
-        driverIds,
-        aiPreparedLoad.missingFields,
-      );
+      const isReassignment = ['assigned', 'in_progress'].includes(aiPreparedLoad.lifecycleStatus);
+      const offers = isReassignment
+        ? [await reassignLoad(aiPreparedLoad.id, driverIds[0])]
+        : await sendOffersForLoad(
+          aiPreparedLoad.id,
+          driverIds,
+          aiPreparedLoad.missingFields,
+        );
       const deliveredCount = offers.filter((offer) => offer.status === 'pending').length;
       const offlineCount = offers.filter((offer) => offer.status === 'missed_offline').length;
       await refreshWorkspace({ quiet: true });
       setAiPreparedLoad(null);
       showToast(
-        `${deliveredCount} ta online haydovchiga taklif yuborildi${offlineCount ? `, ${offlineCount} ta oflayn haydovchi o\'tkazib yuborildi` : ''}.`,
+        isReassignment
+          ? deliveredCount
+            ? 'Yuk yangi haydovchiga qayta tayinlash uchun yuborildi.'
+            : 'Tanlangan haydovchi oflayn. Taklif o‘tkazib yuborildi.'
+          : `${deliveredCount} ta online haydovchiga taklif yuborildi${offlineCount ? `, ${offlineCount} ta oflayn haydovchi o\'tkazib yuborildi` : ''}.`,
       );
     } catch (error) {
       showToast(error.message || 'Taklifni yuborib bo\'lmadi.');
-      throw error;
     } finally {
       setWorkspaceLoading(false);
     }
