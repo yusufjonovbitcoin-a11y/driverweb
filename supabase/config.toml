@@ -51,3 +51,6 @@ verify_jwt = true
 
 [functions.check-load-document]
 verify_jwt = true
+
+[functions.calculate-load-route]
+verify_jwt = true

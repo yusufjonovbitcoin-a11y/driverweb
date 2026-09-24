@@ -161,6 +161,11 @@ export default function QuickDriverModal({
                 <span className="font-bold">Talablar:</span> {loadData.requirements.join(' • ')}
               </div>
             )}
+            {!isReassignment && !isClosed && (
+              <div className="rounded-lg bg-blue-50 px-2.5 py-2 text-[11px] font-semibold text-blue-700 dark:bg-blue-950/40 dark:text-blue-300">
+                Yuborishda Google pickup → delivery masofasini hisoblaydi. Driver online bo‘lsa, pickupgacha masofa ham alohida qo‘shiladi.
+              </div>
+            )}
           </div>
 
           {missingFields.length > 0 && (
@@ -301,8 +306,8 @@ export default function QuickDriverModal({
                     : isReassignment
                     ? 'Qayta tayinlash'
                     : selectedDriverIds.length > 1
-                    ? `${selectedDriverIds.length} drayverga yuborish`
-                    : 'Haydovchiga yuborish'}
+                    ? `${selectedDriverIds.length} drayverga hisoblab yuborish`
+                    : 'Masofani hisoblab yuborish'}
                 </span>
               </button>
             </div>

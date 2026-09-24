@@ -117,7 +117,7 @@ export default function App() {
       await refreshWorkspace({ quiet: true });
       setIsCreateModalOpen(false);
       showToast(
-        `Yuk yaratildi. ${deliveredCount} ta online haydovchiga yetkazildi${offlineCount ? `, ${offlineCount} ta oflayn haydovchi o\'tkazib yuborildi` : ''}.`,
+        `Yuk yaratildi. Google masofa: ${result.route.loadedMiles} mil. ${deliveredCount} ta online haydovchiga yetkazildi${offlineCount ? `, ${offlineCount} ta oflayn haydovchi o\'tkazib yuborildi` : ''}.`,
       );
     } catch (error) {
       showToast(error.message || 'Yukni yaratib bo\'lmadi.');
@@ -168,13 +168,14 @@ export default function App() {
     setWorkspaceLoading(true);
     try {
       const isReassignment = ['assigned', 'in_progress'].includes(aiPreparedLoad.lifecycleStatus);
-      const offers = isReassignment
-        ? [await reassignLoad(aiPreparedLoad.id, driverIds[0])]
+      const dispatch = isReassignment
+        ? { offers: [await reassignLoad(aiPreparedLoad.id, driverIds[0])], route: null }
         : await sendOffersForLoad(
           aiPreparedLoad.id,
           driverIds,
           aiPreparedLoad.missingFields,
         );
+      const offers = dispatch.offers;
       const deliveredCount = offers.filter((offer) => offer.status === 'pending').length;
       const offlineCount = offers.filter((offer) => offer.status === 'missed_offline').length;
       await refreshWorkspace({ quiet: true });
@@ -184,7 +185,7 @@ export default function App() {
           ? deliveredCount
             ? 'Yuk yangi haydovchiga qayta tayinlash uchun yuborildi.'
             : 'Tanlangan haydovchi oflayn. Taklif o‘tkazib yuborildi.'
-          : `${deliveredCount} ta online haydovchiga taklif yuborildi${offlineCount ? `, ${offlineCount} ta oflayn haydovchi o\'tkazib yuborildi` : ''}.`,
+          : `Google masofa: ${dispatch.route.loadedMiles} mil. ${deliveredCount} ta online haydovchiga taklif yuborildi${offlineCount ? `, ${offlineCount} ta oflayn haydovchi o\'tkazib yuborildi` : ''}.`,
       );
     } catch (error) {
       showToast(error.message || 'Taklifni yuborib bo\'lmadi.');

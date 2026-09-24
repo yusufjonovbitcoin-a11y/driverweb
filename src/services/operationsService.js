@@ -312,20 +312,8 @@ export async function createAndOfferLoad(newLoad) {
   const { error: approveError } = await client.rpc('approve_load_draft', { load_id: loadId });
   if (approveError) throw approveError;
   const targetDriverIds = (newLoad.targetDriverIds || []).filter(Boolean);
-  const offers = [];
-  for (const driverId of targetDriverIds) {
-    const { data, error } = await client.rpc('send_offer', {
-      load_id: loadId,
-      driver_id: driverId,
-      origin_latitude: null,
-      origin_longitude: null,
-      estimated_deadhead_miles: 0,
-      compatibility_warnings: [],
-    });
-    if (error) throw error;
-    offers.push(data);
-  }
-  return { loadId, offers };
+  const dispatch = await sendOffersForLoad(loadId, targetDriverIds);
+  return { loadId, ...dispatch };
 }
 
 export async function prepareLoadFromDocument(file) {
@@ -364,6 +352,14 @@ export async function sendOffersForLoad(loadId, driverIds, missingFields = []) {
     throw new Error('Kamida bitta haydovchini tanlang.');
   }
   const client = requireSupabase();
+  const { data: route, error: routeError } = await client.functions.invoke('calculate-load-route', {
+    body: { loadId, driverIds: targets },
+  });
+  if (routeError) await throwFunctionError(routeError, 'Google marshrut masofasini hisoblay olmadi.');
+  if (route?.error) throw new Error(route.error);
+  if (!route?.loadedMiles || !Array.isArray(route?.targets)) {
+    throw new Error('Google marshrut masofasini qaytarmadi. Routes API sozlamasini tekshiring.');
+  }
   const compatibilityWarnings = [...new Set(missingFields)]
     .filter((field) => typeof field === 'string')
     .map((field) => ({
@@ -371,9 +367,9 @@ export async function sendOffersForLoad(loadId, driverIds, missingFields = []) {
       field,
       message: `AI hujjatdan ${field} maydonini aniq topa olmadi.`,
     }));
-  const { data, error } = await client.rpc('send_offers', {
+  const { data, error } = await client.rpc('send_routed_offers', {
     load_id: loadId,
-    driver_ids: targets,
+    offer_targets: route.targets,
     compatibility_warnings: compatibilityWarnings,
   });
   if (error) {
@@ -385,7 +381,7 @@ export async function sendOffersForLoad(loadId, driverIds, missingFields = []) {
     }
     throw error;
   }
-  return data || [];
+  return { offers: data || [], route };
 }
 
 export async function reassignLoad(loadId, driverId) {
