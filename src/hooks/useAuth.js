@@ -68,9 +68,18 @@ export function useAuth() {
     supabase.auth.getSession().then(async ({ data, error }) => {
       if (!active) return;
       if (error) setAuthError(error.message);
-      setSession(data.session);
+      let verifiedSession = data.session;
       try {
-        await loadProfile(data.session?.user?.id);
+        if (verifiedSession) {
+          const { data: verified, error: verificationError } = await supabase.auth.getUser();
+          if (verificationError || !verified.user) {
+            await supabase.auth.signOut({ scope: 'local' });
+            verifiedSession = null;
+            setAuthError('Sessiya tugagan. Hisobga qayta kiring.');
+          }
+        }
+        setSession(verifiedSession);
+        await loadProfile(verifiedSession?.user?.id);
       } catch (profileError) {
         setAuthError(profileError.message);
       } finally {

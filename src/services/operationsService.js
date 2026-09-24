@@ -15,17 +15,22 @@ async function getFunctionAccessToken(client, forceRefresh = false) {
   const { data, error } = forceRefresh
     ? await client.auth.refreshSession()
     : await client.auth.getSession();
-  if (error) throw new Error('Sessiyani yangilab bo‘lmadi. Hisobdan chiqib, qayta kiring.');
+  if (error) {
+    await client.auth.signOut({ scope: 'local' });
+    throw new Error('Sessiya tugagan. Hisobga qayta kiring.');
+  }
   let session = data.session;
   const expiresSoon = !session?.expires_at || session.expires_at * 1000 <= Date.now() + 5 * 60 * 1000;
   if (!forceRefresh && expiresSoon) {
     const refreshed = await client.auth.refreshSession();
     if (refreshed.error || !refreshed.data.session) {
-      throw new Error('Sessiya tugagan. Hisobdan chiqib, qayta kiring.');
+      await client.auth.signOut({ scope: 'local' });
+      throw new Error('Sessiya tugagan. Hisobga qayta kiring.');
     }
     session = refreshed.data.session;
   }
   if (!session?.access_token) {
+    await client.auth.signOut({ scope: 'local' });
     throw new Error('Sessiya topilmadi. Hisobga qayta kiring.');
   }
   return session.access_token;
