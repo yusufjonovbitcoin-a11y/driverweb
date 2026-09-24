@@ -26,11 +26,14 @@ export default function ProfileView({
   // Inline Form State (NO POPUP MODAL - 100% INLINE FULL-WIDTH FORM)
   const [isAddFormOpen, setIsAddFormOpen] = useState(true);
   const [successToast, setSuccessToast] = useState('');
+  const [formError, setFormError] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('ALL');
 
   // Form State for Adding Driver
   const [name, setName] = useState('');
+  const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
   const [driverNumber, setDriverNumber] = useState('');
   const [truck, setTruck] = useState('');
@@ -41,6 +44,8 @@ export default function ProfileView({
     const nextNum = `#10${drivers.length + 50}`;
     setDriverNumber(nextNum);
     setName('');
+    setEmail('');
+    setFormError('');
     setPhone('+1 (773) 555-');
     setTruck('Freightliner Cascadia (#' + Math.floor(100 + Math.random() * 900) + ')');
     setTrailer("53' Reefer (#R-" + Math.floor(100 + Math.random() * 900) + ")");
@@ -56,12 +61,13 @@ export default function ProfileView({
     }
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!name.trim()) return;
+    if (!name.trim() || !email.trim()) return;
 
     const newDriver = {
       name: name.trim(),
+      email: email.trim().toLowerCase(),
       driverNumber: driverNumber.trim() || `#10${Math.floor(10 + Math.random() * 90)}`,
       phone: phone.trim() || '+1 (555) 000-0000',
       truck: truck.trim() || 'Volvo VNL 860',
@@ -81,10 +87,18 @@ export default function ProfileView({
       onTimeRate: '100%'
     };
 
-    onAddDriver(newDriver);
-    setIsAddFormOpen(false);
-    setSuccessToast(`${newDriver.name} tizimga muvaffaqiyatli qo'shildi!`);
-    setTimeout(() => setSuccessToast(''), 4000);
+    setIsSubmitting(true);
+    setFormError('');
+    try {
+      await onAddDriver(newDriver);
+      setIsAddFormOpen(false);
+      setSuccessToast(`${newDriver.name} uchun taklif yuborildi.`);
+      setTimeout(() => setSuccessToast(''), 4000);
+    } catch (error) {
+      setFormError(error.message || 'Haydovchini taklif qilib bo‘lmadi.');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const totalDrivers = drivers.length;
@@ -160,6 +174,20 @@ export default function ProfileView({
                 )}
               </div>
 
+              <div>
+                <label className="block text-xs font-mono font-bold text-zinc-500 dark:text-zinc-400 uppercase mb-1.5">
+                  Email *
+                </label>
+                <input
+                  type="email"
+                  required
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="driver@company.com"
+                  className="w-full bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl px-3.5 py-2.5 text-sm text-zinc-900 dark:text-zinc-100 placeholder-zinc-400 focus:outline-none focus:border-zinc-400 transition-colors"
+                />
+              </div>
+
               <div className="flex items-center space-x-3 text-sm text-zinc-600 dark:text-zinc-300 font-medium flex-wrap gap-y-1">
                 <span className="flex items-center space-x-1.5">
                   <Building2 className="w-4 h-4 text-zinc-400" />
@@ -188,6 +216,10 @@ export default function ProfileView({
                 </span>
               </div>
             </div>
+
+            {formError && (
+              <p className="text-sm font-semibold text-red-600 dark:text-red-400">{formError}</p>
+            )}
           </div>
 
           {/* Clean Flat Counter Badges */}
@@ -379,9 +411,10 @@ export default function ProfileView({
                 </button>
                 <button
                   type="submit"
+                  disabled={isSubmitting}
                   className="px-5 py-2 rounded-xl bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-950 text-sm font-bold shadow-xs hover:bg-zinc-800 dark:hover:bg-white transition-colors cursor-pointer"
                 >
-                  Drayverni Tizimga Saqlash
+                  {isSubmitting ? 'Taklif yuborilmoqda…' : 'Drayverni taklif qilish'}
                 </button>
               </div>
             </div>

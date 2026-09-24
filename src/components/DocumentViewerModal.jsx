@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { 
   X, 
   FileText, 
@@ -13,10 +13,17 @@ export default function DocumentViewerModal({
   load, 
   onApproveAndInvoice 
 }) {
-  if (!isOpen || !load) return null;
-
   const [activeDocTab, setActiveDocTab] = useState('rateCon');
-  const [isApproved, setIsApproved] = useState(load.status === 'COMPLETED');
+  const [isApproved, setIsApproved] = useState(false);
+
+  useEffect(() => {
+    if (isOpen && load) {
+      setActiveDocTab('rateCon');
+      setIsApproved(load.status === 'COMPLETED');
+    }
+  }, [isOpen, load]);
+
+  if (!isOpen || !load) return null;
 
   const docs = [
     {

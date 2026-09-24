@@ -1,0 +1,3 @@
+-- Local development intentionally starts empty.
+-- Create users through Supabase Auth, then call bootstrap_company() or the
+-- service-role member registration command. Production never receives demo data.

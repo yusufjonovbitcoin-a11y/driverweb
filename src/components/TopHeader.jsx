@@ -20,6 +20,7 @@ export default function TopHeader({
       case 'map': return 'Xarita';
       case 'drivers': return 'Haydovchilar';
       case 'docs': return 'Hujjatlar';
+      case 'inbox': return 'Broker Inbox';
       case 'analytics': return 'Moliya';
       case 'profile': return 'Profil va Haydovchilar';
       default: return 'Boshqaruv';

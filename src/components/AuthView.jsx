@@ -10,13 +10,14 @@ import {
   Moon 
 } from 'lucide-react';
 
-export default function AuthView({ onLogin, theme, toggleTheme }) {
-  const [email, setEmail] = useState('dispatch@apexhaul.com');
-  const [password, setPassword] = useState('apex2026');
+export default function AuthView({ onLogin, externalError, theme, toggleTheme }) {
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
+  const [submitting, setSubmitting] = useState(false);
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     setErrorMsg('');
 
@@ -25,18 +26,14 @@ export default function AuthView({ onLogin, theme, toggleTheme }) {
       return;
     }
 
-    const userData = {
-      name: email.includes('dispatch') ? 'Dilshod Rahimov' : email.split('@')[0],
-      email: email.trim(),
-      role: 'Bosh Dispecher (Admin)',
-      company: 'ApexHaul Logistics LLC',
-      mcNumber: 'MC-984210',
-      dotNumber: 'USDOT 3891452',
-      phone: '+1 (312) 555-0100',
-      avatarInitial: 'D'
-    };
-
-    onLogin(userData);
+    setSubmitting(true);
+    try {
+      await onLogin(email, password);
+    } catch (error) {
+      setErrorMsg(error.message || 'Email yoki parol noto‘g‘ri.');
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -87,9 +84,9 @@ export default function AuthView({ onLogin, theme, toggleTheme }) {
           </div>
 
           {/* Error Message */}
-          {errorMsg && (
+          {(errorMsg || externalError) && (
             <div className="mb-4 p-3 rounded-xl bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-800/40 text-red-600 dark:text-red-400 text-xs font-bold text-center">
-              {errorMsg}
+              {errorMsg || externalError}
             </div>
           )}
 
@@ -108,7 +105,7 @@ export default function AuthView({ onLogin, theme, toggleTheme }) {
                   required
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  placeholder="name@company.com"
+                  placeholder="dispatch@company.com"
                   className="w-full bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-2xl pl-10 pr-4 py-3 text-sm text-zinc-900 dark:text-zinc-100 placeholder-zinc-400 focus:outline-none focus:border-zinc-400 transition-colors"
                 />
               </div>
@@ -142,9 +139,10 @@ export default function AuthView({ onLogin, theme, toggleTheme }) {
             {/* Submit Button */}
             <button
               type="submit"
-              className="w-full bg-zinc-900 hover:bg-zinc-800 text-white dark:bg-zinc-100 dark:hover:bg-white dark:text-zinc-950 py-3.5 rounded-2xl font-bold text-base transition-all flex items-center justify-center space-x-2 shadow-sm hover:scale-[1.01] mt-4"
+              disabled={submitting}
+              className="w-full bg-zinc-900 hover:bg-zinc-800 text-white dark:bg-zinc-100 dark:hover:bg-white dark:text-zinc-950 py-3.5 rounded-2xl font-bold text-base transition-all flex items-center justify-center space-x-2 shadow-sm hover:scale-[1.01] mt-4 disabled:opacity-60 disabled:cursor-wait"
             >
-              <span>Kirish</span>
+              <span>{submitting ? 'Tekshirilmoqda…' : 'Kirish'}</span>
               <ArrowRight className="w-4 h-4" />
             </button>
 

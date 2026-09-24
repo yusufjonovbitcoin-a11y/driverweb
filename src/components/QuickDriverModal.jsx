@@ -15,11 +15,11 @@ export default function QuickDriverModal({
   drivers, 
   onConfirm 
 }) {
-  if (!isOpen || !loadData) return null;
-
   const [selectedDriverIds, setSelectedDriverIds] = useState([drivers[0]?.id || 'd1']);
   const [isSelectAll, setIsSelectAll] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+
+  if (!isOpen || !loadData) return null;
 
   const toggleDriver = (id) => {
     if (selectedDriverIds.includes(id)) {

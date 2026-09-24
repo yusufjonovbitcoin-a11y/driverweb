@@ -1,16 +1,42 @@
-# React + Vite
+# ApexHaul Dispatcher Web
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+Dispatcher va kompaniya adminlari uchun React/Vite boshqaruv paneli. Ilova Supabase Auth, RLS, Realtime va nomlangan RPC komandalaridan foydalanadi. Klient operatsion jadvallardagi status ustunlariga to‘g‘ridan-to‘g‘ri yozmaydi.
 
-Currently, two official plugins are available:
+## Lokal ishga tushirish
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+```bash
+npm install
+cp .env.example .env.local
+npx supabase start
+npx supabase functions serve
+npm run dev
+```
 
-## React Compiler
+`.env.local` ichida lokal yoki remote Supabase public qiymatlarini kiriting:
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+```env
+VITE_SUPABASE_URL=http://127.0.0.1:55321
+VITE_SUPABASE_ANON_KEY=<publishable-or-anon-key>
+```
 
-## Expanding the Oxlint configuration
+## Tekshiruv
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and Oxlint's TypeScript related rules in your project.
+```bash
+npm run lint
+npm run build
+npx supabase db lint --local --level warning
+npx supabase test db --local
+```
+
+Supabase yadro va deploy tartibi [supabase/README.md](supabase/README.md) da yozilgan.
+
+## Asosiy oqim
+
+1. Gmail worker broker xabari va faylini saqlaydi.
+2. AI worker ma’lumotlarni ajratadi va warning yaratadi.
+3. Dispatcher loadni tekshiradi va bir yoki bir nechta online driverga offer yuboradi.
+4. Birinchi accept atomik assignment yaratadi; qolgan offerlar superseded bo‘ladi.
+5. Driver bosqichlari, hujjat versiyalari, GPS presence va audit webda Realtime orqali yangilanadi.
+
+Production deploy uchun service-role kalitini brauzerga bermang. Web faqat public publishable/anon key bilan ishlaydi.
+`invite-member` va `create-company` Edge Function’lari service-role kalitini faqat server muhitida ishlatadi.

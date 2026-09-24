@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { 
   X, 
   Sparkles, 
@@ -10,8 +10,6 @@ import {
 } from 'lucide-react';
 
 export default function CreateLoadModal({ isOpen, onClose, drivers, onCreateLoad }) {
-  if (!isOpen) return null;
-
   // Input text or file
   const [brokerText, setBrokerText] = useState("C.H. Robinson #LD-88201: Chicago, IL -> Dallas, TX. Rate: $3,850 (925 mi). 53' Reefer (-18C). 41,200 lbs.");
   const [uploadedFile, setUploadedFile] = useState(null);
@@ -33,8 +31,15 @@ export default function CreateLoadModal({ isOpen, onClose, drivers, onCreateLoad
   const [weightLbs, setWeightLbs] = useState(41200);
 
   // Driver selection
-  const [selectedDriverIds, setSelectedDriverIds] = useState([drivers[0]?.id || 'd1']);
+  const [selectedDriverIds, setSelectedDriverIds] = useState(() => drivers[0]?.id ? [drivers[0].id] : []);
   const [isSelectAll, setIsSelectAll] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  useEffect(() => {
+    if (isOpen && selectedDriverIds.length === 0 && drivers[0]?.id) {
+      setSelectedDriverIds([drivers[0].id]);
+    }
+  }, [drivers, isOpen, selectedDriverIds.length]);
 
   // Quick Samples
   const handleApplySample = (sampleType) => {
@@ -129,7 +134,7 @@ export default function CreateLoadModal({ isOpen, onClose, drivers, onCreateLoad
   const toggleSelectAll = () => {
     if (isSelectAll) {
       setIsSelectAll(false);
-      setSelectedDriverIds([drivers[0]?.id || 'd1']);
+      setSelectedDriverIds(drivers[0]?.id ? [drivers[0].id] : []);
     } else {
       setIsSelectAll(true);
       setSelectedDriverIds(drivers.map(d => d.id));
@@ -147,8 +152,9 @@ export default function CreateLoadModal({ isOpen, onClose, drivers, onCreateLoad
     );
   });
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
+    if (selectedDriverIds.length === 0 || isSubmitting) return;
 
     const [origCity, origState] = origin.split(',').map(s => s?.trim() || '');
     const [dstCity, dstState] = destination.split(',').map(s => s?.trim() || '');
@@ -199,9 +205,15 @@ export default function CreateLoadModal({ isOpen, onClose, drivers, onCreateLoad
       }
     };
 
-    onCreateLoad(newLoad);
-    onClose();
+    setIsSubmitting(true);
+    try {
+      await onCreateLoad(newLoad);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
+
+  if (!isOpen) return null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
@@ -424,13 +436,18 @@ export default function CreateLoadModal({ isOpen, onClose, drivers, onCreateLoad
               </button>
               <button
                 type="submit"
-                className="inline-flex items-center space-x-2 bg-zinc-900 hover:bg-zinc-800 text-white dark:bg-zinc-100 dark:hover:bg-white dark:text-zinc-950 px-5 py-2 rounded-xl font-bold text-sm transition-colors shadow-xs"
+                disabled={selectedDriverIds.length === 0 || isSubmitting}
+                className="inline-flex items-center space-x-2 bg-zinc-900 hover:bg-zinc-800 text-white dark:bg-zinc-100 dark:hover:bg-white dark:text-zinc-950 px-5 py-2 rounded-xl font-bold text-sm transition-colors shadow-xs disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <Send className="w-4 h-4" />
                 <span>
-                  {selectedDriverIds.length > 1
+                  {isSubmitting
+                    ? 'Yuborilmoqda…'
+                    : selectedDriverIds.length > 1
                     ? `${selectedDriverIds.length} drayverga yuborish`
-                    : 'Haydovchiga yuborish'}
+                    : selectedDriverIds.length === 1
+                      ? 'Haydovchiga yuborish'
+                      : 'Online haydovchi yo‘q'}
                 </span>
               </button>
             </div>

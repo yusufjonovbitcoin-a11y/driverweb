@@ -17,7 +17,6 @@ const STAGES = [
 export default function KanbanBoard({ 
   loads, 
   drivers, 
-  onAdvanceStatus, 
   onOpenDocs, 
   onDropOnOffer
 }) {
@@ -231,28 +230,19 @@ export default function KanbanBoard({
 
                               {/* Single Action Button */}
                               {col.id === 'OFFER' && (
-                                <button
-                                  onClick={() => onAdvanceStatus(load.id, 'ASSIGNED')}
-                                  className="text-xs text-zinc-800 dark:text-zinc-200 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 px-2.5 py-1 rounded-lg font-bold transition-colors whitespace-nowrap"
-                                >
-                                  Qabul
-                                </button>
+                                <span className="text-xs text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/40 px-2.5 py-1 rounded-lg font-bold whitespace-nowrap">
+                                  Javob kutilmoqda
+                                </span>
                               )}
                               {col.id === 'ASSIGNED' && (
-                                <button
-                                  onClick={() => onAdvanceStatus(load.id, 'IN_TRANSIT')}
-                                  className="text-xs text-zinc-800 dark:text-zinc-200 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 px-2.5 py-1 rounded-lg font-bold transition-colors whitespace-nowrap"
-                                >
-                                  Ortildi
-                                </button>
+                                <span className="text-xs text-blue-700 dark:text-blue-300 bg-blue-50 dark:bg-blue-950/40 px-2.5 py-1 rounded-lg font-bold whitespace-nowrap">
+                                  Qabul qilindi
+                                </span>
                               )}
                               {col.id === 'IN_TRANSIT' && (
-                                <button
-                                  onClick={() => onAdvanceStatus(load.id, 'DELIVERED')}
-                                  className="text-xs text-zinc-800 dark:text-zinc-200 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 px-2.5 py-1 rounded-lg font-bold transition-colors whitespace-nowrap"
-                                >
-                                  Yetkazildi
-                                </button>
+                                <span className="text-xs text-purple-700 dark:text-purple-300 bg-purple-50 dark:bg-purple-950/40 px-2.5 py-1 rounded-lg font-bold whitespace-nowrap">
+                                  Driver yo‘lda
+                                </span>
                               )}
                               {col.id === 'DELIVERED' && (
                                 <button
