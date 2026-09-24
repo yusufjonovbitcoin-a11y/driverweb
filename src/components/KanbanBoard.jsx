@@ -3,7 +3,8 @@ import {
   Columns3,
   Table as TableIcon,
   Sparkles,
-  UploadCloud
+  UploadCloud,
+  TriangleAlert
 } from 'lucide-react';
 
 const STAGES = [
@@ -218,6 +219,20 @@ export default function KanbanBoard({
                               <span className="truncate mr-1">{load.broker}</span>
                               <span className="whitespace-nowrap font-mono">{load.equipment} • {load.distanceMiles}mi</span>
                             </div>
+
+                            {(load.warnings?.length > 0 || load.requiresReconfirmation) && (
+                              <div
+                                className="flex items-start gap-1.5 rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-2 text-[11px] font-semibold text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-300"
+                                title={(load.warnings || []).map((warning) => warning.message || warning.field).filter(Boolean).join('\n')}
+                              >
+                                <TriangleAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                                <span>
+                                  {load.requiresReconfirmation
+                                    ? 'Driver yangilangan shartlarni tasdiqlashi kerak'
+                                    : `${load.warnings.length} ta AI ogohlantirishi`}
+                                </span>
+                              </div>
+                            )}
 
                             {/* Bottom Row: Driver & Action */}
                             <div className="pt-2 border-t border-zinc-100 dark:border-zinc-800/80 flex items-center justify-between">

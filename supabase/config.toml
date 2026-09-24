@@ -48,3 +48,6 @@ verify_jwt = true
 
 [functions.parse-load-document]
 verify_jwt = true
+
+[functions.check-load-document]
+verify_jwt = true

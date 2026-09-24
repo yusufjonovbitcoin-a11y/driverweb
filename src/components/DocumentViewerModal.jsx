@@ -1,10 +1,12 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import { 
   X, 
   FileText, 
   Printer, 
   ZoomIn, 
-  ShieldCheck
+  ShieldCheck,
+  TriangleAlert,
+  LoaderCircle,
 } from 'lucide-react';
 
 export default function DocumentViewerModal({ 
@@ -14,16 +16,10 @@ export default function DocumentViewerModal({
   onApproveAndInvoice 
 }) {
   const [activeDocTab, setActiveDocTab] = useState('rateCon');
-  const [isApproved, setIsApproved] = useState(false);
-
-  useEffect(() => {
-    if (isOpen && load) {
-      setActiveDocTab('rateCon');
-      setIsApproved(load.status === 'COMPLETED');
-    }
-  }, [isOpen, load]);
+  const [approvedLoadId, setApprovedLoadId] = useState(null);
 
   if (!isOpen || !load) return null;
+  const isApproved = approvedLoadId === load.id || load.status === 'COMPLETED';
 
   const docs = [
     {
@@ -31,6 +27,8 @@ export default function DocumentViewerModal({
       title: 'Broker Rate Con',
       available: !!load.documents?.rateCon,
       url: load.documents?.rateCon,
+      mimeType: load.documentMeta?.rateCon?.mimeType,
+      review: load.documentChecks?.rateCon,
       type: 'Shartnoma & Stavka'
     },
     {
@@ -38,6 +36,8 @@ export default function DocumentViewerModal({
       title: 'Shipper BOL',
       available: !!load.documents?.shipperBol,
       url: load.documents?.shipperBol,
+      mimeType: load.documentMeta?.shipperBol?.mimeType,
+      review: load.documentChecks?.shipperBol,
       type: 'Bill of Lading'
     },
     {
@@ -45,6 +45,8 @@ export default function DocumentViewerModal({
       title: 'Receiver POD',
       available: !!load.documents?.receiverPod,
       url: load.documents?.receiverPod,
+      mimeType: load.documentMeta?.receiverPod?.mimeType,
+      review: load.documentChecks?.receiverPod,
       type: 'Proof of Delivery'
     }
   ];
@@ -52,8 +54,13 @@ export default function DocumentViewerModal({
   const currentDoc = docs.find(d => d.id === activeDocTab) || docs[0];
 
   const handleInvoiceClick = () => {
-    setIsApproved(true);
+    setApprovedLoadId(load.id);
     onApproveAndInvoice(load.id);
+  };
+
+  const handleClose = () => {
+    setActiveDocTab('rateCon');
+    onClose();
   };
 
   return (
@@ -75,7 +82,7 @@ export default function DocumentViewerModal({
           </div>
 
           <button
-            onClick={onClose}
+            onClick={handleClose}
             className="p-2 rounded-md text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
           >
             <X className="w-5 h-5" />
@@ -112,12 +119,20 @@ export default function DocumentViewerModal({
           <div className="lg:col-span-2 space-y-3">
             <div className="bg-zinc-100/70 dark:bg-zinc-900/60 border border-zinc-200 dark:border-zinc-800 rounded-xl min-h-[440px] flex items-center justify-center p-3 relative">
               {currentDoc.available && currentDoc.url ? (
-                <div className="relative group max-w-full flex items-center justify-center">
-                  <img
-                    src={currentDoc.url}
-                    alt={currentDoc.title}
-                    className="max-h-[420px] w-auto object-contain rounded-lg border border-zinc-200 dark:border-zinc-800 shadow-md"
-                  />
+                <div className="relative group h-full w-full max-w-full flex items-center justify-center">
+                  {currentDoc.mimeType === 'application/pdf' ? (
+                    <iframe
+                      src={currentDoc.url}
+                      title={currentDoc.title}
+                      className="h-[420px] w-full rounded-lg border border-zinc-200 bg-white dark:border-zinc-800"
+                    />
+                  ) : (
+                    <img
+                      src={currentDoc.url}
+                      alt={currentDoc.title}
+                      className="max-h-[420px] w-auto object-contain rounded-lg border border-zinc-200 dark:border-zinc-800 shadow-md"
+                    />
+                  )}
                   <a
                     href={currentDoc.url}
                     target="_blank"
@@ -138,6 +153,30 @@ export default function DocumentViewerModal({
                 </div>
               )}
             </div>
+
+            {currentDoc.available && ['queued', 'checking'].includes(currentDoc.review?.check_status) && (
+              <div className="flex items-center gap-2 rounded-xl border border-blue-200 bg-blue-50 px-3.5 py-3 text-xs font-semibold text-blue-800 dark:border-blue-900/60 dark:bg-blue-950/30 dark:text-blue-300">
+                <LoaderCircle className="h-4 w-4 animate-spin" />
+                AI hujjatni tekshirmoqda
+              </div>
+            )}
+            {currentDoc.available && ['warning', 'failed_to_read'].includes(currentDoc.review?.check_status) && (
+              <div className="rounded-xl border border-amber-200 bg-amber-50 px-3.5 py-3 text-xs text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200">
+                <div className="flex items-center gap-2 font-bold">
+                  <TriangleAlert className="h-4 w-4" /> AI ogohlantirishi
+                </div>
+                <ul className="mt-2 list-disc space-y-1 pl-5">
+                  {(currentDoc.review.active_warnings || []).map((warning) => (
+                    <li key={warning.id || warning.code}>{warning.message}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {currentDoc.available && currentDoc.review?.check_status === 'passed' && (
+              <div className="flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-3.5 py-3 text-xs font-semibold text-emerald-800 dark:border-emerald-900/60 dark:bg-emerald-950/30 dark:text-emerald-300">
+                <ShieldCheck className="h-4 w-4" /> AI tekshiruvidan o‘tdi
+              </div>
+            )}
 
             <div className="flex items-center justify-between text-zinc-500 text-xs pt-1">
               <span className="flex items-center space-x-1.5">

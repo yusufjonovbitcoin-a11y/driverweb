@@ -33,20 +33,34 @@ function splitAppointment(value) {
   };
 }
 
-function toUiLoad(row, offersByLoad, documentsByLoad) {
+function toUiLoad(row, offersByLoad, documentsByLoad, warningsByLoad, reviewsByDocument) {
   const pickup = splitAppointment(row.pickup_from);
   const delivery = splitAppointment(row.delivery_from);
   const offers = offersByLoad.get(row.id) || [];
   const documents = documentsByLoad.get(row.id) || [];
-  const docUrl = (type) => documents.find((document) => document.document_type === type)?.signedUrl || null;
+  const docOfType = (type) => documents.find((document) => document.document_type === type);
+  const docUrl = (type) => docOfType(type)?.signedUrl || null;
+  const docReview = (type) => {
+    const document = docOfType(type);
+    return document ? reviewsByDocument.get(document.id) || null : null;
+  };
+  const offerWarnings = offers.flatMap((offer) => (
+    Array.isArray(offer.compatibility_warnings) ? offer.compatibility_warnings : []
+  ));
+  const activeWarnings = [
+    ...offerWarnings,
+    ...(warningsByLoad.get(row.id) || []),
+  ];
   return {
     id: row.id,
     loadNumber: row.load_number?.startsWith('#') ? row.load_number : `#${row.load_number}`,
     status: STATUS_TO_UI[row.status] || 'OFFER',
     databaseStatus: row.status,
     broker: row.broker_name || 'Broker ko\'rsatilmagan',
-    brokerContact: '',
-    brokerPhone: '',
+    brokerContact: row.broker_contact_name || '',
+    brokerPhone: row.broker_phone || '',
+    brokerEmail: row.broker_email || '',
+    brokerFax: row.broker_fax || '',
     rate: Number(row.broker_rate || 0),
     distanceMiles: Number(row.loaded_miles || 0),
     ratePerMile: Number(row.loaded_rpm || 0),
@@ -56,6 +70,10 @@ function toUiLoad(row, offersByLoad, documentsByLoad) {
       facility: row.pickup_facility || 'Pickup',
       address: row.pickup_address || [row.pickup_city, row.pickup_region].filter(Boolean).join(', '),
       ...pickup,
+      postalCode: row.pickup_postal_code || '',
+      timezone: row.pickup_timezone || '',
+      contactName: row.pickup_contact_name || '',
+      contactPhone: row.pickup_contact_phone || '',
       lat: row.pickup_latitude == null ? null : Number(row.pickup_latitude),
       lng: row.pickup_longitude == null ? null : Number(row.pickup_longitude),
     },
@@ -65,14 +83,24 @@ function toUiLoad(row, offersByLoad, documentsByLoad) {
       facility: row.delivery_facility || 'Delivery',
       address: row.delivery_address || [row.delivery_city, row.delivery_region].filter(Boolean).join(', '),
       ...delivery,
+      postalCode: row.delivery_postal_code || '',
+      timezone: row.delivery_timezone || '',
+      contactName: row.delivery_contact_name || '',
+      contactPhone: row.delivery_contact_phone || '',
       lat: row.delivery_latitude == null ? null : Number(row.delivery_latitude),
       lng: row.delivery_longitude == null ? null : Number(row.delivery_longitude),
     },
     commodity: row.cargo_description || 'Yuk tavsifi kiritilmagan',
     weightLbs: row.weight_lbs,
     equipment: row.equipment_type || '—',
-    temperature: null,
-    pallets: null,
+    freightMode: row.freight_mode || '',
+    temperature: row.temperature_fahrenheit == null ? null : Number(row.temperature_fahrenheit),
+    pallets: row.pallet_count,
+    cases: row.case_count,
+    isHazmat: row.is_hazmat,
+    specialInstructions: row.special_instructions || '',
+    requirements: Array.isArray(row.load_requirements) ? row.load_requirements : [],
+    warnings: activeWarnings,
     driverId: row.driver_id,
     targetDriverIds: offers.map((offer) => offer.driver_id),
     dispatchedAt: row.updated_at ? new Date(row.updated_at).toLocaleString('uz-UZ') : '',
@@ -80,6 +108,16 @@ function toUiLoad(row, offersByLoad, documentsByLoad) {
       rateCon: docUrl('rate_confirmation'),
       shipperBol: docUrl('bol'),
       receiverPod: docUrl('pod'),
+    },
+    documentMeta: {
+      rateCon: docOfType('rate_confirmation') || null,
+      shipperBol: docOfType('bol') || null,
+      receiverPod: docOfType('pod') || null,
+    },
+    documentChecks: {
+      rateCon: docReview('rate_confirmation'),
+      shipperBol: docReview('bol'),
+      receiverPod: docReview('pod'),
     },
     version: row.version,
     requiresReconfirmation: Boolean(row.requires_reconfirmation),
@@ -124,25 +162,48 @@ async function signedDocumentUrls(client, documents) {
     if (!document.current_version_id) return document;
     const { data: version } = await client
       .from('document_versions')
-      .select('storage_path')
+      .select('storage_path,mime_type,file_name')
       .eq('id', document.current_version_id)
       .maybeSingle();
     if (!version?.storage_path) return document;
     const { data } = await client.storage.from('load-documents').createSignedUrl(version.storage_path, 3600);
-    return { ...document, signedUrl: data?.signedUrl || null };
+    return {
+      ...document,
+      signedUrl: data?.signedUrl || null,
+      mimeType: version.mime_type || null,
+      fileName: version.file_name || null,
+    };
   }));
 }
 
 export async function fetchWorkspace() {
   const client = requireSupabase();
-  const [loadsResult, offersResult, documentsResult, driversResult, presenceResult] = await Promise.all([
+  const [
+    loadsResult,
+    offersResult,
+    documentsResult,
+    driversResult,
+    presenceResult,
+    warningsResult,
+    reviewsResult,
+  ] = await Promise.all([
     client.from('load_overview').select('*').order('updated_at', { ascending: false }),
-    client.from('offers').select('id,load_id,driver_id,status').order('created_at', { ascending: false }),
+    client.from('offers').select('id,load_id,driver_id,status,compatibility_warnings').order('created_at', { ascending: false }),
     client.from('documents').select('id,load_id,document_type,current_version_id'),
     client.from('member_directory').select('*').eq('role', 'driver').order('full_name'),
     client.from('driver_presence').select('*'),
+    client.from('warnings').select('id,load_id,code,message').eq('is_active', true).order('created_at'),
+    client.from('document_review_overview').select('*'),
   ]);
-  for (const result of [loadsResult, offersResult, documentsResult, driversResult, presenceResult]) {
+  for (const result of [
+    loadsResult,
+    offersResult,
+    documentsResult,
+    driversResult,
+    presenceResult,
+    warningsResult,
+    reviewsResult,
+  ]) {
     if (result.error) throw result.error;
   }
   const documents = await signedDocumentUrls(client, documentsResult.data || []);
@@ -158,8 +219,19 @@ export async function fetchWorkspace() {
     current.push(document);
     documentsByLoad.set(document.load_id, current);
   }
+  const warningsByLoad = new Map();
+  for (const warning of warningsResult.data || []) {
+    const current = warningsByLoad.get(warning.load_id) || [];
+    current.push(warning);
+    warningsByLoad.set(warning.load_id, current);
+  }
+  const reviewsByDocument = new Map(
+    (reviewsResult.data || []).map((review) => [review.document_id, review]),
+  );
   return {
-    loads: (loadsResult.data || []).map((row) => toUiLoad(row, offersByLoad, documentsByLoad)),
+    loads: (loadsResult.data || []).map((row) => (
+      toUiLoad(row, offersByLoad, documentsByLoad, warningsByLoad, reviewsByDocument)
+    )),
     drivers: (driversResult.data || []).map((member) => (
       toUiDriver(member, (presenceResult.data || []).find((item) => item.driver_id === member.id))
     )),
@@ -308,6 +380,8 @@ export function subscribeWorkspace(onChange) {
     .on('postgres_changes', { event: '*', schema: 'public', table: 'loads' }, onChange)
     .on('postgres_changes', { event: '*', schema: 'public', table: 'offers' }, onChange)
     .on('postgres_changes', { event: '*', schema: 'public', table: 'assignments' }, onChange)
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'document_checks' }, onChange)
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'warnings' }, onChange)
     .on('postgres_changes', { event: '*', schema: 'public', table: 'driver_presence' }, onChange)
     .subscribe();
   return () => client.removeChannel(channel);

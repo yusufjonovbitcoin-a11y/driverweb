@@ -13,10 +13,12 @@ const FIELD_LABELS = {
   'broker.contactName': 'broker kontakt shaxsi',
   'broker.phone': 'broker telefoni',
   'pickup.appointmentFrom': 'pickup vaqti',
+  'pickup.appointment': 'pickup vaqti',
   'pickup.appointmentTo': 'pickup vaqt oralig‘i',
   'pickup.contactName': 'pickup kontakt shaxsi',
   'pickup.contactPhone': 'pickup telefoni',
   'delivery.appointmentFrom': 'delivery vaqti',
+  'delivery.appointment': 'delivery vaqti',
   'delivery.appointmentTo': 'delivery vaqt oralig‘i',
   'delivery.contactName': 'delivery kontakt shaxsi',
   'delivery.contactPhone': 'delivery telefoni',
@@ -130,6 +132,19 @@ export default function QuickDriverModal({
                 <span className="truncate max-w-[140px]">{loadData.fileName || 'Surat biriktirildi'}</span>
               </span>
             </div>
+            <div className="flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-zinc-500 dark:text-zinc-400">
+              {loadData.temperatureFahrenheit != null && (
+                <span>{loadData.temperatureFahrenheit}°F</span>
+              )}
+              {loadData.palletCount != null && <span>{loadData.palletCount} pallet</span>}
+              {loadData.freightMode && <span>{loadData.freightMode}</span>}
+              {loadData.isHazmat === false && <span>Non-hazmat</span>}
+            </div>
+            {loadData.requirements?.length > 0 && (
+              <div className="text-[11px] leading-relaxed text-zinc-600 dark:text-zinc-300">
+                <span className="font-bold">Talablar:</span> {loadData.requirements.join(' • ')}
+              </div>
+            )}
           </div>
 
           {missingFields.length > 0 && (
