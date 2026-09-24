@@ -20,6 +20,7 @@ import {
   createAndOfferLoad,
   prepareLoadFromDocument,
   reassignLoad,
+  deleteUnassignedLoad,
   sendOffersForLoad,
   fetchWorkspace,
   createMember,
@@ -159,6 +160,22 @@ export default function App() {
       showToast(error.message || 'AI hujjatni tahlil qila olmadi.');
     } finally {
       setAiProcessing(false);
+      setWorkspaceLoading(false);
+    }
+  };
+
+  const handleDeleteLoad = async (load) => {
+    setWorkspaceLoading(true);
+    try {
+      await deleteUnassignedLoad(load.id);
+      setAiPreparedLoad((current) => current?.id === load.id ? null : current);
+      setSelectedLoadForDocs((current) => current?.id === load.id ? null : current);
+      await refreshWorkspace({ quiet: true });
+      showToast(`${load.loadNumber} yuk o‘chirildi.`);
+    } catch (error) {
+      showToast(error.message || 'Yukni o‘chirib bo‘lmadi.');
+      throw error;
+    } finally {
       setWorkspaceLoading(false);
     }
   };
@@ -303,6 +320,7 @@ export default function App() {
               drivers={drivers}
               onAdvanceStatus={() => showToast('Load statusini driver mobil ilovadan o‘zgartiradi.')}
               onOpenDocs={setSelectedLoadForDocs}
+              onDeleteLoad={handleDeleteLoad}
               onDropOnOffer={handleAiDocument}
               isAiProcessing={aiProcessing}
             />

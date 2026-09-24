@@ -447,6 +447,27 @@ export async function reassignLoad(loadId, driverId) {
   return data;
 }
 
+export async function deleteUnassignedLoad(loadId) {
+  if (!loadId) throw new Error('O‘chirish uchun yuk topilmadi.');
+  const client = requireSupabase();
+  const { data, error } = await client.rpc('delete_unassigned_load', {
+    target_load_id: loadId,
+  });
+  if (error) {
+    if (error.message?.includes('Only an unassigned load can be deleted')) {
+      throw new Error('Faqat driver qabul qilmagan yukni o‘chirish mumkin.');
+    }
+    if (error.message?.includes('Load not found')) {
+      throw new Error('Yuk topilmadi yoki uni o‘chirishga ruxsat yo‘q.');
+    }
+    if (error.message?.includes('Only a company admin or dispatcher')) {
+      throw new Error('Yukni faqat admin yoki dispatcher o‘chira oladi.');
+    }
+    throw error;
+  }
+  return data;
+}
+
 export function subscribeWorkspace(onChange) {
   const client = requireSupabase();
   const channel = client

@@ -4,7 +4,9 @@ import {
   Table as TableIcon,
   Sparkles,
   UploadCloud,
-  TriangleAlert
+  TriangleAlert,
+  Trash2,
+  LoaderCircle,
 } from 'lucide-react';
 
 const STAGES = [
@@ -19,13 +21,33 @@ export default function KanbanBoard({
   loads, 
   drivers, 
   onOpenDocs, 
+  onDeleteLoad,
   onDropOnOffer,
   isAiProcessing = false,
 }) {
   const [viewMode, setViewMode] = useState('table');
   const [isDraggingOverOffer, setIsDraggingOverOffer] = useState(false);
+  const [loadPendingDelete, setLoadPendingDelete] = useState(null);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   const getDriver = (driverId) => drivers.find(d => d.id === driverId);
+  const canDeleteLoad = (load) => (
+    ['draft', 'review', 'ready_for_offer', 'offered'].includes(load.databaseStatus)
+    && !load.currentAssignmentId
+  );
+
+  const confirmDelete = async () => {
+    if (!loadPendingDelete || !onDeleteLoad || isDeleting) return;
+    setIsDeleting(true);
+    try {
+      await onDeleteLoad(loadPendingDelete);
+      setLoadPendingDelete(null);
+    } catch {
+      // The parent shows the server error and the dialog stays open for retry.
+    } finally {
+      setIsDeleting(false);
+    }
+  };
 
   return (
     <div className="space-y-4">
@@ -200,13 +222,26 @@ export default function KanbanBoard({
                             className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 hover:border-zinc-300 dark:hover:border-zinc-700 rounded-2xl p-3.5 space-y-2.5 transition-colors shadow-xs"
                           >
                             {/* Top Row: Load ID & Rate (No line wraps!) */}
-                            <div className="flex items-baseline justify-between">
+                            <div className="flex items-center justify-between gap-2">
                               <span className="font-mono font-bold text-sm text-zinc-500 whitespace-nowrap">
                                 {load.loadNumber}
                               </span>
-                              <span className="font-mono font-extrabold text-base text-zinc-900 dark:text-zinc-100 whitespace-nowrap">
-                                ${load.rate?.toLocaleString()}
-                              </span>
+                              <div className="flex items-center gap-1.5">
+                                <span className="font-mono font-extrabold text-base text-zinc-900 dark:text-zinc-100 whitespace-nowrap">
+                                  ${load.rate?.toLocaleString()}
+                                </span>
+                                {canDeleteLoad(load) && (
+                                  <button
+                                    type="button"
+                                    onClick={() => setLoadPendingDelete(load)}
+                                    className="inline-flex h-7 w-7 items-center justify-center rounded-lg text-zinc-400 transition-colors hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-950/40 dark:hover:text-red-400"
+                                    aria-label={`${load.loadNumber} yukini o‘chirish`}
+                                    title="Yukni o‘chirish"
+                                  >
+                                    <Trash2 className="h-3.5 w-3.5" />
+                                  </button>
+                                )}
+                              </div>
                             </div>
 
                             {/* Route: Clear & Bold (No truncated dots!) */}
@@ -409,12 +444,25 @@ export default function KanbanBoard({
                       ${load.rate?.toLocaleString()}
                     </td>
                     <td className="py-3 px-3 text-right">
-                      <button
-                        onClick={() => onOpenDocs(load)}
-                        className="text-sm font-bold text-zinc-700 dark:text-zinc-300 hover:text-zinc-900 dark:hover:text-zinc-100 px-3.5 py-1.5 bg-zinc-100 dark:bg-zinc-800 rounded-lg hover:bg-zinc-200 transition-colors"
-                      >
-                        Hujjatlar
-                      </button>
+                      <div className="flex items-center justify-end gap-2">
+                        <button
+                          onClick={() => onOpenDocs(load)}
+                          className="text-sm font-bold text-zinc-700 dark:text-zinc-300 hover:text-zinc-900 dark:hover:text-zinc-100 px-3.5 py-1.5 bg-zinc-100 dark:bg-zinc-800 rounded-lg hover:bg-zinc-200 transition-colors"
+                        >
+                          Hujjatlar
+                        </button>
+                        {canDeleteLoad(load) && (
+                          <button
+                            type="button"
+                            onClick={() => setLoadPendingDelete(load)}
+                            className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-zinc-400 transition-colors hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-950/40 dark:hover:text-red-400"
+                            aria-label={`${load.loadNumber} yukini o‘chirish`}
+                            title="Yukni o‘chirish"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 );
@@ -422,6 +470,46 @@ export default function KanbanBoard({
             </tbody>
           </table>
         </div>
+        </div>
+      )}
+
+      {loadPendingDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4 backdrop-blur-sm">
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="delete-load-title"
+            className="w-full max-w-md rounded-2xl border border-zinc-200 bg-white p-6 shadow-2xl dark:border-zinc-800 dark:bg-zinc-900"
+          >
+            <div className="mb-4 flex h-11 w-11 items-center justify-center rounded-xl bg-red-50 text-red-600 dark:bg-red-950/40 dark:text-red-400">
+              <Trash2 className="h-5 w-5" />
+            </div>
+            <h2 id="delete-load-title" className="text-lg font-extrabold text-zinc-950 dark:text-white">
+              {loadPendingDelete.loadNumber} yukini o‘chirish
+            </h2>
+            <p className="mt-2 text-sm leading-6 text-zinc-600 dark:text-zinc-300">
+              Yuk va unga yuborilgan takliflar o‘chadi. Original yuklangan fayl va audit tarixi saqlanadi.
+            </p>
+            <div className="mt-6 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setLoadPendingDelete(null)}
+                disabled={isDeleting}
+                className="rounded-xl px-4 py-2.5 text-sm font-bold text-zinc-700 transition-colors hover:bg-zinc-100 disabled:opacity-50 dark:text-zinc-200 dark:hover:bg-zinc-800"
+              >
+                Bekor qilish
+              </button>
+              <button
+                type="button"
+                onClick={confirmDelete}
+                disabled={isDeleting}
+                className="inline-flex min-w-36 items-center justify-center gap-2 rounded-xl bg-red-600 px-4 py-2.5 text-sm font-bold text-white transition-colors hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {isDeleting && <LoaderCircle className="h-4 w-4 animate-spin" />}
+                <span>{isDeleting ? 'O‘chirilmoqda...' : 'Yukni o‘chirish'}</span>
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>
