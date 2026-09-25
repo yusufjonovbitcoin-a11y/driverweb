@@ -106,7 +106,7 @@ export async function fetchUnreadChatCount() {
   return Number(assertNoError(result) || 0);
 }
 
-export function subscribeChat({ conversationId, onMessage, onMessageUpdated, onCall, onSignal }) {
+export function subscribeChat({ conversationId, onMessage, onMessageUpdated }) {
   const client = requireSupabase();
   const channel = client
     .channel(`chat:${conversationId}:${crypto.randomUUID()}`)
@@ -116,14 +116,34 @@ export function subscribeChat({ conversationId, onMessage, onMessageUpdated, onC
     .on('postgres_changes', {
       event: 'UPDATE', schema: 'public', table: 'chat_messages', filter: `conversation_id=eq.${conversationId}`,
     }, async ({ new: message }) => onMessageUpdated?.(message.deleted_at ? message : await withMediaUrl(client, message)))
+    .subscribe();
+  return () => client.removeChannel(channel);
+}
+
+export function subscribeCalls({ onCall, onSignal }) {
+  const client = requireSupabase();
+  const channel = client
+    .channel(`chat-calls:${crypto.randomUUID()}`)
     .on('postgres_changes', {
-      event: '*', schema: 'public', table: 'chat_calls', filter: `conversation_id=eq.${conversationId}`,
+      event: '*', schema: 'public', table: 'chat_calls',
     }, ({ new: call }) => onCall?.(call))
     .on('postgres_changes', {
       event: 'INSERT', schema: 'public', table: 'chat_call_signals',
     }, ({ new: signal }) => onSignal?.(signal))
     .subscribe();
   return () => client.removeChannel(channel);
+}
+
+export async function fetchRingingCalls() {
+  const client = requireSupabase();
+  const { data, error } = await client
+    .from('chat_calls')
+    .select('*')
+    .eq('status', 'ringing')
+    .order('started_at', { ascending: false })
+    .limit(10);
+  if (error) throw error;
+  return data || [];
 }
 
 export function subscribeUnreadChats(onChange) {

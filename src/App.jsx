@@ -337,13 +337,12 @@ export default function App() {
           {activeTab === 'docs' && <DocumentsView loads={loads} drivers={drivers} onOpenDocs={setSelectedLoadForDocs} />}
           {activeTab === 'inbox' && <BrokerInbox onCreateLoad={() => setIsCreateModalOpen(true)} />}
           {activeTab === 'analytics' && <AnalyticsOverview loads={loads} />}
-          {activeTab === 'chat' && (
-            <DispatchChat
-              drivers={drivers}
-              currentUser={currentUser}
-              onUnreadChange={refreshUnreadChats}
-            />
-          )}
+          <DispatchChat
+            drivers={drivers}
+            currentUser={currentUser}
+            isVisible={activeTab === 'chat'}
+            onUnreadChange={refreshUnreadChats}
+          />
           {activeTab === 'profile' && (
             currentUser.roleCode === 'super_admin' ? <PlatformAdminPanel onLogout={logout} /> : (
               <ProfileView

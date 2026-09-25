@@ -1,11 +1,11 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   CheckCheck, Download, FileText, LoaderCircle, Mic, Paperclip,
   Phone, PhoneOff, Send, Square, Trash2, Video,
 } from 'lucide-react';
 import {
-  deleteChatMessage, fetchCallSignals, fetchChatMessages, markChatRead, openChat, publishSignal,
-  respondCall, sendMediaMessage, sendTextMessage, startCall, subscribeChat,
+  deleteChatMessage, fetchCallSignals, fetchChatMessages, fetchRingingCalls, markChatRead, openChat,
+  publishSignal, respondCall, sendMediaMessage, sendTextMessage, startCall, subscribeCalls, subscribeChat,
 } from '../services/chatService';
 
 const terminalCallStates = new Set(['declined', 'missed', 'ended']);
@@ -39,7 +39,7 @@ function MediaMessage({ message }) {
   );
 }
 
-export default function DispatchChat({ drivers, activeChatDriver, currentUser, onUnreadChange }) {
+export default function DispatchChat({ drivers, activeChatDriver, currentUser, isVisible = true, onUnreadChange }) {
   const [selectedDriver, setSelectedDriver] = useState(activeChatDriver || drivers[0] || null);
   const [conversationId, setConversationId] = useState(null);
   const [messages, setMessages] = useState([]);
@@ -63,6 +63,13 @@ export default function DispatchChat({ drivers, activeChatDriver, currentUser, o
   const handledSignalsRef = useRef(new Set());
   const localVideoRef = useRef(null);
   const remoteVideoRef = useRef(null);
+
+  const callDriver = useMemo(() => {
+    const call = incomingCall || activeCall;
+    if (!call) return selectedDriver;
+    const peerId = call.initiator_id === currentUser.id ? call.recipient_id : call.initiator_id;
+    return drivers.find((driver) => driver.id === peerId) || selectedDriver;
+  }, [activeCall, currentUser.id, drivers, incomingCall, selectedDriver]);
 
   useEffect(() => {
     if (!selectedDriver && drivers.length) setSelectedDriver(drivers[0]);
@@ -159,13 +166,35 @@ export default function DispatchChat({ drivers, activeChatDriver, currentUser, o
       return;
     }
     if (call.recipient_id === currentUser.id && call.status === 'ringing' && !activeCallRef.current) {
+      const caller = drivers.find((driver) => driver.id === call.initiator_id);
+      if (caller) setSelectedDriver(caller);
       setIncomingCall(call);
     }
     if (activeCallRef.current?.id === call.id) {
       activeCallRef.current = call;
       setActiveCall(call);
     }
-  }, [cleanupCall, currentUser.id]);
+  }, [cleanupCall, currentUser.id, drivers]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const unsubscribe = subscribeCalls({
+      onCall: processCall,
+      onSignal: (signal) => handleSignal(signal).catch((signalError) => setError(signalError.message)),
+    });
+    fetchRingingCalls()
+      .then((calls) => {
+        if (cancelled) return;
+        calls.forEach(processCall);
+      })
+      .catch((callError) => {
+        if (!cancelled) setError(callError.message || 'Qo‘ng‘iroqlarni tekshirib bo‘lmadi.');
+      });
+    return () => {
+      cancelled = true;
+      unsubscribe();
+    };
+  }, [handleSignal, processCall]);
 
   useEffect(() => {
     let cancelled = false;
@@ -183,13 +212,19 @@ export default function DispatchChat({ drivers, activeChatDriver, currentUser, o
         const rows = await fetchChatMessages(id);
         if (cancelled) return;
         setMessages(rows);
-        await markChatRead(id);
-        onUnreadChange?.();
+        if (isVisible) {
+          await markChatRead(id);
+          onUnreadChange?.();
+        }
         unsubscribe = subscribeChat({
           conversationId: id,
           onMessage: (message) => {
             setMessages((previous) => previous.some((item) => item.id === message.id) ? previous : [...previous, message]);
-            if (message.sender_id !== currentUser.id) markChatRead(id).then(() => onUnreadChange?.()).catch(() => {});
+            if (isVisible && message.sender_id !== currentUser.id) {
+              markChatRead(id).then(() => onUnreadChange?.()).catch(() => {});
+            } else {
+              onUnreadChange?.();
+            }
           },
           onMessageUpdated: (message) => {
             setMessages((previous) => message.deleted_at
@@ -197,8 +232,6 @@ export default function DispatchChat({ drivers, activeChatDriver, currentUser, o
               : previous.map((item) => item.id === message.id ? { ...item, ...message } : item));
             onUnreadChange?.();
           },
-          onCall: processCall,
-          onSignal: (signal) => handleSignal(signal).catch((signalError) => setError(signalError.message)),
         });
       } catch (loadError) {
         if (!cancelled) setError(loadError.message || 'Chatni ochib bo‘lmadi.');
@@ -207,7 +240,7 @@ export default function DispatchChat({ drivers, activeChatDriver, currentUser, o
       }
     })();
     return () => { cancelled = true; unsubscribe(); };
-  }, [selectedDriver?.id, currentUser.id, handleSignal, processCall, onUnreadChange]);
+  }, [selectedDriver?.id, currentUser.id, isVisible, onUnreadChange]);
 
   useEffect(() => () => {
     const call = activeCallRef.current;
@@ -333,7 +366,8 @@ export default function DispatchChat({ drivers, activeChatDriver, currentUser, o
   }
 
   return (
-    <div className="relative grid grid-cols-1 md:grid-cols-[320px_1fr] h-[calc(100vh-8rem)] min-h-[620px] bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-2xl overflow-hidden shadow-sm">
+    <Fragment>
+    <div className={`${isVisible ? 'grid' : 'hidden'} relative grid-cols-1 md:grid-cols-[320px_1fr] h-[calc(100vh-8rem)] min-h-[620px] bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-2xl overflow-hidden shadow-sm`}>
       <aside className="hidden md:flex border-r border-zinc-200 dark:border-zinc-800 bg-zinc-50/70 dark:bg-zinc-950 flex-col">
         <div className="p-4 border-b border-zinc-200 dark:border-zinc-800">
           <h2 className="font-black text-zinc-950 dark:text-white">Chatlar</h2>
@@ -418,11 +452,13 @@ export default function DispatchChat({ drivers, activeChatDriver, currentUser, o
         </form>
       </section>
 
+    </div>
+
       {incomingCall && (
-        <div className="absolute inset-0 z-50 bg-zinc-950/80 backdrop-blur flex items-center justify-center p-6">
+        <div className="fixed inset-0 z-[100] bg-zinc-950/80 backdrop-blur flex items-center justify-center p-6">
           <div className="w-full max-w-sm text-center text-white">
-            <div className="w-24 h-24 mx-auto rounded-full bg-blue-600 grid place-items-center text-4xl font-black shadow-2xl">{selectedDriver.name?.charAt(0)}</div>
-            <h3 className="mt-5 text-2xl font-black">{selectedDriver.name}</h3>
+            <div className="w-24 h-24 mx-auto rounded-full bg-blue-600 grid place-items-center text-4xl font-black shadow-2xl">{callDriver?.name?.charAt(0) || '?'}</div>
+            <h3 className="mt-5 text-2xl font-black">{callDriver?.name || 'Haydovchi'}</h3>
             <p className="text-zinc-300 mt-1">Kiruvchi {incomingCall.kind === 'video' ? 'video' : 'audio'} qo‘ng‘iroq</p>
             <div className="mt-8 flex justify-center gap-8">
               <button onClick={declineIncomingCall} className="w-16 h-16 rounded-full bg-red-600 grid place-items-center"><PhoneOff /></button>
@@ -433,16 +469,16 @@ export default function DispatchChat({ drivers, activeChatDriver, currentUser, o
       )}
 
       {activeCall && (
-        <div className="absolute inset-0 z-40 bg-zinc-950 text-white flex flex-col">
+        <div className="fixed inset-0 z-[100] bg-zinc-950 text-white flex flex-col">
           <div className="flex-1 relative overflow-hidden grid place-items-center">
             {activeCall.kind === 'video' && remoteStream ? <video ref={remoteVideoRef} autoPlay playsInline className="w-full h-full object-cover" /> : (
-              <div className="text-center"><div className="w-28 h-28 mx-auto rounded-full bg-blue-600 grid place-items-center text-5xl font-black">{selectedDriver.name?.charAt(0)}</div><h3 className="text-2xl font-black mt-5">{selectedDriver.name}</h3><p className="text-zinc-400">{activeCall.status === 'ringing' ? 'Chaqirilmoqda…' : 'Ulandi'}</p></div>
+              <div className="text-center"><div className="w-28 h-28 mx-auto rounded-full bg-blue-600 grid place-items-center text-5xl font-black">{callDriver?.name?.charAt(0) || '?'}</div><h3 className="text-2xl font-black mt-5">{callDriver?.name || 'Haydovchi'}</h3><p className="text-zinc-400">{activeCall.status === 'ringing' ? 'Chaqirilmoqda…' : 'Ulandi'}</p></div>
             )}
             {activeCall.kind === 'video' && <video ref={localVideoRef} autoPlay playsInline muted className="absolute right-4 top-4 w-40 aspect-[3/4] object-cover rounded-2xl border border-white/30 shadow-xl bg-zinc-800" />}
           </div>
           <div className="h-28 grid place-items-center"><button onClick={endCall} className="w-16 h-16 rounded-full bg-red-600 grid place-items-center"><PhoneOff /></button></div>
         </div>
       )}
-    </div>
+    </Fragment>
   );
 }
