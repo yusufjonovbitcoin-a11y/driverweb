@@ -116,7 +116,7 @@ npx --yes supabase@latest db lint --local --level warning
 npx --yes supabase@latest test db --local
 ```
 
-Kutiladigan natija: schema lint xatosiz va joriy `8` SQL test faylidagi `200` pgTAP assertion muvaffaqiyatli.
+Kutiladigan natija: schema lint xatosiz va joriy `9` SQL test faylidagi `204` pgTAP assertion muvaffaqiyatli.
 
 ## Keyingi deploy ketma-ketligi
 
