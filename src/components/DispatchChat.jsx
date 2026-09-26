@@ -7,8 +7,8 @@ import {
   Search, Send, ShieldCheck, Smile, Square, Trash2, UserRound, Video, VideoOff, X,
 } from 'lucide-react';
 import {
-  deleteChatMessage, fetchCallSignals, fetchChatMessages, fetchRingingCalls, fetchRtcIceServers, heartbeatCall, markChatRead, openChat, refreshChatMessageMedia,
-  publishSignal, respondCall, sendMediaMessage, sendTextMessage, startCall, subscribeCalls, subscribeChat,
+  deleteChatMessage, fetchCallSignals, fetchChatMessages, fetchChatPreviews, fetchRingingCalls, fetchRtcIceServers, heartbeatCall, markChatRead, openChat, refreshChatMessageMedia,
+  publishSignal, respondCall, sendMediaMessage, sendTextMessage, startCall, subscribeCalls, subscribeChat, subscribeChatPreviews,
 } from '../services/chatService';
 import { buildChatCursor, mergeChatMessages } from '../services/chatReliability';
 import { RtcSignalQueue } from '../services/rtcSignalQueue';
@@ -166,6 +166,7 @@ export default function DispatchChat({
   const [error, setError] = useState('');
   const [recording, setRecording] = useState(false);
   const [driverSearch, setDriverSearch] = useState('');
+  const [driverPreviews, setDriverPreviews] = useState({});
   const [messageSearch, setMessageSearch] = useState('');
   const [showMessageSearch, setShowMessageSearch] = useState(false);
   const [showProfile, setShowProfile] = useState(() => (
@@ -240,6 +241,44 @@ export default function DispatchChat({
       || driver.truck?.toLowerCase().includes(query)
     ));
   }, [driverSearch, drivers]);
+
+  useEffect(() => {
+    let active = true;
+    let refreshing = false;
+    let refreshQueued = false;
+    const refresh = async () => {
+      if (!active) return;
+      if (refreshing) {
+        refreshQueued = true;
+        return;
+      }
+      refreshing = true;
+      do {
+        refreshQueued = false;
+        try {
+          const conversations = await fetchChatPreviews();
+          if (!active) return;
+          const next = {};
+          conversations.forEach((conversation) => {
+            const peerId = conversation.driver_id === currentUser.id
+              ? conversation.dispatcher_id
+              : conversation.driver_id;
+            next[peerId] = conversation.chat_messages?.[0] || null;
+          });
+          setDriverPreviews(next);
+        } catch {
+          // Message history still works if the lightweight preview query fails.
+        }
+      } while (active && refreshQueued);
+      refreshing = false;
+    };
+    void refresh();
+    const unsubscribe = subscribeChatPreviews(() => { void refresh(); });
+    return () => {
+      active = false;
+      unsubscribe();
+    };
+  }, [currentUser.id]);
 
   const mediaStats = useMemo(() => ({
     image: messages.filter((message) => message.kind === 'image').length,
@@ -932,8 +971,9 @@ export default function DispatchChat({
                 <DriverAvatar driver={driver} />
                 <div className="min-w-0 flex-1">
                   <p className="font-bold truncate">{driver.name}</p>
-                  <p className="text-xs text-zinc-500 truncate">{driver.driverNumber} · {driver.truck}</p>
-                  <p className="text-xs text-zinc-400 truncate mt-1">{selected ? messagePreview(messages[messages.length - 1]) : 'Suhbatni ochish'}</p>
+                  <p className="mt-1 truncate text-xs text-zinc-400">{messagePreview(
+                    selected ? messages[messages.length - 1] || driverPreviews[driver.id] : driverPreviews[driver.id],
+                  )}</p>
                 </div>
               </button>
             );

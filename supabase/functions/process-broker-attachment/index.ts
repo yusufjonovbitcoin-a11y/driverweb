@@ -1,8 +1,10 @@
+import { withCors } from "../_shared/cors.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { downloadPrivateMedia } from "../_shared/cloudinary-media.ts";
+import { checkDistributedRateLimit, rateLimitResponse } from "../_shared/rate-limit.ts";
+import { secureEqual } from "../_shared/secure-equal.ts";
 
 const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers":
     "authorization, x-client-info, apikey, content-type",
 };
@@ -422,18 +424,6 @@ function normalizeMissingFields(
 }
 
 
-function secureEqual(left: string, right: string) {
-  const encoder = new TextEncoder();
-  const leftBytes = encoder.encode(left);
-  const rightBytes = encoder.encode(right);
-  if (leftBytes.length !== rightBytes.length) return false;
-  let difference = 0;
-  for (let index = 0; index < leftBytes.length; index += 1) {
-    difference |= leftBytes[index] ^ rightBytes[index];
-  }
-  return difference === 0;
-}
-
 function proposalFromExtraction(
   extracted: LoadExtraction,
   fileName: string,
@@ -496,7 +486,7 @@ function proposalFromExtraction(
   };
 }
 
-Deno.serve(async (request) => {
+Deno.serve((request) => withCors(request, async () => {
   if (request.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   if (request.method !== "POST") return json({ error: "Method not allowed" }, 405);
 
@@ -510,10 +500,16 @@ Deno.serve(async (request) => {
     return json({ error: "Function environment is incomplete" }, 500);
   }
   if (!secureEqual(token, workerToken)) return json({ error: "Worker authentication required" }, 401);
-
   const admin = createClient(supabaseUrl, serviceRoleKey, {
     auth: { autoRefreshToken: false, persistSession: false },
   });
+  const limit = await checkDistributedRateLimit(admin, "process-broker-attachment", "gmail-worker", {
+    limit: 60,
+    windowMs: 60_000,
+    supabaseUrl,
+  });
+  if (!limit.allowed) return rateLimitResponse(limit);
+
   let attachmentId = "";
   try {
     const body = await request.json();
@@ -606,4 +602,4 @@ Deno.serve(async (request) => {
     const message = error instanceof Error ? error.message : "AI tahlili bajarilmadi";
     return await fail(message, 502);
   }
-});
+}));

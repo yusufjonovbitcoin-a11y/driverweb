@@ -1,8 +1,11 @@
+import { withCors } from "../_shared/cors.ts";
 import { canDeleteMedia } from "../_shared/media-permissions.ts";
+import { requireCloudinaryTokenKey } from "../_shared/cloudinary-token.ts";
+import { checkDistributedRateLimit, rateLimitResponse } from "../_shared/rate-limit.ts";
+import { secureEqual } from "../_shared/secure-equal.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-worker-token",
 };
 const MAX_BYTES = 50 * 1024 * 1024;
@@ -131,8 +134,7 @@ async function signedDeliveryUrl(asset: Record<string, unknown>, expiresAt: numb
   const signature = (await sha1Base64Url(`${path}${secret}`)).slice(0, 8);
   const deliveryPath = `/${encodeURIComponent(cloudName)}/${resourceType}/authenticated/s--${signature}--/v${version}/${encodePublicId(publicId)}${format}`;
   const baseUrl = `https://res.cloudinary.com${deliveryPath}`;
-  const tokenKey = Deno.env.get("CLOUDINARY_AUTH_TOKEN_KEY")?.trim();
-  if (!tokenKey) return { url: baseUrl, expirationEnforced: false };
+  const tokenKey = requireCloudinaryTokenKey(Deno.env.get("CLOUDINARY_AUTH_TOKEN_KEY"));
   const signed = `exp=${expiresAt}~url=${tokenEscape(deliveryPath)}`;
   const token = `exp=${expiresAt}~hmac=${await hmacSha256Hex(tokenKey, signed)}`;
   return { url: `${baseUrl}?__cld_token__=${token}`, expirationEnforced: true };
@@ -153,7 +155,7 @@ async function authenticate(request: Request, supabaseUrl: string, serviceRoleKe
   });
   const workerToken = request.headers.get("X-Worker-Token");
   const expectedWorkerToken = Deno.env.get("GMAIL_WORKER_TOKEN")?.trim();
-  if (workerToken && expectedWorkerToken && workerToken === expectedWorkerToken) {
+  if (workerToken && expectedWorkerToken && secureEqual(workerToken, expectedWorkerToken)) {
     return {
       worker: true,
       userId: null as string | null,
@@ -182,10 +184,10 @@ async function authenticate(request: Request, supabaseUrl: string, serviceRoleKe
 
 async function uploadToCloudinary(file: File, folder: string, publicId: string) {
   const timestamp = String(Math.floor(Date.now() / 1000));
-  const tokenAccess = Boolean(Deno.env.get("CLOUDINARY_AUTH_TOKEN_KEY")?.trim());
-  const accessControl = tokenAccess ? JSON.stringify([{ access_type: "token" }]) : "";
+  requireCloudinaryTokenKey(Deno.env.get("CLOUDINARY_AUTH_TOKEN_KEY"));
+  const accessControl = JSON.stringify([{ access_type: "token" }]);
   const params = {
-    ...(accessControl ? { access_control: accessControl } : {}),
+    access_control: accessControl,
     folder,
     public_id: publicId,
     timestamp,
@@ -198,7 +200,7 @@ async function uploadToCloudinary(file: File, folder: string, publicId: string) 
   form.set("folder", folder);
   form.set("public_id", publicId);
   form.set("type", "authenticated");
-  if (accessControl) form.set("access_control", accessControl);
+  form.set("access_control", accessControl);
   form.set("signature_algorithm", "sha256");
   form.set("signature", await signUpload(params));
   const response = await fetch(
@@ -233,7 +235,7 @@ async function destroyCloudinary(asset: Record<string, unknown>) {
   }
 }
 
-Deno.serve(async (request) => {
+Deno.serve((request) => withCors(request, async () => {
   if (request.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   if (request.method !== "POST") return json({ error: "Method not allowed" }, 405);
   try {
@@ -242,6 +244,12 @@ Deno.serve(async (request) => {
     const serviceRoleKey = env("SUPABASE_SERVICE_ROLE_KEY");
     const admin = createClient(supabaseUrl, serviceRoleKey, { auth: { autoRefreshToken: false, persistSession: false } });
     const auth = await authenticate(request, supabaseUrl, serviceRoleKey);
+    const limit = await checkDistributedRateLimit(admin, "cloudinary-media", auth.worker ? "gmail-worker" : String(auth.userId), {
+      limit: auth.worker ? 300 : 180,
+      windowMs: 60_000,
+      supabaseUrl,
+    });
+    if (!limit.allowed) return rateLimitResponse(limit);
     const contentType = request.headers.get("content-type") || "";
 
     if (contentType.includes("multipart/form-data")) {
@@ -276,7 +284,10 @@ Deno.serve(async (request) => {
           });
           if (!allowed) return json({ error: "Chat media access denied" }, 403);
         } else if (scope === "load_document") {
-          const { data: allowed } = await caller.rpc("can_access_load", { target_load_id: contextId });
+          const { data: allowed } = await caller.rpc(
+            "can_access_load_media_context",
+            { target_context_id: contextId },
+          );
           if (!allowed) return json({ error: "Load media access denied" }, 403);
         } else if (["profile_avatar", "driver_document"].includes(scope)) {
           if (contextId !== auth.userId) return json({ error: "Profile media access denied" }, 403);
@@ -359,4 +370,4 @@ Deno.serve(async (request) => {
     }
     return json({ error: error instanceof Error ? error.message : "Cloudinary media request failed" }, 500);
   }
-});
+}));

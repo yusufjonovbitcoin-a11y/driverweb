@@ -1,7 +1,8 @@
+import { withCors } from "../_shared/cors.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { checkDistributedRateLimit, rateLimitResponse } from "../_shared/rate-limit.ts";
 
 const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers":
     "authorization, x-client-info, apikey, content-type",
 };
@@ -153,7 +154,7 @@ async function computeOsrmRoute(
   };
 }
 
-Deno.serve(async (request) => {
+Deno.serve((request) => withCors(request, async () => {
   if (request.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
   }
@@ -172,6 +173,9 @@ Deno.serve(async (request) => {
   const callerClient = createClient(supabaseUrl, publicKey, {
     global: { headers: { Authorization: authorization } },
   });
+  const admin = createClient(supabaseUrl, serviceRoleKey, {
+    auth: { autoRefreshToken: false, persistSession: false },
+  });
   const { data: authData, error: authError } = await callerClient.auth.getUser();
   if (authError || !authData.user) return json({ error: "Invalid session" }, 401);
   const { data: callerProfile } = await callerClient.from("profiles")
@@ -181,6 +185,12 @@ Deno.serve(async (request) => {
   if (!callerProfile || !["company_admin", "dispatcher"].includes(callerProfile.role)) {
     return json({ error: "Dispatcher permission required" }, 403);
   }
+  const limit = await checkDistributedRateLimit(admin, "calculate-load-route", authData.user.id, {
+    limit: 60,
+    windowMs: 5 * 60_000,
+    supabaseUrl,
+  });
+  if (!limit.allowed) return rateLimitResponse(limit);
 
   let payload: Record<string, unknown>;
   try {
@@ -214,9 +224,7 @@ Deno.serve(async (request) => {
     return json({ error: "Tanlangan haydovchilardan biri sizga ochiq emas" }, 403);
   }
 
-  const adminClient = createClient(supabaseUrl, serviceRoleKey, {
-    auth: { autoRefreshToken: false, persistSession: false },
-  });
+  const adminClient = admin;
   const [{ data: stops, error: stopsError }, { data: presence, error: presenceError }] =
     await Promise.all([
       adminClient.from("load_stops")
@@ -328,4 +336,4 @@ Deno.serve(async (request) => {
       error: error instanceof Error ? error.message : "Google marshrutni hisoblay olmadi",
     }, 422);
   }
-});
+}));

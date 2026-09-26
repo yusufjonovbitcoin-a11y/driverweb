@@ -20,7 +20,7 @@ select extensions.ok(
 );
 
 select extensions.has_function('public', 'send_offer', array['uuid', 'uuid', 'numeric', 'numeric', 'numeric', 'jsonb'], 'send_offer command exists');
-select extensions.has_function('public', 'respond_offer', array['uuid', 'text', 'uuid', 'timestamp with time zone'], 'respond_offer command exists');
+select extensions.has_function('public', 'respond_offer', array['uuid', 'text', 'uuid', 'timestamp with time zone', 'text'], 'respond_offer command exists');
 select extensions.has_function('public', 'transition_stop', array['uuid', 'stop_status', 'uuid', 'bigint', 'timestamp with time zone', 'numeric', 'numeric'], 'transition_stop command exists');
 select extensions.has_function('public', 'record_ai_extraction', array['uuid', 'uuid', 'ingestion_status', 'text', 'integer', 'jsonb', 'jsonb', 'text'], 'AI worker command exists');
 select extensions.has_function('public', 'get_chat_messages_page', array['uuid', 'timestamp with time zone', 'uuid', 'integer'], 'chat cursor pagination exists');

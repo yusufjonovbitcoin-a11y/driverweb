@@ -61,8 +61,17 @@ verify_jwt = true
 [functions.forward-gmail-attachment]
 verify_jwt = true
 
+[functions.gmail-integration]
+verify_jwt = true
+
 [functions.process-broker-attachment]
 verify_jwt = false
 
 [functions.cloudinary-media]
+verify_jwt = false
+
+[functions.process-push-notifications]
+verify_jwt = false
+
+[functions.process-media-deletions]
 verify_jwt = false

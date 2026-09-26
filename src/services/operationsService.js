@@ -1,5 +1,6 @@
 import { requireSupabase } from '../lib/supabase';
 import { cloudinarySignedUrl, isCloudinaryReference } from './cloudinaryMediaService';
+import { createCoalescedAsyncTrigger } from './realtimeRefresh';
 
 async function throwFunctionError(error, fallback) {
   let message = error?.message || fallback;
@@ -202,6 +203,18 @@ function toUiDriver(member, presence, avatar = null) {
   };
 }
 
+function toUiMember(member, avatar = null) {
+  return {
+    id: member.id,
+    name: member.full_name,
+    email: member.email || '',
+    phone: member.phone || '',
+    role: member.role,
+    status: member.status,
+    avatar,
+  };
+}
+
 async function signedDocumentUrls(client, documents) {
   return Promise.all(documents.map(async (document) => {
     if (!document.current_version_id) return document;
@@ -247,7 +260,7 @@ export async function fetchWorkspace() {
     loadsResult,
     offersResult,
     documentsResult,
-    driversResult,
+    membersResult,
     presenceResult,
     warningsResult,
     reviewsResult,
@@ -255,7 +268,7 @@ export async function fetchWorkspace() {
     client.from('load_overview').select('*').order('updated_at', { ascending: false }),
     client.from('offers').select('id,load_id,driver_id,status,compatibility_warnings').order('created_at', { ascending: false }),
     client.from('documents').select('id,load_id,document_type,current_version_id'),
-    client.from('member_directory').select('*').eq('role', 'driver').order('full_name'),
+    client.from('member_directory').select('*').order('full_name'),
     client.from('driver_presence').select('*'),
     client.from('warnings').select('id,load_id,code,message').eq('is_active', true).order('created_at'),
     client.from('document_review_overview').select('*'),
@@ -264,7 +277,7 @@ export async function fetchWorkspace() {
     loadsResult,
     offersResult,
     documentsResult,
-    driversResult,
+    membersResult,
     presenceResult,
     warningsResult,
     reviewsResult,
@@ -272,7 +285,8 @@ export async function fetchWorkspace() {
     if (result.error) throw result.error;
   }
   const documents = await signedDocumentUrls(client, documentsResult.data || []);
-  const avatarUrls = await signedProfileAvatarUrls(client, driversResult.data || []);
+  const members = membersResult.data || [];
+  const avatarUrls = await signedProfileAvatarUrls(client, members);
   const offersByLoad = new Map();
   for (const offer of offersResult.data || []) {
     const current = offersByLoad.get(offer.load_id) || [];
@@ -298,13 +312,14 @@ export async function fetchWorkspace() {
     loads: (loadsResult.data || []).map((row) => (
       toUiLoad(row, offersByLoad, documentsByLoad, warningsByLoad, reviewsByDocument)
     )),
-    drivers: (driversResult.data || []).map((member) => (
+    drivers: members.filter((member) => member.role === 'driver').map((member) => (
       toUiDriver(
         member,
         (presenceResult.data || []).find((item) => item.driver_id === member.id),
         avatarUrls.get(member.id),
       )
     )),
+    members: members.map((member) => toUiMember(member, avatarUrls.get(member.id))),
   };
 }
 
@@ -346,6 +361,44 @@ export async function fetchBrokerInboxUnreadCount() {
     ))
     .map((attachment) => attachment.message_id));
   return [...supportedMessageIds].filter((messageId) => !readMessageIds.has(messageId)).length;
+}
+
+export async function fetchGmailIntegration() {
+  const client = requireSupabase();
+  const { data, error } = await client
+    .from('gmail_connections')
+    .select('id,mailbox_email,status,last_synced_at,last_error,updated_at')
+    .maybeSingle();
+  if (error) throw new Error('Gmail holatini olib bo‘lmadi.');
+  if (!data) return null;
+  return {
+    id: data.id,
+    mailboxEmail: data.mailbox_email,
+    status: data.status,
+    lastSyncedAt: data.last_synced_at,
+    lastError: data.last_error,
+    updatedAt: data.updated_at,
+  };
+}
+
+export async function connectGmailIntegration({ mailboxEmail, appPassword }) {
+  const { data, error } = await invokeAuthenticatedFunction('gmail-integration', {
+    action: 'connect',
+    mailboxEmail,
+    appPassword,
+  });
+  if (error) await throwFunctionError(error, 'Gmail ulanishini saqlab bo‘lmadi.');
+  if (data?.error) throw new Error(data.error);
+  return data?.connection || null;
+}
+
+export async function disconnectGmailIntegration() {
+  const { data, error } = await invokeAuthenticatedFunction('gmail-integration', {
+    action: 'disconnect',
+  });
+  if (error) await throwFunctionError(error, 'Gmail ulanishini uzib bo‘lmadi.');
+  if (data?.error) throw new Error(data.error);
+  return data?.connection || null;
 }
 
 export async function markBrokerMessageRead(messageId) {
@@ -585,14 +638,20 @@ export async function deleteUnassignedLoad(loadId) {
 
 export function subscribeWorkspace(onChange) {
   const client = requireSupabase();
+  const refresh = createCoalescedAsyncTrigger(onChange);
   const channel = client
     .channel('dispatcher-workspace')
-    .on('postgres_changes', { event: '*', schema: 'public', table: 'loads' }, onChange)
-    .on('postgres_changes', { event: '*', schema: 'public', table: 'offers' }, onChange)
-    .on('postgres_changes', { event: '*', schema: 'public', table: 'assignments' }, onChange)
-    .on('postgres_changes', { event: '*', schema: 'public', table: 'document_checks' }, onChange)
-    .on('postgres_changes', { event: '*', schema: 'public', table: 'warnings' }, onChange)
-    .on('postgres_changes', { event: '*', schema: 'public', table: 'driver_presence' }, onChange)
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'loads' }, refresh)
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'offers' }, refresh)
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'assignments' }, refresh)
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'document_checks' }, refresh)
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'warnings' }, refresh)
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'driver_presence' }, refresh)
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, refresh)
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'driver_profiles' }, refresh)
     .subscribe();
-  return () => client.removeChannel(channel);
+  return () => {
+    refresh.dispose();
+    void client.removeChannel(channel);
+  };
 }

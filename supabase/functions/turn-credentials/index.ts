@@ -1,7 +1,8 @@
+import { withCors } from "../_shared/cors.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { checkDistributedRateLimit, rateLimitResponse } from "../_shared/rate-limit.ts";
 
 const headers = {
-  "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers":
     "authorization, x-client-info, apikey, content-type",
   "Content-Type": "application/json",
@@ -65,7 +66,7 @@ function normalizeIceServers(payload: unknown) {
   ];
 }
 
-Deno.serve(async (request) => {
+Deno.serve((request) => withCors(request, async () => {
   if (request.method === "OPTIONS") return new Response("ok", { headers });
   if (request.method !== "POST") {
     return json({ error: "Method not allowed" }, 405);
@@ -73,8 +74,9 @@ Deno.serve(async (request) => {
   try {
     const authorization = request.headers.get("Authorization");
     if (!authorization) return json({ error: "Authentication required" }, 401);
+    const supabaseUrl = env("SUPABASE_URL");
     const admin = createClient(
-      env("SUPABASE_URL"),
+      supabaseUrl,
       env("SUPABASE_SERVICE_ROLE_KEY"),
       {
         auth: { autoRefreshToken: false, persistSession: false },
@@ -92,6 +94,12 @@ Deno.serve(async (request) => {
     if (!profile || profile.status !== "active") {
       return json({ error: "Active profile required" }, 403);
     }
+    const limit = await checkDistributedRateLimit(admin, "turn-credentials", authData.user.id, {
+      limit: 30,
+      windowMs: 5 * 60_000,
+      supabaseUrl,
+    });
+    if (!limit.allowed) return rateLimitResponse(limit);
 
     const ttlSeconds = 3600;
     const keyId = encodeURIComponent(env("CLOUDFLARE_TURN_KEY_ID"));
@@ -125,4 +133,4 @@ Deno.serve(async (request) => {
         : "TURN credential request failed",
     }, 500);
   }
-});
+}));

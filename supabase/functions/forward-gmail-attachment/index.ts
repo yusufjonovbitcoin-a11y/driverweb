@@ -1,8 +1,9 @@
+import { withCors } from "../_shared/cors.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { downloadPrivateMedia, uploadPrivateMedia } from "../_shared/cloudinary-media.ts";
+import { checkDistributedRateLimit, rateLimitResponse } from "../_shared/rate-limit.ts";
 
 const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 const MAX_PDF_BYTES = 25 * 1024 * 1024;
@@ -14,7 +15,7 @@ function json(body: unknown, status = 200) {
   });
 }
 
-Deno.serve(async (request) => {
+Deno.serve((request) => withCors(request, async () => {
   if (request.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   if (request.method !== "POST") return json({ error: "Method not allowed" }, 405);
 
@@ -40,6 +41,12 @@ Deno.serve(async (request) => {
   if (actorError || !actor || actor.status !== "active" || !["company_admin", "dispatcher"].includes(actor.role)) {
     return json({ error: "Dispatcher permission required" }, 403);
   }
+  const limit = await checkDistributedRateLimit(admin, "forward-gmail-attachment", authData.user.id, {
+    limit: 60,
+    windowMs: 5 * 60_000,
+    supabaseUrl,
+  });
+  if (!limit.allowed) return rateLimitResponse(limit);
 
   const [{ data: attachment, error: attachmentError }, { data: driver, error: driverError }] = await Promise.all([
     admin.from("broker_attachments").select("id,company_id,file_name,mime_type,storage_path,size_bytes")
@@ -106,4 +113,4 @@ Deno.serve(async (request) => {
   }
 
   return json({ conversationId, messageId: message.id });
-});
+}));

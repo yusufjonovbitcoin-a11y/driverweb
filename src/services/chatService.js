@@ -137,6 +137,33 @@ export async function fetchUnreadChatCount() {
   return Number(assertNoError(result) || 0);
 }
 
+export async function fetchChatPreviews() {
+  const client = requireSupabase();
+  const result = await client
+    .from('chat_conversations')
+    .select('id, dispatcher_id, driver_id, chat_messages!left(id, kind, body, file_name, created_at, deleted_at)')
+    .is('chat_messages.deleted_at', null)
+    .order('last_message_at', { ascending: false })
+    .order('created_at', { referencedTable: 'chat_messages', ascending: false })
+    .order('id', { referencedTable: 'chat_messages', ascending: false })
+    .limit(1, { referencedTable: 'chat_messages' });
+  return assertNoError(result) || [];
+}
+
+export function subscribeChatPreviews(onChange) {
+  const client = requireSupabase();
+  const channel = client
+    .channel(`chat-previews:${crypto.randomUUID()}`)
+    .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'chat_messages' }, onChange)
+    .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'chat_messages' }, (payload) => {
+      if (payload.new?.deleted_at) onChange?.();
+    })
+    .subscribe((status) => {
+      if (status === 'SUBSCRIBED') onChange?.();
+    });
+  return () => client.removeChannel(channel);
+}
+
 export function subscribeChat({ conversationId, onMessage, onMessageUpdated, onStatus, onReconnect }) {
   const client = requireSupabase();
   let subscribedOnce = false;

@@ -45,7 +45,7 @@ export default function PlatformAdminPanel({ onLogout }) {
       <input
         required={key !== 'adminPhone'}
         type={type}
-        minLength={type === 'password' ? 6 : undefined}
+        minLength={type === 'password' ? 12 : undefined}
         autoComplete={type === 'password' ? 'new-password' : undefined}
         value={form[key]}
         onChange={(event) => setForm((current) => ({ ...current, [key]: event.target.value }))}

@@ -7,7 +7,6 @@ import {
   Users, 
   FileText, 
   MessageSquare, 
-  BarChart3, 
   DollarSign, 
   Activity, 
   Radio
@@ -28,7 +27,6 @@ export default function Navbar({
     { id: 'drivers', label: 'Haydovchilar & HOS', icon: Users, badge: `${driversCount} aktiv` },
     { id: 'docs', label: 'Hujjatlar & Invoys', icon: FileText },
     { id: 'chat', label: 'Drayver Chat', icon: MessageSquare, badge: unreadMessagesCount > 0 ? unreadMessagesCount : null },
-    { id: 'analytics', label: 'Analitika', icon: BarChart3 },
   ];
 
   return (

@@ -1,8 +1,9 @@
+import { withCors } from "../_shared/cors.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { checkDistributedRateLimit, rateLimitResponse } from "../_shared/rate-limit.ts";
 import { downloadPrivateMedia } from "../_shared/cloudinary-media.ts";
 
 const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 const MAX_FILE_BYTES = 20 * 1024 * 1024;
@@ -98,7 +99,7 @@ function documentInput(
   throw new Error("Bu hujjat turi AI tekshiruviga mos emas.");
 }
 
-Deno.serve(async (request) => {
+Deno.serve((request) => withCors(request, async () => {
   if (request.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   if (request.method !== "POST") return json({ error: "Method not allowed" }, 405);
 
@@ -122,6 +123,12 @@ Deno.serve(async (request) => {
   });
   const { data: authData, error: authError } = await caller.auth.getUser();
   if (authError || !authData.user) return json({ error: "Invalid session" }, 401);
+  const limit = await checkDistributedRateLimit(admin, "check-load-document", authData.user.id, {
+    limit: 30,
+    windowMs: 5 * 60_000,
+    supabaseUrl,
+  });
+  if (!limit.allowed) return rateLimitResponse(limit);
 
   const body = await request.json().catch(() => ({}));
   const versionId = typeof body?.versionId === "string" ? body.versionId : null;
@@ -300,4 +307,4 @@ Deno.serve(async (request) => {
     const message = error instanceof Error ? error.message : "Hujjat tekshiruvi bajarilmadi.";
     return await fail(message, 502);
   }
-});
+}));

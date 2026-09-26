@@ -7,13 +7,14 @@ import { createClient } from '@supabase/supabase-js';
 
 dotenv.config({ path: process.env.GMAIL_ENV_FILE || '.env.gmail' });
 
-const required = ['GMAIL_IMAP_USER', 'GMAIL_IMAP_APP_PASSWORD', 'GMAIL_COMPANY_ID', 'GMAIL_WORKER_TOKEN', 'SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY'];
+const required = ['GMAIL_COMPANY_ID', 'GMAIL_WORKER_TOKEN', 'SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY'];
 for (const key of required) {
   if (!process.env[key]?.trim()) throw new Error(`${key} is required`);
 }
 
-const mailboxEmail = process.env.GMAIL_IMAP_USER.trim().toLowerCase();
 const companyId = process.env.GMAIL_COMPANY_ID.trim();
+const legacyMailboxEmail = process.env.GMAIL_IMAP_USER?.trim().toLowerCase() || '';
+const legacyAppPassword = process.env.GMAIL_IMAP_APP_PASSWORD?.replace(/\s+/g, '') || '';
 const maxMessages = normalizeMessageLimit(process.env.GMAIL_MAX_MESSAGES || 25);
 const supportedAttachmentTypes = new Set(['application/pdf', 'image/jpeg', 'image/png', 'image/webp', 'image/gif']);
 const mimeTypeByExtension = new Map([
@@ -24,6 +25,63 @@ const extensionByMimeType = new Map([...mimeTypeByExtension].map(([extension, mi
 const admin = createClient(process.env.SUPABASE_URL.trim(), process.env.SUPABASE_SERVICE_ROLE_KEY.trim(), {
   auth: { autoRefreshToken: false, persistSession: false },
 });
+let mailboxEmail = '';
+let imapAppPassword = '';
+
+async function loadMailboxConfiguration() {
+  const { data, error: credentialError } = await admin.rpc('get_gmail_worker_credentials', {
+    target_company_id: companyId,
+  });
+  if (!credentialError) {
+    const credentials = Array.isArray(data) ? data[0] : data;
+    if (credentials?.mailbox_email && credentials?.app_password) {
+      const connection = {
+        id: credentials.connection_id,
+        mailbox_email: credentials.mailbox_email,
+        provider_history_id: credentials.provider_history_id,
+        configuration_version: credentials.configuration_version,
+      };
+      return {
+        mailboxEmail: credentials.mailbox_email,
+        appPassword: credentials.app_password,
+        connection,
+      };
+    }
+  }
+
+  const { data: connection, error: connectionError } = await admin
+    .from('gmail_connections')
+    .select('id,mailbox_email,status,secret_reference,provider_history_id,configuration_version')
+    .eq('company_id', companyId)
+    .maybeSingle();
+  if (connectionError) throw connectionError;
+  if (connection?.status === 'disabled') throw new Error('Gmail integration is disabled');
+  if (connection?.secret_reference?.startsWith('vault:')) {
+    if (credentialError) throw credentialError;
+    throw new Error('Gmail Vault credentials were not found');
+  }
+
+  if (
+    connection?.secret_reference === 'env:GMAIL_IMAP_APP_PASSWORD'
+    && connection.mailbox_email === legacyMailboxEmail
+    && legacyMailboxEmail
+    && legacyAppPassword
+  ) {
+    return {
+      mailboxEmail: legacyMailboxEmail,
+      appPassword: legacyAppPassword,
+      connection,
+    };
+  }
+  if (!connection && legacyMailboxEmail && legacyAppPassword) {
+    return {
+      mailboxEmail: legacyMailboxEmail,
+      appPassword: legacyAppPassword,
+      connection,
+    };
+  }
+  throw new Error('Gmail integration is not configured');
+}
 
 function safeFileName(name) {
   return String(name || 'attachment.pdf').replace(/[^a-zA-Z0-9._-]/g, '_').slice(-160) || 'attachment.pdf';
@@ -119,15 +177,6 @@ async function processPendingBrokerAttachments(limit = 10) {
 }
 
 async function getConnection() {
-  const { data: connection, error } = await admin
-    .from('gmail_connections')
-    .select('id,provider_history_id')
-    .eq('company_id', companyId)
-    .eq('mailbox_email', mailboxEmail)
-    .maybeSingle();
-  if (error) throw error;
-  if (connection) return connection;
-
   const { data: creator, error: creatorError } = await admin
     .from('profiles')
     .select('id')
@@ -141,17 +190,30 @@ async function getConnection() {
 
   const { data: created, error: createError } = await admin
     .from('gmail_connections')
-    .upsert({
+    .insert({
       company_id: companyId,
       mailbox_email: mailboxEmail,
       secret_reference: 'env:GMAIL_IMAP_APP_PASSWORD',
       created_by: creator.id,
       status: 'active',
-      last_synced_at: new Date().toISOString(),
-    }, { onConflict: 'company_id' })
-    .select('id,provider_history_id')
-    .single();
-  if (createError) throw createError;
+    })
+    .select('id,provider_history_id,configuration_version')
+    .maybeSingle();
+  if (createError?.code === '23505') {
+    const { data: racedConnection, error: reloadError } = await admin
+      .from('gmail_connections')
+      .select('id,mailbox_email,status,secret_reference,provider_history_id,configuration_version')
+      .eq('company_id', companyId)
+      .maybeSingle();
+    if (reloadError) throw reloadError;
+    if (
+      racedConnection?.status === 'active'
+      && racedConnection.secret_reference === 'env:GMAIL_IMAP_APP_PASSWORD'
+      && racedConnection.mailbox_email === mailboxEmail
+    ) return racedConnection;
+    throw new Error('Gmail configuration changed during worker startup');
+  }
+  if (createError || !created) throw createError || new Error('Gmail connection could not be registered');
   return created;
 }
 
@@ -169,9 +231,9 @@ async function ingestMessage(connectionId, message) {
   });
 
   const fromEmail = parsed.from?.value?.[0]?.address || message.envelope?.from?.[0]?.address || mailboxEmail;
-  const { data: messageId, error: messageError } = await admin.rpc('ingest_broker_message', {
-    company_id: companyId,
+  const { data: messageId, error: messageError } = await admin.rpc('ingest_broker_message_guarded', {
     gmail_connection_id: connectionId,
+    expected_configuration_version: activeConnection.configuration_version,
     provider_message_id: providerMessageId,
     provider_thread_id: parsed.inReplyTo || null,
     from_email: fromEmail,
@@ -235,15 +297,22 @@ async function ingestMessage(connectionId, message) {
   return { documentCount, processedCount, failedCount };
 }
 
-const client = new ImapFlow({
-  host: 'imap.gmail.com', port: 993, secure: true,
-  auth: { user: mailboxEmail, pass: process.env.GMAIL_IMAP_APP_PASSWORD },
-  logger: false,
-});
-
+let client;
+let activeConnection;
+let imapConnected = false;
 try {
-  const connection = await getConnection();
+  const mailboxConfiguration = await loadMailboxConfiguration();
+  mailboxEmail = mailboxConfiguration.mailboxEmail;
+  imapAppPassword = mailboxConfiguration.appPassword;
+  client = new ImapFlow({
+    host: 'imap.gmail.com', port: 993, secure: true,
+    auth: { user: mailboxEmail, pass: imapAppPassword },
+    logger: false,
+  });
+  const connection = mailboxConfiguration.connection || await getConnection();
+  activeConnection = connection;
   await client.connect();
+  imapConnected = true;
   const lock = await client.getMailboxLock('INBOX');
   let synced = 0;
   let documents = 0;
@@ -269,20 +338,40 @@ try {
   } finally {
     lock.release();
   }
-  const { error: checkpointError } = await admin.from('gmail_connections').update({
+  const { data: checkpoint, error: checkpointError } = await admin.from('gmail_connections').update({
     status: 'active',
     last_error: null,
     last_synced_at: new Date().toISOString(),
     provider_history_id: lastUid ? String(lastUid) : connection.provider_history_id,
-  }).eq('id', connection.id);
+  }).eq('id', connection.id)
+    .eq('configuration_version', connection.configuration_version)
+    .neq('status', 'disabled')
+    .select('id')
+    .maybeSingle();
   if (checkpointError) throw checkpointError;
+  if (!checkpoint) throw new Error('Gmail configuration changed during synchronization');
   const backlog = await processPendingBrokerAttachments();
   processed += backlog.processed;
   failed += backlog.failed;
   console.log(JSON.stringify({ synced, documents, processed, failed }));
 } catch (error) {
+  if (activeConnection && !imapConnected) {
+    const safeMessage = /auth|credential|password|login/i.test(error?.message || '')
+      ? 'Gmail App Password qabul qilinmadi.'
+      : 'Gmail IMAP serveriga ulanib bo‘lmadi.';
+    try {
+      await admin.from('gmail_connections').update({
+        status: 'needs_reconnect',
+        last_error: safeMessage,
+      }).eq('id', activeConnection.id)
+        .eq('configuration_version', activeConnection.configuration_version)
+        .neq('status', 'disabled');
+    } catch {
+      // Preserve the original IMAP failure as the worker exit reason.
+    }
+  }
   console.error(error);
   process.exitCode = 1;
 } finally {
-  await client.logout().catch(() => {});
+  await client?.logout().catch(() => {});
 }

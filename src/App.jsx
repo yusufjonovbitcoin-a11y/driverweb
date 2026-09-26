@@ -1,19 +1,8 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { LoaderCircle, X } from 'lucide-react';
 import Sidebar from './components/Sidebar';
 import TopHeader from './components/TopHeader';
-import KanbanBoard from './components/KanbanBoard';
-import CreateLoadModal from './components/CreateLoadModal';
-import QuickDriverModal from './components/QuickDriverModal';
-import DocumentViewerModal from './components/DocumentViewerModal';
-import FleetMap from './components/FleetMap';
-import DriverRoster from './components/DriverRoster';
-import AnalyticsOverview from './components/AnalyticsOverview';
-import ProfileView from './components/ProfileView';
-import DocumentsView from './components/DocumentsView';
-import BrokerInbox from './components/BrokerInbox';
-import PlatformAdminPanel from './components/PlatformAdminPanel';
-import AuthView from './components/AuthView';
+import LazyRouteBoundary from './components/LazyRouteBoundary';
 import { useAuth } from './hooks/useAuth';
 import {
   createAndOfferLoad,
@@ -28,9 +17,21 @@ import {
   subscribeWorkspace,
 } from './services/operationsService';
 import { fetchUnreadChatCount, subscribeUnreadChats } from './services/chatService';
+import { buildGlobalSearchResults } from './utils/globalSearch';
 
-const tabs = ['kanban', 'drivers', 'map', 'analytics', 'docs', 'inbox', 'chat', 'profile'];
+const tabs = ['kanban', 'drivers', 'map', 'docs', 'inbox', 'chat', 'profile'];
 const DispatchChat = React.lazy(() => import('./components/DispatchChat'));
+const AuthView = React.lazy(() => import('./components/AuthView'));
+const KanbanBoard = React.lazy(() => import('./components/KanbanBoard'));
+const FleetMap = React.lazy(() => import('./components/FleetMap'));
+const DriverRoster = React.lazy(() => import('./components/DriverRoster'));
+const CreateLoadModal = React.lazy(() => import('./components/CreateLoadModal'));
+const QuickDriverModal = React.lazy(() => import('./components/QuickDriverModal'));
+const DocumentViewerModal = React.lazy(() => import('./components/DocumentViewerModal'));
+const ProfileView = React.lazy(() => import('./components/ProfileView'));
+const DocumentsView = React.lazy(() => import('./components/DocumentsView'));
+const BrokerInbox = React.lazy(() => import('./components/BrokerInbox'));
+const PlatformAdminPanel = React.lazy(() => import('./components/PlatformAdminPanel'));
 
 export default function App() {
   const auth = useAuth();
@@ -45,7 +46,9 @@ function Workspace({ auth }) {
   });
   const [loads, setLoads] = useState([]);
   const [drivers, setDrivers] = useState([]);
-  const [workspaceLoading, setWorkspaceLoading] = useState(false);
+  const [members, setMembers] = useState([]);
+  const [refreshLoading, setRefreshLoading] = useState(false);
+  const [operationLoading, setOperationLoading] = useState(false);
   const [workspaceError, setWorkspaceError] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
@@ -61,6 +64,8 @@ function Workspace({ auth }) {
   const [theme, setTheme] = useState(() => localStorage.getItem('apex_theme') || 'light');
   const [unreadChatCount, setUnreadChatCount] = useState(0);
   const [unreadInboxCount, setUnreadInboxCount] = useState(0);
+  const workspaceRequestRef = useRef(0);
+  const foregroundRefreshCountRef = useRef(0);
   const inlineChatVisible = activeTab === 'drivers' && Boolean(inlineChatDriverId);
 
   const showToast = useCallback((message) => {
@@ -70,16 +75,29 @@ function Workspace({ auth }) {
 
   const refreshWorkspace = useCallback(async ({ quiet = false } = {}) => {
     if (!currentUser || currentUser.roleCode === 'driver') return;
-    if (!quiet) setWorkspaceLoading(true);
+    const requestId = ++workspaceRequestRef.current;
+    if (!quiet) {
+      foregroundRefreshCountRef.current += 1;
+      setRefreshLoading(true);
+    }
     try {
       const workspace = await fetchWorkspace();
+      if (requestId !== workspaceRequestRef.current) return;
       setLoads(workspace.loads);
       setDrivers(workspace.drivers);
+      setMembers(workspace.members);
       setWorkspaceError('');
     } catch (error) {
+      if (requestId !== workspaceRequestRef.current) return;
       setWorkspaceError(error.message || 'Ma\'lumotlarni yuklab bo\'lmadi.');
     } finally {
-      if (!quiet) setWorkspaceLoading(false);
+      if (!quiet) {
+        foregroundRefreshCountRef.current = Math.max(
+          foregroundRefreshCountRef.current - 1,
+          0,
+        );
+        if (foregroundRefreshCountRef.current === 0) setRefreshLoading(false);
+      }
     }
   }, [currentUser]);
 
@@ -112,8 +130,13 @@ function Workspace({ auth }) {
       if (tabs.includes(hash)) {
         setInlineChatDriverId(null);
         setActiveTab(hash);
+        return;
       }
+      setInlineChatDriverId(null);
+      setActiveTab('kanban');
+      window.history.replaceState(null, '', '#kanban');
     };
+    handleHash();
     window.addEventListener('hashchange', handleHash);
     return () => window.removeEventListener('hashchange', handleHash);
   }, []);
@@ -140,11 +163,11 @@ function Workspace({ auth }) {
     return () => window.clearInterval(intervalId);
   }, [currentUser, refreshUnreadInbox]);
 
-  const handleSelectTab = (tab) => {
+  const handleSelectTab = useCallback((tab) => {
     setInlineChatDriverId(null);
     setActiveTab(tab);
     window.location.hash = tab;
-  };
+  }, []);
 
   const handleOpenInlineChat = useCallback((driver) => {
     setChatDriverId(driver.id);
@@ -153,7 +176,7 @@ function Workspace({ auth }) {
   }, []);
 
   const handleCreateLoad = async (newLoad) => {
-    setWorkspaceLoading(true);
+    setOperationLoading(true);
     try {
       const result = await createAndOfferLoad(newLoad);
       const deliveredCount = result.offers.filter((offer) => offer.status === 'pending').length;
@@ -168,7 +191,7 @@ function Workspace({ auth }) {
       showToast(error.message || 'Yukni yaratib bo\'lmadi.');
       throw error;
     } finally {
-      setWorkspaceLoading(false);
+      setOperationLoading(false);
     }
   };
 
@@ -197,7 +220,7 @@ function Workspace({ auth }) {
   const handleAiDocument = async (file) => {
     if (!file || aiProcessing) return;
     setAiProcessing(true);
-    setWorkspaceLoading(true);
+    setOperationLoading(true);
     try {
       const result = await prepareLoadFromDocument(file);
       await refreshWorkspace({ quiet: true });
@@ -214,12 +237,12 @@ function Workspace({ auth }) {
       showToast(error.message || 'AI hujjatni tahlil qila olmadi.');
     } finally {
       setAiProcessing(false);
-      setWorkspaceLoading(false);
+      setOperationLoading(false);
     }
   };
 
   const handleDeleteLoad = async (load) => {
-    setWorkspaceLoading(true);
+    setOperationLoading(true);
     try {
       await deleteUnassignedLoad(load.id);
       setAiPreparedLoad((current) => current?.id === load.id ? null : current);
@@ -230,13 +253,13 @@ function Workspace({ auth }) {
       showToast(error.message || 'Yukni o‘chirib bo‘lmadi.');
       throw error;
     } finally {
-      setWorkspaceLoading(false);
+      setOperationLoading(false);
     }
   };
 
   const handleSendAiOffer = async (driverIds) => {
     if (!aiPreparedLoad) return;
-    setWorkspaceLoading(true);
+    setOperationLoading(true);
     try {
       const preparedLoad = !aiPreparedLoad.id && aiPreparedLoad.brokerMessageId
         ? await createLoadFromBrokerProposal(aiPreparedLoad)
@@ -264,7 +287,7 @@ function Workspace({ auth }) {
     } catch (error) {
       showToast(error.message || 'Taklifni yuborib bo\'lmadi.');
     } finally {
-      setWorkspaceLoading(false);
+      setOperationLoading(false);
     }
   };
 
@@ -282,6 +305,30 @@ function Workspace({ auth }) {
       driver?.name,
     ].some((value) => value?.toLowerCase().includes(query));
   }), [loads, drivers, searchQuery]);
+
+  const globalSearchResults = useMemo(() => buildGlobalSearchResults({
+    query: searchQuery,
+    loads,
+    drivers,
+  }), [drivers, loads, searchQuery]);
+
+  const handleSelectSearchResult = useCallback((result) => {
+    if (result.type === 'driver') {
+      setSelectedDriverId(result.entityId);
+      handleSelectTab('drivers');
+    } else if (result.type === 'load') {
+      const load = loads.find((item) => item.id === result.entityId);
+      if (load) {
+        setSelectedLoadForDocs(load);
+        handleSelectTab('docs');
+      }
+    } else if (result.type === 'page') {
+      if (result.tab === 'drivers') setSelectedDriverId(null);
+      if (result.tab === 'docs') setSelectedLoadForDocs(null);
+      handleSelectTab(result.tab);
+    }
+    setSearchQuery('');
+  }, [handleSelectTab, loads]);
 
   const metrics = useMemo(() => {
     const activeLoadsCount = loads.filter((load) => !['COMPLETED'].includes(load.status)).length;
@@ -305,12 +352,16 @@ function Workspace({ auth }) {
 
   if (!currentUser) {
     return (
-      <AuthView
-        onLogin={login}
-        externalError={!configured ? 'Supabase sozlanmagan. .env.local faylini tekshiring.' : authError}
-        theme={theme}
-        toggleTheme={() => setTheme((value) => value === 'dark' ? 'light' : 'dark')}
-      />
+      <LazyRouteBoundary key="auth">
+        <React.Suspense fallback={<div className="grid min-h-screen place-items-center"><LoaderCircle className="h-7 w-7 animate-spin" /></div>}>
+          <AuthView
+            onLogin={login}
+            externalError={!configured ? 'Supabase sozlanmagan. .env.local faylini tekshiring.' : authError}
+            theme={theme}
+            toggleTheme={() => setTheme((value) => value === 'dark' ? 'light' : 'dark')}
+          />
+        </React.Suspense>
+      </LazyRouteBoundary>
     );
   }
 
@@ -348,6 +399,8 @@ function Workspace({ auth }) {
             activeTab={activeTab}
             searchQuery={searchQuery}
             setSearchQuery={setSearchQuery}
+            searchResults={globalSearchResults}
+            onSelectSearchResult={handleSelectSearchResult}
             onOpenCreateModal={() => handleOpenCreateLoad()}
             activeLoadsCount={metrics.activeLoadsCount}
             totalRevenue={metrics.totalRevenue}
@@ -372,11 +425,13 @@ function Workspace({ auth }) {
         )}
 
         <main className={`workspace-main min-h-0 flex-1 relative ${activeTab === 'chat' || inlineChatVisible ? 'workspace-main-chat' : 'overflow-y-auto p-5 space-y-4'}`}>
-          {workspaceLoading && (
+          {(refreshLoading || operationLoading) && (
             <div className="absolute inset-0 z-30 bg-white/60 dark:bg-zinc-950/60 backdrop-blur-[1px] flex items-center justify-center">
               <LoaderCircle className="w-7 h-7 animate-spin text-zinc-700 dark:text-zinc-300" />
             </div>
           )}
+          <LazyRouteBoundary key={activeTab}>
+          <React.Suspense fallback={<div className="grid min-h-48 place-items-center"><LoaderCircle className="h-7 w-7 animate-spin" /></div>}>
           {activeTab === 'kanban' && (
             <KanbanBoard
               loads={filteredLoads}
@@ -416,59 +471,71 @@ function Workspace({ auth }) {
               })}
             />
           )}
-          {activeTab === 'analytics' && <AnalyticsOverview loads={loads} />}
-          <div className={activeTab === 'chat' || inlineChatVisible ? 'h-full min-h-0' : 'hidden'}>
-            <React.Suspense fallback={<div className="dispatch-chat-workspace grid h-full place-items-center"><LoaderCircle className="h-7 w-7 animate-spin" /></div>}>
-              <DispatchChat
-                drivers={drivers}
-                currentUser={currentUser}
-                isVisible={activeTab === 'chat' || inlineChatVisible}
-                activeChatDriver={drivers.find((driver) => driver.id === chatDriverId)}
-                selectionRequestKey={chatSelectionRequest}
-                onUnreadChange={refreshUnreadChats}
-                compact={inlineChatVisible}
-                onClose={() => setInlineChatDriverId(null)}
-              />
-            </React.Suspense>
-          </div>
           {activeTab === 'profile' && (
             currentUser.roleCode === 'super_admin' ? <PlatformAdminPanel onLogout={logout} /> : (
               <ProfileView
                 drivers={drivers}
+                members={members}
                 loads={loads}
                 onAddDriver={handleCreateMember}
                 onDeleteDriver={() => showToast('Foydalanuvchi o‘chirilmaydi; admin uni suspended holatiga o‘tkazadi.')}
                 currentUser={currentUser}
-                onLogout={logout}
+                onNavigate={handleSelectTab}
+                theme={theme}
+                toggleTheme={() => setTheme((value) => value === 'dark' ? 'light' : 'dark')}
+                unreadChatCount={unreadChatCount}
+                unreadInboxCount={unreadInboxCount}
               />
             )
           )}
+          </React.Suspense>
+          </LazyRouteBoundary>
+          <div className={activeTab === 'chat' || inlineChatVisible ? 'h-full min-h-0' : 'hidden'}>
+            <LazyRouteBoundary>
+              <React.Suspense fallback={<div className="dispatch-chat-workspace grid h-full place-items-center"><LoaderCircle className="h-7 w-7 animate-spin" /></div>}>
+                <DispatchChat
+                  drivers={drivers}
+                  currentUser={currentUser}
+                  isVisible={activeTab === 'chat' || inlineChatVisible}
+                  activeChatDriver={drivers.find((driver) => driver.id === chatDriverId)}
+                  selectionRequestKey={chatSelectionRequest}
+                  onUnreadChange={refreshUnreadChats}
+                  compact={inlineChatVisible}
+                  onClose={() => setInlineChatDriverId(null)}
+                />
+              </React.Suspense>
+            </LazyRouteBoundary>
+          </div>
         </main>
       </div>
 
-      {isCreateModalOpen && <CreateLoadModal
-        key={selectedDriverForLoad?.id || 'all-drivers'}
-        isOpen={isCreateModalOpen}
-        onClose={handleCloseCreateLoad}
-        drivers={drivers}
-        onCreateLoad={handleCreateLoad}
-        onDocument={(file) => { handleCloseCreateLoad(); return handleAiDocument(file); }}
-        initialDriverId={selectedDriverForLoad?.id || null}
-      />}
-      <QuickDriverModal
-        key={aiPreparedLoad?.id || aiPreparedLoad?.brokerMessageId || 'closed'}
-        isOpen={Boolean(aiPreparedLoad)}
-        onClose={() => setAiPreparedLoad(null)}
-        loadData={aiPreparedLoad}
-        drivers={drivers}
-        onConfirm={handleSendAiOffer}
-      />
-      <DocumentViewerModal
-        isOpen={Boolean(selectedLoadForDocs)}
-        onClose={() => setSelectedLoadForDocs(null)}
-        load={selectedLoadForDocs}
-        onApproveAndInvoice={() => showToast('Hujjat warninglari ko‘rib chiqildi. AI loadni bloklamaydi.')}
-      />
+      <LazyRouteBoundary key={`modal:${isCreateModalOpen}:${Boolean(aiPreparedLoad)}:${Boolean(selectedLoadForDocs)}`}>
+        <React.Suspense fallback={null}>
+          {isCreateModalOpen && <CreateLoadModal
+            key={selectedDriverForLoad?.id || 'all-drivers'}
+            isOpen={isCreateModalOpen}
+            onClose={handleCloseCreateLoad}
+            drivers={drivers}
+            onCreateLoad={handleCreateLoad}
+            onDocument={(file) => { handleCloseCreateLoad(); return handleAiDocument(file); }}
+            initialDriverId={selectedDriverForLoad?.id || null}
+          />}
+          {aiPreparedLoad && <QuickDriverModal
+            key={aiPreparedLoad?.id || aiPreparedLoad?.brokerMessageId || 'closed'}
+            isOpen
+            onClose={() => setAiPreparedLoad(null)}
+            loadData={aiPreparedLoad}
+            drivers={drivers}
+            onConfirm={handleSendAiOffer}
+          />}
+          {selectedLoadForDocs && <DocumentViewerModal
+            isOpen
+            onClose={() => setSelectedLoadForDocs(null)}
+            load={selectedLoadForDocs}
+            onApproveAndInvoice={() => showToast('Hujjat warninglari ko‘rib chiqildi. AI loadni bloklamaydi.')}
+          />}
+        </React.Suspense>
+      </LazyRouteBoundary>
     </div>
   );
 }

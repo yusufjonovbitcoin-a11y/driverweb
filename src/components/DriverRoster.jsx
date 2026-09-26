@@ -163,7 +163,7 @@ export default function DriverRoster({
                     {/* Driver Info */}
                     <td className="py-3.5 px-4 whitespace-nowrap">
                       <div className="flex items-center space-x-3">
-                        <div className="relative w-8 h-8 overflow-hidden rounded-xl bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 flex items-center justify-center font-mono font-bold text-xs text-zinc-800 dark:text-zinc-200 flex-shrink-0">
+                        <div className="relative w-11 h-11 overflow-hidden rounded-xl bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 flex items-center justify-center font-mono font-bold text-sm text-zinc-800 dark:text-zinc-200 flex-shrink-0">
                           {driver.name.charAt(0)}{driver.name.split(' ')[1]?.charAt(0) || ''}
                           {driver.avatar && (
                             <img
@@ -208,7 +208,8 @@ export default function DriverRoster({
                       {activeLoad ? (
                         <div className="font-mono">
                           <div className="text-sm font-bold text-zinc-900 dark:text-zinc-100">
-                            {activeLoad.loadNumber} • ${Number(activeLoad.rate).toLocaleString('en-US')}
+                            {activeLoad.loadNumber}
+                            {Number(activeLoad.rate) > 0 && ` • $${Number(activeLoad.rate).toLocaleString('en-US')}`}
                           </div>
                           <div className="text-xs text-zinc-500 truncate max-w-[170px] mt-0.5">
                             {activeLoad.origin.city} ➔ {activeLoad.destination.city}

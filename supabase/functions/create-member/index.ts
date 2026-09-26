@@ -1,7 +1,8 @@
+import { withCors } from "../_shared/cors.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { accountPasswordError } from '../_shared/password-policy.ts';
 
 const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
@@ -12,7 +13,7 @@ function json(body: unknown, status = 200) {
   });
 }
 
-Deno.serve(async (request) => {
+Deno.serve((request) => withCors(request, async () => {
   if (request.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
   if (request.method !== 'POST') return json({ error: 'Method not allowed' }, 405);
 
@@ -58,9 +59,8 @@ Deno.serve(async (request) => {
   if (!email.includes('@') || !fullName || !companyId) {
     return json({ error: 'Email, full name, and company are required' }, 400);
   }
-  if (password.length < 6) {
-    return json({ error: 'Password must contain at least 6 characters' }, 400);
-  }
+  const passwordError = accountPasswordError(password);
+  if (passwordError) return json({ error: passwordError }, 400);
 
   const allowed = requester.role === 'super_admin'
     ? ['company_admin', 'dispatcher', 'driver'].includes(role)
@@ -102,4 +102,4 @@ Deno.serve(async (request) => {
   }
 
   return json({ profile }, 201);
-});
+}));

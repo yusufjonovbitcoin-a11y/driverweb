@@ -7,7 +7,6 @@ import {
   FileText, 
   MessageSquare,
   Inbox,
-  BarChart3, 
   User,
   ChevronLeft, 
   ChevronRight,
@@ -57,11 +56,6 @@ export default function Sidebar({
       icon: MessageSquare,
       badge: unreadChatCount || null,
       badgeTone: 'alert',
-    },
-    { 
-      id: 'analytics', 
-      label: 'Moliya', 
-      icon: BarChart3 
     },
     {
       id: 'profile',

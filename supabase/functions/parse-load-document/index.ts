@@ -1,8 +1,9 @@
+import { withCors } from "../_shared/cors.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { checkDistributedRateLimit, rateLimitResponse } from "../_shared/rate-limit.ts";
 import { uploadPrivateMedia } from "../_shared/cloudinary-media.ts";
 
 const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers":
     "authorization, x-client-info, apikey, content-type",
 };
@@ -448,7 +449,7 @@ function normalizeMissingFields(
   return [...new Set(filtered)];
 }
 
-Deno.serve(async (request) => {
+Deno.serve((request) => withCors(request, async () => {
   if (request.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
   }
@@ -470,8 +471,17 @@ Deno.serve(async (request) => {
   const callerClient = createClient(supabaseUrl, publicKey, {
     global: { headers: { Authorization: authorization } },
   });
+  const admin = createClient(supabaseUrl, serviceRoleKey, {
+    auth: { autoRefreshToken: false, persistSession: false },
+  });
   const { data: authData, error: authError } = await callerClient.auth.getUser();
   if (authError || !authData.user) return json({ error: "Invalid session" }, 401);
+  const limit = await checkDistributedRateLimit(admin, "parse-load-document", authData.user.id, {
+    limit: 30,
+    windowMs: 5 * 60_000,
+    supabaseUrl,
+  });
+  if (!limit.allowed) return rateLimitResponse(limit);
 
   const { data: profile } = await callerClient
     .from("profiles")
@@ -510,9 +520,7 @@ Deno.serve(async (request) => {
     return json({ error: "Fayl tarkibi PDF yoki qo'llab-quvvatlanadigan surat emas" }, 415);
   }
   const checksum = await sha256(bytes);
-  const adminClient = createClient(supabaseUrl, serviceRoleKey, {
-    auth: { autoRefreshToken: false, persistSession: false },
-  });
+  const adminClient = admin;
 
   const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
   const { count: recentImportCount, error: countError } = await adminClient
@@ -689,7 +697,7 @@ Deno.serve(async (request) => {
         authorization,
         file,
         scope: "load_document",
-        contextId: loadId,
+        contextId: uploadPlan.versionId,
       });
       const { error: completeError } = await callerClient.rpc(
         "bind_document_version_media",
@@ -821,4 +829,4 @@ Deno.serve(async (request) => {
     const message = error instanceof Error ? error.message : "AI tahlili bajarilmadi";
     return await fail(message, 502);
   }
-});
+}));
