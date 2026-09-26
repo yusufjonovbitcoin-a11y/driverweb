@@ -38,7 +38,7 @@ export async function downloadPrivateMedia({
       "X-Worker-Token": workerToken,
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({ action: "signedUrl", reference, expiresIn: 300 }),
+    body: JSON.stringify({ action: "signedUrl", reference }),
   });
   const payload = await response.json().catch(() => ({}));
   if (!response.ok || !payload.url) {

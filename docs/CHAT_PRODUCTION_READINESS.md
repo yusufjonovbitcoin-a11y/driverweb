@@ -11,7 +11,7 @@ The dispatcher and driver chat now share the same reliability contract:
 - foreground reconciliation in the Flutter client;
 - immediate rendering of RPC responses so delivery does not depend on realtime echo;
 - upload progress, 50 MB validation, retry/cancel on web, and Cloudinary content-type plus magic-byte checks;
-- expiring Cloudinary token delivery when `CLOUDINARY_AUTH_TOKEN_KEY` is configured;
+- Cloudinary `authenticated` delivery URLs signed inside the Edge Function;
 - recoverable WebRTC call leases, stale-call cleanup, heartbeat, connection timeout, and ephemeral TURN credentials;
 - responsive driver information drawer and lazy-loaded web chat bundle.
 
@@ -45,7 +45,6 @@ Realtime TURN without exposing the long-lived key to clients. Clients retain STU
 explicit development fallback variables, but reliable calls across restrictive
 NATs require those production secrets.
 
-Cloudinary authenticated delivery works with the existing credentials. Strict
-time-limited token access activates automatically when a hexadecimal
-`CLOUDINARY_AUTH_TOKEN_KEY` is available on a Cloudinary plan that supports
-token-based access control.
+Cloudinary authenticated delivery works with the existing cloud name, API key,
+and API secret. Free plans use signed private delivery URLs. Strict time-limited
+token access requires a Cloudinary plan that supports token-based access control.

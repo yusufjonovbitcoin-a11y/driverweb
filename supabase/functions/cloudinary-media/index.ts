@@ -1,6 +1,6 @@
 import { withCors } from "../_shared/cors.ts";
+import { signedAuthenticatedDeliveryUrl } from "../_shared/cloudinary-delivery.ts";
 import { canDeleteMedia } from "../_shared/media-permissions.ts";
-import { requireCloudinaryTokenKey } from "../_shared/cloudinary-token.ts";
 import { checkDistributedRateLimit, rateLimitResponse } from "../_shared/rate-limit.ts";
 import { secureEqual } from "../_shared/secure-equal.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
@@ -57,38 +57,6 @@ async function sha256(value: string) {
   return hex(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value)));
 }
 
-async function sha1Base64Url(value: string) {
-  const digest = new Uint8Array(await crypto.subtle.digest("SHA-1", new TextEncoder().encode(value)));
-  let binary = "";
-  for (const byte of digest) binary += String.fromCharCode(byte);
-  return btoa(binary).replaceAll("+", "-").replaceAll("/", "_").replaceAll("=", "");
-}
-
-function hexBytes(value: string) {
-  if (!/^[0-9a-f]+$/i.test(value) || value.length % 2 !== 0) {
-    throw new Error("CLOUDINARY_AUTH_TOKEN_KEY must be a hexadecimal key");
-  }
-  return new Uint8Array(value.match(/.{2}/g)!.map((part) => Number.parseInt(part, 16)));
-}
-
-async function hmacSha256Hex(key: string, value: string) {
-  const cryptoKey = await crypto.subtle.importKey(
-    "raw",
-    hexBytes(key),
-    { name: "HMAC", hash: "SHA-256" },
-    false,
-    ["sign"],
-  );
-  return hex(await crypto.subtle.sign("HMAC", cryptoKey, new TextEncoder().encode(value)));
-}
-
-function tokenEscape(value: string) {
-  const reserved = new Set([" ", '"', "#", "%", "&", "'", "/", ":", ";", "<", "=", ">", "?", "@", "[", "\\", "]", "^", "`", "{", "|", "}", "~"]);
-  return [...value].map((char) => reserved.has(char)
-    ? `%${char.charCodeAt(0).toString(16).padStart(2, "0")}`
-    : char).join("");
-}
-
 async function matchesMagic(file: File) {
   const bytes = new Uint8Array(await file.slice(0, 16).arrayBuffer());
   const ascii = String.fromCharCode(...bytes);
@@ -119,25 +87,15 @@ function cloudinaryRef(id: string) {
   return `cloudinary:${id}`;
 }
 
-function encodePublicId(publicId: string) {
-  return publicId.split("/").map(encodeURIComponent).join("/");
-}
-
-async function signedDeliveryUrl(asset: Record<string, unknown>, expiresAt: number) {
-  const cloudName = env("CLOUDINARY_CLOUD_NAME");
-  const secret = env("CLOUDINARY_API_SECRET");
-  const publicId = String(asset.public_id);
-  const resourceType = String(asset.resource_type);
-  const version = Number(asset.version);
-  const format = asset.format ? `.${String(asset.format)}` : "";
-  const path = `v${version}/${publicId}${format}`;
-  const signature = (await sha1Base64Url(`${path}${secret}`)).slice(0, 8);
-  const deliveryPath = `/${encodeURIComponent(cloudName)}/${resourceType}/authenticated/s--${signature}--/v${version}/${encodePublicId(publicId)}${format}`;
-  const baseUrl = `https://res.cloudinary.com${deliveryPath}`;
-  const tokenKey = requireCloudinaryTokenKey(Deno.env.get("CLOUDINARY_AUTH_TOKEN_KEY"));
-  const signed = `exp=${expiresAt}~url=${tokenEscape(deliveryPath)}`;
-  const token = `exp=${expiresAt}~hmac=${await hmacSha256Hex(tokenKey, signed)}`;
-  return { url: `${baseUrl}?__cld_token__=${token}`, expirationEnforced: true };
+async function signedDeliveryUrl(asset: Record<string, unknown>) {
+  return await signedAuthenticatedDeliveryUrl({
+    cloudName: env("CLOUDINARY_CLOUD_NAME"),
+    apiSecret: env("CLOUDINARY_API_SECRET"),
+    publicId: String(asset.public_id),
+    resourceType: String(asset.resource_type),
+    version: Number(asset.version),
+    format: asset.format ? String(asset.format) : null,
+  });
 }
 
 async function signUpload(params: Record<string, string>) {
@@ -184,10 +142,7 @@ async function authenticate(request: Request, supabaseUrl: string, serviceRoleKe
 
 async function uploadToCloudinary(file: File, folder: string, publicId: string) {
   const timestamp = String(Math.floor(Date.now() / 1000));
-  requireCloudinaryTokenKey(Deno.env.get("CLOUDINARY_AUTH_TOKEN_KEY"));
-  const accessControl = JSON.stringify([{ access_type: "token" }]);
   const params = {
-    access_control: accessControl,
     folder,
     public_id: publicId,
     timestamp,
@@ -200,7 +155,6 @@ async function uploadToCloudinary(file: File, folder: string, publicId: string) 
   form.set("folder", folder);
   form.set("public_id", publicId);
   form.set("type", "authenticated");
-  form.set("access_control", accessControl);
   form.set("signature_algorithm", "sha256");
   form.set("signature", await signUpload(params));
   const response = await fetch(
@@ -343,13 +297,11 @@ Deno.serve((request) => withCors(request, async () => {
     const { data: asset, error: assetError } = await query.maybeSingle();
     if (assetError || !asset) return json({ error: "Media not found" }, 404);
     if (action === "signedUrl") {
-      const expiresIn = Math.min(Math.max(Number(body.expiresIn || 3600), 60), 86400);
-      const expiresAt = Math.floor(Date.now() / 1000) + expiresIn;
-      const delivery = await signedDeliveryUrl(asset, expiresAt);
+      const url = await signedDeliveryUrl(asset);
       return json({
-        url: delivery.url,
-        expiresAt: delivery.expirationEnforced ? expiresAt : null,
-        expirationEnforced: delivery.expirationEnforced,
+        url,
+        expiresAt: null,
+        expirationEnforced: false,
       });
     }
     if (action === "delete") {

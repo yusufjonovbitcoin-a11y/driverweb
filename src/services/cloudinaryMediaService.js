@@ -73,9 +73,9 @@ export async function uploadCloudinaryMedia({
   });
 }
 
-export async function cloudinarySignedUrl(reference, expiresIn = 3600) {
+export async function cloudinarySignedUrl(reference) {
   if (!isCloudinaryReference(reference)) return null;
-  const result = await request({ action: 'signedUrl', reference, expiresIn });
+  const result = await request({ action: 'signedUrl', reference });
   return result.url || null;
 }
 
