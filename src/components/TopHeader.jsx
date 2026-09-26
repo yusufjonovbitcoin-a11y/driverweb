@@ -207,10 +207,12 @@ export default function TopHeader({
         >
           {theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
         </button>
-        <button type="button" onClick={onOpenCreateModal} className="primary-button">
-          <Plus size={17} aria-hidden="true" />
-          <span>{t('header.createLoad')}</span>
-        </button>
+        {onOpenCreateModal && (
+          <button type="button" onClick={onOpenCreateModal} className="primary-button">
+            <Plus size={17} aria-hidden="true" />
+            <span>{t('header.createLoad')}</span>
+          </button>
+        )}
       </div>
     </header>
   );

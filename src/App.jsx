@@ -106,7 +106,7 @@ function Workspace({ auth }) {
   }, [currentUserId, i18n, showToast]);
 
   const refreshWorkspace = useCallback(async ({ quiet = false } = {}) => {
-    if (!currentUser || currentUser.roleCode === 'driver') return;
+    if (!currentUser || ['driver', 'super_admin'].includes(currentUser.roleCode)) return;
     const requestId = ++workspaceRequestRef.current;
     if (!quiet) {
       foregroundRefreshCountRef.current += 1;
@@ -134,7 +134,7 @@ function Workspace({ auth }) {
   }, [currentUser, t]);
 
   const refreshUnreadChats = useCallback(async () => {
-    if (!currentUser || currentUser.roleCode === 'driver') return;
+    if (!currentUser || ['driver', 'super_admin'].includes(currentUser.roleCode)) return;
     try {
       setUnreadChatCount(await fetchUnreadChatCount());
     } catch {
@@ -143,7 +143,7 @@ function Workspace({ auth }) {
   }, [currentUser]);
 
   const refreshUnreadInbox = useCallback(async () => {
-    if (!currentUser || currentUser.roleCode === 'driver') return;
+    if (!currentUser || ['driver', 'super_admin'].includes(currentUser.roleCode)) return;
     try {
       setUnreadInboxCount(await fetchBrokerInboxUnreadCount());
     } catch {
@@ -158,6 +158,12 @@ function Workspace({ auth }) {
 
   useEffect(() => {
     const handleHash = () => {
+      if (currentUser?.roleCode === 'super_admin') {
+        setInlineChatDriverId(null);
+        setActiveTab('profile');
+        window.history.replaceState(null, '', '#profile');
+        return;
+      }
       const hash = window.location.hash.replace('#', '');
       if (tabs.includes(hash)) {
         setInlineChatDriverId(null);
@@ -171,24 +177,24 @@ function Workspace({ auth }) {
     handleHash();
     window.addEventListener('hashchange', handleHash);
     return () => window.removeEventListener('hashchange', handleHash);
-  }, []);
+  }, [currentUser?.roleCode]);
 
   useEffect(() => {
-    if (!currentUser || currentUser.roleCode === 'driver') return undefined;
+    if (!currentUser || ['driver', 'super_admin'].includes(currentUser.roleCode)) return undefined;
     // oxlint-disable-next-line react/set-state-in-effect -- synchronize the authenticated workspace with remote data.
     refreshWorkspace();
     return subscribeWorkspace(() => refreshWorkspace({ quiet: true }));
   }, [currentUser, refreshWorkspace]);
 
   useEffect(() => {
-    if (!currentUser || currentUser.roleCode === 'driver') return undefined;
+    if (!currentUser || ['driver', 'super_admin'].includes(currentUser.roleCode)) return undefined;
     // oxlint-disable-next-line react/set-state-in-effect -- subscribe and load the external unread count.
     refreshUnreadChats();
     return subscribeUnreadChats(refreshUnreadChats);
   }, [currentUser, refreshUnreadChats]);
 
   useEffect(() => {
-    if (!currentUser || currentUser.roleCode === 'driver') return undefined;
+    if (!currentUser || ['driver', 'super_admin'].includes(currentUser.roleCode)) return undefined;
     // oxlint-disable-next-line react/set-state-in-effect -- poll the remote inbox badge.
     refreshUnreadInbox();
     const intervalId = window.setInterval(refreshUnreadInbox, 15_000);
@@ -196,10 +202,11 @@ function Workspace({ auth }) {
   }, [currentUser, refreshUnreadInbox]);
 
   const handleSelectTab = useCallback((tab) => {
+    if (currentUser?.roleCode === 'super_admin' && tab !== 'profile') return;
     setInlineChatDriverId(null);
     setActiveTab(tab);
     window.location.hash = tab;
-  }, []);
+  }, [currentUser]);
 
   const handleOpenInlineChat = useCallback((driver) => {
     setChatDriverId(driver.id);
@@ -446,7 +453,7 @@ function Workspace({ auth }) {
             setSearchQuery={setSearchQuery}
             searchResults={globalSearchResults}
             onSelectSearchResult={handleSelectSearchResult}
-            onOpenCreateModal={() => handleOpenCreateLoad()}
+            onOpenCreateModal={currentUser.roleCode === 'super_admin' ? undefined : () => handleOpenCreateLoad()}
             activeLoadsCount={metrics.activeLoadsCount}
             totalRevenue={metrics.totalRevenue}
             avgRPM={metrics.avgRPM}

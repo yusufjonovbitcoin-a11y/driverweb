@@ -72,6 +72,9 @@ export default function Sidebar({
       badge: loadsCount
     }
   ];
+  const visibleNavigation = currentUser?.roleCode === 'super_admin'
+    ? navigation.filter((item) => item.id === 'profile')
+    : navigation;
 
   return (
     <aside
@@ -106,7 +109,7 @@ export default function Sidebar({
         {/* Navigation List */}
         <nav aria-label={t('nav.mainMenu')} className="sidebar-nav p-3 space-y-1.5">
           <p className="nav-section-label">{collapsed ? '•' : t('nav.workspace')}</p>
-          {navigation.map((item) => {
+          {visibleNavigation.map((item) => {
             const Icon = item.icon;
             const isActive = activeTab === item.id;
 
