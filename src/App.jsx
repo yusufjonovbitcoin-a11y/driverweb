@@ -53,6 +53,7 @@ function Workspace({ auth }) {
   const [selectedDriverId, setSelectedDriverId] = useState(null);
   const [chatDriverId, setChatDriverId] = useState(null);
   const [chatSelectionRequest, setChatSelectionRequest] = useState(0);
+  const [inlineChatDriverId, setInlineChatDriverId] = useState(null);
   const [aiPreparedLoad, setAiPreparedLoad] = useState(null);
   const [aiProcessing, setAiProcessing] = useState(false);
   const [selectedLoadForDocs, setSelectedLoadForDocs] = useState(null);
@@ -60,6 +61,7 @@ function Workspace({ auth }) {
   const [theme, setTheme] = useState(() => localStorage.getItem('apex_theme') || 'light');
   const [unreadChatCount, setUnreadChatCount] = useState(0);
   const [unreadInboxCount, setUnreadInboxCount] = useState(0);
+  const inlineChatVisible = activeTab === 'drivers' && Boolean(inlineChatDriverId);
 
   const showToast = useCallback((message) => {
     setToast({ show: true, message });
@@ -107,7 +109,10 @@ function Workspace({ auth }) {
   useEffect(() => {
     const handleHash = () => {
       const hash = window.location.hash.replace('#', '');
-      if (tabs.includes(hash)) setActiveTab(hash);
+      if (tabs.includes(hash)) {
+        setInlineChatDriverId(null);
+        setActiveTab(hash);
+      }
     };
     window.addEventListener('hashchange', handleHash);
     return () => window.removeEventListener('hashchange', handleHash);
@@ -136,9 +141,16 @@ function Workspace({ auth }) {
   }, [currentUser, refreshUnreadInbox]);
 
   const handleSelectTab = (tab) => {
+    setInlineChatDriverId(null);
     setActiveTab(tab);
     window.location.hash = tab;
   };
+
+  const handleOpenInlineChat = useCallback((driver) => {
+    setChatDriverId(driver.id);
+    setInlineChatDriverId(driver.id);
+    setChatSelectionRequest((value) => value + 1);
+  }, []);
 
   const handleCreateLoad = async (newLoad) => {
     setWorkspaceLoading(true);
@@ -342,7 +354,9 @@ function Workspace({ auth }) {
             avgRPM={metrics.avgRPM}
             theme={theme}
             toggleTheme={() => setTheme((value) => value === 'dark' ? 'light' : 'dark')}
-            onExitDriver={activeTab === 'drivers' && selectedDriverId ? () => setSelectedDriverId(null) : undefined}
+            onExitDriver={activeTab === 'drivers' && selectedDriverId
+              ? () => inlineChatVisible ? setInlineChatDriverId(null) : setSelectedDriverId(null)
+              : undefined}
           />
         )}
 
@@ -357,7 +371,7 @@ function Workspace({ auth }) {
           </div>
         )}
 
-        <main className={`workspace-main min-h-0 flex-1 relative ${activeTab === 'chat' ? 'workspace-main-chat' : 'overflow-y-auto p-5 space-y-4'}`}>
+        <main className={`workspace-main min-h-0 flex-1 relative ${activeTab === 'chat' || inlineChatVisible ? 'workspace-main-chat' : 'overflow-y-auto p-5 space-y-4'}`}>
           {workspaceLoading && (
             <div className="absolute inset-0 z-30 bg-white/60 dark:bg-zinc-950/60 backdrop-blur-[1px] flex items-center justify-center">
               <LoaderCircle className="w-7 h-7 animate-spin text-zinc-700 dark:text-zinc-300" />
@@ -375,7 +389,7 @@ function Workspace({ auth }) {
             />
           )}
           {activeTab === 'map' && <FleetMap drivers={drivers} loads={loads} onSelectLoad={setSelectedLoadForDocs} />}
-          {activeTab === 'drivers' && (
+          {activeTab === 'drivers' && !inlineChatVisible && (
             <DriverRoster
               drivers={drivers}
               loads={loads}
@@ -388,7 +402,7 @@ function Workspace({ auth }) {
               onUnreadChange={refreshUnreadChats}
               selectedDriverId={selectedDriverId}
               onSelectDriver={setSelectedDriverId}
-              onOpenChat={(driver) => { setChatDriverId(driver.id); setChatSelectionRequest((value) => value + 1); handleSelectTab('chat'); }}
+              onOpenChat={handleOpenInlineChat}
             />
           )}
           {activeTab === 'docs' && <DocumentsView loads={loads} drivers={drivers} onOpenDocs={setSelectedLoadForDocs} />}
@@ -403,15 +417,17 @@ function Workspace({ auth }) {
             />
           )}
           {activeTab === 'analytics' && <AnalyticsOverview loads={loads} />}
-          <div className={activeTab === 'chat' ? 'h-full min-h-0' : 'hidden'}>
+          <div className={activeTab === 'chat' || inlineChatVisible ? 'h-full min-h-0' : 'hidden'}>
             <React.Suspense fallback={<div className="dispatch-chat-workspace grid h-full place-items-center"><LoaderCircle className="h-7 w-7 animate-spin" /></div>}>
               <DispatchChat
                 drivers={drivers}
                 currentUser={currentUser}
-                isVisible={activeTab === 'chat'}
+                isVisible={activeTab === 'chat' || inlineChatVisible}
                 activeChatDriver={drivers.find((driver) => driver.id === chatDriverId)}
                 selectionRequestKey={chatSelectionRequest}
                 onUnreadChange={refreshUnreadChats}
+                compact={inlineChatVisible}
+                onClose={() => setInlineChatDriverId(null)}
               />
             </React.Suspense>
           </div>

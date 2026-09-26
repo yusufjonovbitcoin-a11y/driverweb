@@ -900,7 +900,7 @@ export default function DispatchChat({
     <Fragment>
     <div className={`${isVisible ? 'grid' : 'hidden'} grid-rows-[minmax(0,1fr)] relative overflow-hidden bg-white dark:bg-zinc-950 ${
       compact
-        ? 'grid-cols-1 h-[min(680px,calc(100vh-10rem))] min-h-[520px] border border-zinc-200 dark:border-zinc-800 rounded-2xl shadow-sm'
+        ? `h-full min-h-0 w-full grid-cols-1 ${showProfile ? 'lg:grid-cols-[minmax(0,1fr)_250px]' : ''}`
         : `dispatch-chat-workspace grid-cols-1 h-full min-h-0 md:grid-cols-[300px_minmax(0,1fr)] ${showProfile ? 'lg:grid-cols-[280px_minmax(0,1fr)_250px]' : ''}`
     }`}>
       {!compact && <aside className="hidden min-h-0 md:flex border-r border-zinc-200 dark:border-zinc-800 bg-zinc-50/70 dark:bg-zinc-950 flex-col">
@@ -974,7 +974,7 @@ export default function DispatchChat({
             {!showMessageSearch && <button type="button" onClick={() => setShowMessageSearch(true)} title="Xabarlardan qidirish" className="p-2.5 rounded-full hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-500"><Search className="w-5 h-5" /></button>}
             <button onClick={() => placeCall('audio')} title="Audio qo‘ng‘iroq" className="p-2.5 rounded-full hover:bg-zinc-100 dark:hover:bg-zinc-800 text-blue-600"><Phone className="w-5 h-5" /></button>
             <button onClick={() => placeCall('video')} title="Video qo‘ng‘iroq" className="p-2.5 rounded-full hover:bg-zinc-100 dark:hover:bg-zinc-800 text-blue-600"><Video className="w-5 h-5" /></button>
-            {!compact && <button type="button" aria-pressed={showProfile} onClick={() => setShowProfile((current) => !current)} title="Driver ma’lumotlari" className={`p-2.5 rounded-full hover:bg-zinc-100 dark:hover:bg-zinc-800 ${showProfile ? 'text-blue-600' : 'text-zinc-500'}`}><PanelRight className="w-5 h-5" /></button>}
+            <button type="button" aria-pressed={showProfile} onClick={() => setShowProfile((current) => !current)} title="Driver ma’lumotlari" className={`p-2.5 rounded-full hover:bg-zinc-100 dark:hover:bg-zinc-800 ${showProfile ? 'text-blue-600' : 'text-zinc-500'}`}><PanelRight className="w-5 h-5" /></button>
             {compact && <button onClick={onClose} title="Chatni yopish" className="p-2.5 rounded-full hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-500"><X className="w-5 h-5" /></button>}
           </div>
         </header>
@@ -1066,7 +1066,7 @@ export default function DispatchChat({
         </form>
       </section>
 
-      {!compact && showProfile && (
+      {showProfile && (
         <>
         <button type="button" aria-label="Driver ma’lumotlari panelini yopish" onClick={() => setShowProfile(false)} className="absolute inset-0 z-20 bg-zinc-950/25 backdrop-blur-[1px] lg:hidden" />
         <aside className="absolute inset-y-0 right-0 z-30 flex w-[min(300px,calc(100%-1rem))] min-w-0 flex-col border-l border-zinc-200 bg-white shadow-2xl dark:border-zinc-800 dark:bg-zinc-950 lg:static lg:w-auto lg:shadow-none">
