@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { downloadPrivateMedia } from "../_shared/cloudinary-media.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -196,9 +197,13 @@ Deno.serve(async (request) => {
       ]);
     if (loadError || stopsError) return await fail("Yuk ma'lumotini o'qib bo'lmadi.", 422);
 
-    const { data: blob, error: downloadError } = await admin.storage
-      .from("load-documents").download(version.storage_path);
-    if (downloadError || !blob) return await fail("Hujjat faylini o'qib bo'lmadi.", 422);
+    const blob = await downloadPrivateMedia({
+      admin,
+      bucket: "load-documents",
+      reference: version.storage_path,
+      supabaseUrl,
+      serviceRoleKey,
+    });
     const bytes = new Uint8Array(await blob.arrayBuffer());
     if (!bytes.length || bytes.length > MAX_FILE_BYTES) {
       return await fail("Hujjat fayli bo'sh yoki juda katta.", 422);

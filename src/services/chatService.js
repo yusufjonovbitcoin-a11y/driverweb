@@ -1,4 +1,11 @@
 import { requireSupabase } from '../lib/supabase';
+import {
+  cloudinarySignedUrl,
+  deleteCloudinaryMedia,
+  isCloudinaryReference,
+  uploadCloudinaryMedia,
+} from './cloudinaryMediaService';
+import { buildChatCursor, chatIceServers } from './chatReliability';
 
 const bucket = 'chat-media';
 
@@ -15,22 +22,38 @@ export async function openChat(driverId) {
 
 async function withMediaUrl(client, message) {
   if (!message.storage_path) return message;
+  if (isCloudinaryReference(message.storage_path)) {
+    try {
+      return { ...message, mediaUrl: await cloudinarySignedUrl(message.storage_path) };
+    } catch (error) {
+      return { ...message, mediaError: error.message };
+    }
+  }
   const { data, error } = await client.storage.from(bucket).createSignedUrl(message.storage_path, 3600);
   if (error) return { ...message, mediaError: error.message };
   return { ...message, mediaUrl: data?.signedUrl || null };
 }
 
-export async function fetchChatMessages(conversationId) {
+export async function refreshChatMessageMedia(message) {
+  return withMediaUrl(requireSupabase(), message);
+}
+
+export async function fetchChatMessages(conversationId, { before = null, pageSize = 50 } = {}) {
   const client = requireSupabase();
-  const { data, error } = await client
-    .from('chat_messages')
-    .select('*')
-    .eq('conversation_id', conversationId)
-    .is('deleted_at', null)
-    .order('created_at', { ascending: true })
-    .limit(300);
-  if (error) throw error;
-  return Promise.all((data || []).map((message) => withMediaUrl(client, message)));
+  const safePageSize = Math.min(Math.max(Number(pageSize) || 50, 1), 100);
+  const result = await client.rpc('get_chat_messages_page', {
+    target_conversation_id: conversationId,
+    before_created_at: before?.createdAt || null,
+    before_message_id: before?.id || null,
+    requested_page_size: safePageSize,
+  });
+  const rows = assertNoError(result) || [];
+  const hydrated = await Promise.all(rows.map((message) => withMediaUrl(client, message)));
+  return {
+    messages: hydrated.reverse(),
+    hasMore: rows.length === safePageSize,
+    cursor: buildChatCursor(hydrated),
+  };
 }
 
 export async function sendTextMessage(conversationId, text) {
@@ -51,18 +74,22 @@ function fileKind(file) {
   return 'file';
 }
 
-function safeName(name) {
-  return name.replace(/[^a-zA-Z0-9._-]/g, '_').slice(-120) || 'file';
-}
-
-export async function sendMediaMessage({ conversationId, companyId, file, durationMs = null }) {
+export async function sendMediaMessage({
+  conversationId,
+  file,
+  durationMs = null,
+  onProgress,
+  signal,
+}) {
   const client = requireSupabase();
-  const path = `${companyId}/${conversationId}/${crypto.randomUUID()}-${safeName(file.name)}`;
-  const { error: uploadError } = await client.storage.from(bucket).upload(path, file, {
-    contentType: file.type || 'application/octet-stream',
-    upsert: false,
+  const uploaded = await uploadCloudinaryMedia({
+    file,
+    scope: 'chat',
+    contextId: conversationId,
+    onProgress,
+    signal,
   });
-  if (uploadError) throw uploadError;
+  const path = uploaded.reference;
 
   try {
     const result = await client.rpc('send_chat_message', {
@@ -76,9 +103,9 @@ export async function sendMediaMessage({ conversationId, companyId, file, durati
       media_duration_ms: durationMs,
       message_client_id: crypto.randomUUID(),
     });
-    return assertNoError(result);
+    return withMediaUrl(client, assertNoError(result));
   } catch (error) {
-    await client.storage.from(bucket).remove([path]);
+    await deleteCloudinaryMedia(path).catch(() => undefined);
     throw error;
   }
 }
@@ -96,7 +123,11 @@ export async function deleteChatMessage(message) {
   });
   const storagePath = assertNoError(result);
   if (storagePath) {
-    await client.storage.from(bucket).remove([storagePath]);
+    if (isCloudinaryReference(storagePath)) {
+      await deleteCloudinaryMedia(storagePath);
+    } else {
+      await client.storage.from(bucket).remove([storagePath]);
+    }
   }
 }
 
@@ -106,8 +137,16 @@ export async function fetchUnreadChatCount() {
   return Number(assertNoError(result) || 0);
 }
 
-export function subscribeChat({ conversationId, onMessage, onMessageUpdated }) {
+export function subscribeChat({ conversationId, onMessage, onMessageUpdated, onStatus, onReconnect }) {
   const client = requireSupabase();
+  let subscribedOnce = false;
+  let settled = false;
+  let resolveReady;
+  let rejectReady;
+  const ready = new Promise((resolve, reject) => {
+    resolveReady = resolve;
+    rejectReady = reject;
+  });
   const channel = client
     .channel(`chat:${conversationId}:${crypto.randomUUID()}`)
     .on('postgres_changes', {
@@ -116,8 +155,27 @@ export function subscribeChat({ conversationId, onMessage, onMessageUpdated }) {
     .on('postgres_changes', {
       event: 'UPDATE', schema: 'public', table: 'chat_messages', filter: `conversation_id=eq.${conversationId}`,
     }, async ({ new: message }) => onMessageUpdated?.(message.deleted_at ? message : await withMediaUrl(client, message)))
-    .subscribe();
-  return () => client.removeChannel(channel);
+    .subscribe((status) => {
+      onStatus?.(status);
+      if (status === 'SUBSCRIBED') {
+        if (!settled) {
+          settled = true;
+          resolveReady();
+        } else if (subscribedOnce) {
+          onReconnect?.();
+        }
+        subscribedOnce = true;
+      } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
+        if (!settled) {
+          settled = true;
+          rejectReady(new Error('Real-time chatga ulanib bo‘lmadi.'));
+        }
+      }
+    });
+  return {
+    ready,
+    unsubscribe: () => client.removeChannel(channel),
+  };
 }
 
 export function subscribeCalls({ onCall, onSignal }) {
@@ -167,6 +225,46 @@ export async function startCall(conversationId, kind) {
 export async function respondCall(callId, action) {
   const client = requireSupabase();
   return assertNoError(await client.rpc('respond_chat_call', { call_id: callId, action }));
+}
+
+export async function heartbeatCall(callId) {
+  const client = requireSupabase();
+  return assertNoError(await client.rpc('heartbeat_chat_call', {
+    target_call_id: callId,
+  }));
+}
+
+let cachedRtcIceServers = null;
+let cachedRtcIceServersUntil = 0;
+let rtcIceServersRequest = null;
+
+export async function fetchRtcIceServers() {
+  const now = Date.now();
+  if (cachedRtcIceServers && now < cachedRtcIceServersUntil) return cachedRtcIceServers;
+  if (rtcIceServersRequest) return rtcIceServersRequest;
+
+  rtcIceServersRequest = (async () => {
+    const client = requireSupabase();
+    const { data, error } = await client.functions.invoke('turn-credentials', { body: {} });
+    if (error || !Array.isArray(data?.iceServers)) return chatIceServers();
+    const servers = data.iceServers.filter((server) => {
+      const urls = Array.isArray(server?.urls) ? server.urls : [server?.urls];
+      return urls.length > 0 && urls.every((url) => /^(stun|turns?):/i.test(String(url)));
+    });
+    if (servers.length < 2) return chatIceServers();
+    const providerExpiry = Number(data.expiresAt) * 1000;
+    cachedRtcIceServers = servers;
+    cachedRtcIceServersUntil = Number.isFinite(providerExpiry)
+      ? Math.max(now + 60_000, providerExpiry - 60_000)
+      : now + 50 * 60_000;
+    return servers;
+  })();
+
+  try {
+    return await rtcIceServersRequest;
+  } finally {
+    rtcIceServersRequest = null;
+  }
 }
 
 export async function publishSignal(callId, kind, payload) {

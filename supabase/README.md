@@ -96,6 +96,8 @@ Edge Function’lar:
 
 - `create-member` — company admin/dispatcher ruxsatiga qarab driver yoki dispatcher hisobini parol bilan darhol yaratadi.
 - `create-company` — super admin uchun kompaniya va birinchi company admin taklifini yaratadi; profil xatosida Auth invite qaytarib olinadi.
+- `cloudinary-media` — tenant/participant tekshiruvli media upload, delete va private delivery URL yaratadi.
+- `turn-credentials` — aktiv foydalanuvchiga Cloudflare Realtime TURN API orqali bir soatlik WebRTC credential beradi.
 
 `service_role` kaliti web yoki mobil klientga hech qachon berilmaydi.
 Ochiq Auth signup o‘chirilgan: foydalanuvchi Auth Admin API orqali yaratiladi yoki taklif qilinadi, keyin actor-aware worker RPC bilan profilga bog‘lanadi.
@@ -119,8 +121,10 @@ Deploy alohida bosqichda bajariladi:
 2. Production backup va target schema holati tekshiriladi.
 3. `supabase link --project-ref <ref>` bajariladi.
 4. `supabase db push --dry-run` natijasi ko‘rib chiqiladi.
-5. Gmail OAuth secretlari Supabase Vault yoki alohida secrets managerga yoziladi; bazada faqat `secret_reference` saqlanadi.
+5. Gmail OAuth, Cloudinary va TURN secretlari Supabase secrets managerga yoziladi. Cloudflare TURN uchun `CLOUDFLARE_TURN_KEY_ID` va `CLOUDFLARE_TURN_KEY_API_TOKEN`; Cloudinary token access yoqilgan bo‘lsa `CLOUDINARY_AUTH_TOKEN_KEY` ishlatiladi.
 6. Migratsiyalar `supabase db push` bilan qo‘llanadi.
 7. Production smoke testda tenant RLS, Auth, Storage, Realtime va worker queue tekshiriladi.
 
-Remote deploy va production secret kiritish ushbu bosqichda ataylab bajarilmagan.
+Cloudflare TURN secretlari va `turn-credentials` funksiyasi production’ga
+2026-09-26 kuni deploy qilindi. Qolgan migratsiya va funksiyalar yuqoridagi
+ketma-ketlik bo‘yicha alohida tekshiriladi.

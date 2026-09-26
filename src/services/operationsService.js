@@ -1,4 +1,5 @@
 import { requireSupabase } from '../lib/supabase';
+import { cloudinarySignedUrl, isCloudinaryReference } from './cloudinaryMediaService';
 
 async function throwFunctionError(error, fallback) {
   let message = error?.message || fallback;
@@ -104,7 +105,9 @@ function toUiLoad(row, offersByLoad, documentsByLoad, warningsByLoad, reviewsByD
     brokerEmail: row.broker_email || '',
     brokerFax: row.broker_fax || '',
     rate: Number(row.broker_rate || 0),
+    rateKnown: row.broker_rate != null,
     distanceMiles: Number(row.loaded_miles || 0),
+    distanceKnown: row.loaded_miles != null,
     ratePerMile: Number(row.loaded_rpm || 0),
     origin: {
       city: row.pickup_city || '—',
@@ -166,7 +169,7 @@ function toUiLoad(row, offersByLoad, documentsByLoad, warningsByLoad, reviewsByD
   };
 }
 
-function toUiDriver(member, presence) {
+function toUiDriver(member, presence, avatar = null) {
   const online = Boolean(presence?.is_online) && Date.now() - new Date(presence.last_seen_at).getTime() < 120000;
   return {
     id: member.id,
@@ -193,7 +196,7 @@ function toUiDriver(member, presence) {
     rating: null,
     completedLoads: 0,
     onTimeRate: '—',
-    avatar: null,
+    avatar,
     isOnline: online,
     lastSeenAt: presence?.last_seen_at || null,
   };
@@ -208,6 +211,14 @@ async function signedDocumentUrls(client, documents) {
       .eq('id', document.current_version_id)
       .maybeSingle();
     if (!version?.storage_path) return document;
+    if (isCloudinaryReference(version.storage_path)) {
+      return {
+        ...document,
+        signedUrl: await cloudinarySignedUrl(version.storage_path),
+        mimeType: version.mime_type || null,
+        fileName: version.file_name || null,
+      };
+    }
     const { data } = await client.storage.from('load-documents').createSignedUrl(version.storage_path, 3600);
     return {
       ...document,
@@ -216,6 +227,18 @@ async function signedDocumentUrls(client, documents) {
       fileName: version.file_name || null,
     };
   }));
+}
+
+async function signedProfileAvatarUrls(client, members) {
+  const entries = await Promise.all(members.map(async (member) => {
+    if (!member.avatar_path) return [member.id, null];
+    if (isCloudinaryReference(member.avatar_path)) {
+      return [member.id, await cloudinarySignedUrl(member.avatar_path)];
+    }
+    const { data } = await client.storage.from('profile-media').createSignedUrl(member.avatar_path, 3600);
+    return [member.id, data?.signedUrl || null];
+  }));
+  return new Map(entries);
 }
 
 export async function fetchWorkspace() {
@@ -249,6 +272,7 @@ export async function fetchWorkspace() {
     if (result.error) throw result.error;
   }
   const documents = await signedDocumentUrls(client, documentsResult.data || []);
+  const avatarUrls = await signedProfileAvatarUrls(client, driversResult.data || []);
   const offersByLoad = new Map();
   for (const offer of offersResult.data || []) {
     const current = offersByLoad.get(offer.load_id) || [];
@@ -275,23 +299,114 @@ export async function fetchWorkspace() {
       toUiLoad(row, offersByLoad, documentsByLoad, warningsByLoad, reviewsByDocument)
     )),
     drivers: (driversResult.data || []).map((member) => (
-      toUiDriver(member, (presenceResult.data || []).find((item) => item.driver_id === member.id))
+      toUiDriver(
+        member,
+        (presenceResult.data || []).find((item) => item.driver_id === member.id),
+        avatarUrls.get(member.id),
+      )
     )),
   };
 }
 
 export async function fetchBrokerInbox() {
   const client = requireSupabase();
-  const [messagesResult, extractionsResult] = await Promise.all([
+  const [messagesResult, extractionsResult, attachmentsResult, readsResult] = await Promise.all([
     client.from('broker_messages').select('*').order('received_at', { ascending: false }).limit(100),
     client.from('ai_extractions').select('*').order('processed_at', { ascending: false }).limit(100),
+    client.from('broker_attachments').select('id,message_id,file_name,mime_type,size_bytes,created_at').order('created_at'),
+    client.from('broker_message_reads').select('message_id'),
   ]);
   if (messagesResult.error) throw messagesResult.error;
   if (extractionsResult.error) throw extractionsResult.error;
+  if (attachmentsResult.error) throw attachmentsResult.error;
+  if (readsResult.error) throw readsResult.error;
+  const readMessageIds = new Set((readsResult.data || []).map((item) => item.message_id));
   return (messagesResult.data || []).map((message) => ({
     ...message,
+    is_read: readMessageIds.has(message.id),
     extraction: (extractionsResult.data || []).find((item) => item.message_id === message.id) || null,
+    attachments: (attachmentsResult.data || []).filter((attachment) => attachment.message_id === message.id),
   }));
+}
+
+export async function fetchBrokerInboxUnreadCount() {
+  const client = requireSupabase();
+  const [attachmentsResult, readsResult] = await Promise.all([
+    client.from('broker_attachments').select('message_id,mime_type,file_name'),
+    client.from('broker_message_reads').select('message_id'),
+  ]);
+  if (attachmentsResult.error) throw attachmentsResult.error;
+  if (readsResult.error) throw readsResult.error;
+  const readMessageIds = new Set((readsResult.data || []).map((item) => item.message_id));
+  const supportedMessageIds = new Set((attachmentsResult.data || [])
+    .filter((attachment) => (
+      attachment.mime_type === 'application/pdf'
+      || attachment.mime_type?.startsWith('image/')
+      || /\.(pdf|jpe?g|png|webp|gif)$/i.test(attachment.file_name || '')
+    ))
+    .map((attachment) => attachment.message_id));
+  return [...supportedMessageIds].filter((messageId) => !readMessageIds.has(messageId)).length;
+}
+
+export async function markBrokerMessageRead(messageId) {
+  const client = requireSupabase();
+  const { error } = await client.rpc('mark_broker_message_read', { target_message_id: messageId });
+  if (error) throw error;
+}
+
+export async function forwardGmailAttachmentToDriver({ attachmentId, driverId }) {
+  const { data, error } = await invokeAuthenticatedFunction('forward-gmail-attachment', {
+    attachmentId,
+    driverId,
+  });
+  if (error) await throwFunctionError(error, 'PDF faylni driverga yuborib bo‘lmadi.');
+  if (data?.error) throw new Error(data.error);
+  return data;
+}
+
+export async function createLoadFromBrokerProposal(proposal) {
+  const client = requireSupabase();
+  if (!proposal?.brokerMessageId || !proposal?.origin || !proposal?.destination) {
+    throw new Error('Broker taklifi to\u2018liq emas. PDF\u2019ni qayta tahlil qiling.');
+  }
+  const { data: loadId, error: createError } = await client.rpc('create_load_draft', {
+    load_number: String(proposal.loadNumber || '').replace(/^#/, '') || `GMAIL-${Date.now()}`,
+    broker_name: proposal.broker || 'Broker aniqlanmadi',
+    cargo_description: proposal.commodity || 'Yuk tavsifi aniqlanmadi',
+    equipment_type: proposal.equipment || 'Aniqlanmadi',
+    weight_lbs: proposal.weightLbs || null,
+    broker_rate: Number(proposal.rate || 0),
+    loaded_miles: Number(proposal.distanceMiles || 0),
+    pickup: {
+      facilityName: proposal.origin.facility || 'Pickup',
+      addressLine: proposal.origin.address || [proposal.origin.city, proposal.origin.state].filter(Boolean).join(', '),
+      city: proposal.origin.city || 'Aniqlanmadi',
+      region: proposal.origin.state || '--',
+      postalCode: proposal.origin.postalCode || null,
+      latitude: null,
+      longitude: null,
+      appointmentFrom: proposal.origin.appointmentFrom || null,
+      appointmentTo: proposal.origin.appointmentTo || null,
+      requiresDocument: true,
+    },
+    delivery: {
+      facilityName: proposal.destination.facility || 'Delivery',
+      addressLine: proposal.destination.address || [proposal.destination.city, proposal.destination.state].filter(Boolean).join(', '),
+      city: proposal.destination.city || 'Aniqlanmadi',
+      region: proposal.destination.state || '--',
+      postalCode: proposal.destination.postalCode || null,
+      latitude: null,
+      longitude: null,
+      appointmentFrom: proposal.destination.appointmentFrom || null,
+      appointmentTo: proposal.destination.appointmentTo || null,
+      requiresDocument: true,
+    },
+    broker_message_id: proposal.brokerMessageId,
+  });
+  if (createError) throw createError;
+  const { error: approveError } = await client.rpc('approve_load_draft', { load_id: loadId });
+  if (approveError) throw approveError;
+  return { ...proposal, id: loadId, lifecycleStatus: 'ready_for_offer' };
 }
 
 export async function createMember({ email, password, fullName, phone, role = 'driver', companyId }) {

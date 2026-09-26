@@ -23,6 +23,15 @@ select extensions.has_function('public', 'send_offer', array['uuid', 'uuid', 'nu
 select extensions.has_function('public', 'respond_offer', array['uuid', 'text', 'uuid', 'timestamp with time zone'], 'respond_offer command exists');
 select extensions.has_function('public', 'transition_stop', array['uuid', 'stop_status', 'uuid', 'bigint', 'timestamp with time zone', 'numeric', 'numeric'], 'transition_stop command exists');
 select extensions.has_function('public', 'record_ai_extraction', array['uuid', 'uuid', 'ingestion_status', 'text', 'integer', 'jsonb', 'jsonb', 'text'], 'AI worker command exists');
+select extensions.has_function('public', 'get_chat_messages_page', array['uuid', 'timestamp with time zone', 'uuid', 'integer'], 'chat cursor pagination exists');
+select extensions.has_function('public', 'heartbeat_chat_call', array['uuid'], 'chat call heartbeat exists');
+select extensions.ok(
+  exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'chat_calls' and column_name = 'last_heartbeat_at'
+  ),
+  'active chat calls have a recoverable lease'
+);
 
 select extensions.ok(
   (select bool_and(c.relrowsecurity)

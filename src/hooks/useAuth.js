@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { isSupabaseConfigured, supabase } from '../lib/supabase';
+import { createAuthStateController } from '../services/authStateController';
 
 function toUiUser(profile, companyName) {
   if (!profile) return null;
@@ -22,114 +23,67 @@ function toUiUser(profile, companyName) {
   };
 }
 
-export function useAuth() {
-  const [session, setSession] = useState(null);
-  const [currentUser, setCurrentUser] = useState(null);
-  const [loading, setLoading] = useState(isSupabaseConfigured);
-  const [authError, setAuthError] = useState('');
-
-  const loadProfile = useCallback(async (userId) => {
-    if (!supabase || !userId) {
-      setCurrentUser(null);
-      return;
-    }
-    const { data: profile, error } = await supabase
-      .from('profiles')
-      .select('*')
-      .eq('id', userId)
+async function loadProfile(userId) {
+  const { data: verified, error: verificationError } = await supabase.auth.getUser();
+  if (verificationError) throw verificationError;
+  if (verified.user?.id !== userId) throw new Error('Sessiya tugagan. Hisobga qayta kiring.');
+  const { data: profile, error } = await supabase
+    .from('profiles')
+    .select('*')
+    .eq('id', userId)
+    .maybeSingle();
+  if (error) throw error;
+  if (!profile) throw new Error('Bu hisob uchun faol profil topilmadi. Administratorga murojaat qiling.');
+  if (profile.status !== 'active') throw new Error('Bu hisob faol emas. Kompaniya administratoriga murojaat qiling.');
+  let companyName = '';
+  if (profile.company_id) {
+    const { data: company, error: companyError } = await supabase
+      .from('companies')
+      .select('name')
+      .eq('id', profile.company_id)
       .maybeSingle();
-    if (error) throw error;
-    if (!profile) {
-      await supabase.auth.signOut();
-      throw new Error('Bu hisob uchun faol profil topilmadi. Administratorga murojaat qiling.');
-    }
-    if (profile.status !== 'active') {
-      await supabase.auth.signOut();
-      throw new Error('Bu hisob faol emas. Kompaniya administratoriga murojaat qiling.');
-    }
-    let companyName = '';
-    if (profile.company_id) {
-      const { data: company } = await supabase
-        .from('companies')
-        .select('name')
-        .eq('id', profile.company_id)
-        .maybeSingle();
-      companyName = company?.name || '';
-    }
-    setCurrentUser(toUiUser(profile, companyName));
-  }, []);
+    if (companyError) throw companyError;
+    companyName = company?.name || '';
+  }
+  return toUiUser(profile, companyName);
+}
+
+export function useAuth() {
+  const [state, setState] = useState({ session: null, currentUser: null, loading: isSupabaseConfigured, authError: '' });
+  const controllerRef = useRef(null);
 
   useEffect(() => {
-    if (!supabase) {
-      setLoading(false);
-      return undefined;
-    }
-    let active = true;
-    supabase.auth.getSession().then(async ({ data, error }) => {
-      if (!active) return;
-      if (error) setAuthError(error.message);
-      let verifiedSession = data.session;
-      try {
-        if (verifiedSession) {
-          const { data: verified, error: verificationError } = await supabase.auth.getUser();
-          if (verificationError || !verified.user) {
-            await supabase.auth.signOut({ scope: 'local' });
-            verifiedSession = null;
-            setAuthError('Sessiya tugagan. Hisobga qayta kiring.');
-          }
-        }
-        setSession(verifiedSession);
-        await loadProfile(verifiedSession?.user?.id);
-      } catch (profileError) {
-        setAuthError(profileError.message);
-      } finally {
-        if (active) setLoading(false);
-      }
-    });
+    if (!supabase) return undefined;
+    const controller = createAuthStateController({ loadUser: loadProfile, onChange: setState });
+    controllerRef.current = controller;
+    // INITIAL_SESSION also supplies the persisted session. One source of auth
+    // events avoids a slower getSession response restoring a logged-out user.
     const { data: listener } = supabase.auth.onAuthStateChange((_event, nextSession) => {
-      setSession(nextSession);
-      queueMicrotask(async () => {
-        try {
-          await loadProfile(nextSession?.user?.id);
-        } catch (profileError) {
-          setAuthError(profileError.message);
-        } finally {
-          setLoading(false);
-        }
-      });
+      void controller.setSession(nextSession).catch(() => {});
     });
     return () => {
-      active = false;
+      controller.dispose();
+      if (controllerRef.current === controller) controllerRef.current = null;
       listener.subscription.unsubscribe();
     };
-  }, [loadProfile]);
+  }, []);
 
   const login = async (email, password) => {
     if (!supabase) throw new Error('Supabase sozlanmagan.');
-    setAuthError('');
     const { data, error } = await supabase.auth.signInWithPassword({
       email: email.trim().toLowerCase(),
       password,
     });
     if (error) throw error;
-    await loadProfile(data.user.id);
+    await controllerRef.current?.setSession(data.session);
   };
 
   const logout = async () => {
     if (!supabase) return;
     const { error } = await supabase.auth.signOut();
     if (error) throw error;
-    setSession(null);
-    setCurrentUser(null);
+    await controllerRef.current?.setSession(null);
   };
 
-  return {
-    session,
-    currentUser,
-    loading,
-    configured: isSupabaseConfigured,
-    authError,
-    login,
-    logout,
-  };
+  return { ...state, configured: isSupabaseConfigured, login, logout };
 }

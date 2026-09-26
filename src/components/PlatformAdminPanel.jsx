@@ -16,7 +16,11 @@ export default function PlatformAdminPanel({ onLogout }) {
   };
 
   useEffect(() => {
-    refresh().catch((error) => setMessage(error.message)).finally(() => setLoading(false));
+    let active = true;
+    fetchCompanies().then((rows) => { if (active) setCompanies(rows); })
+      .catch((error) => { if (active) setMessage(error.message); })
+      .finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
   }, []);
 
   const submit = async (event) => {

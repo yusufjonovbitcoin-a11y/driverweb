@@ -8,7 +8,6 @@ import {
   Trash2, 
   CheckCircle2, 
   X,
-  User,
   LogOut,
   Search,
   Truck,
@@ -37,23 +36,13 @@ export default function ProfileView({
   const [password, setPassword] = useState('');
   const [role, setRole] = useState('driver');
   const [phone, setPhone] = useState('');
-  const [driverNumber, setDriverNumber] = useState('');
-  const [truck, setTruck] = useState('');
-  const [trailer, setTrailer] = useState("53' Reefer");
-  const [location, setLocation] = useState('Chicago, IL');
-
   const handlePrepareForm = () => {
-    const nextNum = `#10${drivers.length + 50}`;
-    setDriverNumber(nextNum);
     setName('');
     setEmail('');
     setPassword('');
     setRole('driver');
     setFormError('');
-    setPhone('+1 (773) 555-');
-    setTruck('Freightliner Cascadia (#' + Math.floor(100 + Math.random() * 900) + ')');
-    setTrailer("53' Reefer (#R-" + Math.floor(100 + Math.random() * 900) + ")");
-    setLocation('Chicago, IL');
+    setPhone('');
   };
 
   const handleToggleAddForm = () => {
@@ -67,30 +56,14 @@ export default function ProfileView({
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!name.trim() || !email.trim() || password.length < 6) return;
+    if (!name.trim() || !email.trim() || !phone.trim() || password.length < 6 || isSubmitting) return;
 
     const newDriver = {
       name: name.trim(),
       email: email.trim().toLowerCase(),
       password,
       role,
-      driverNumber: driverNumber.trim() || `#10${Math.floor(10 + Math.random() * 90)}`,
-      phone: phone.trim() || '+1 (555) 000-0000',
-      truck: truck.trim() || 'Volvo VNL 860',
-      trailer: trailer.trim() || "53' Reefer",
-      currentLocation: location.trim() || 'Chicago, IL',
-      lat: 41.8781,
-      lng: -87.6298,
-      status: 'AVAILABLE',
-      dutyStatus: 'ON_DUTY',
-      hos: {
-        driveLeft: '11:00',
-        shiftLeft: '14:00',
-        cycleLeft: '70:00'
-      },
-      rating: 5.0,
-      completedLoads: 0,
-      onTimeRate: '100%'
+      phone: phone.trim(),
     };
 
     setIsSubmitting(true);
@@ -159,11 +132,11 @@ export default function ProfileView({
             <div className="space-y-1">
               <div className="flex items-center space-x-3 flex-wrap gap-y-1">
                 <h2 className="text-2xl font-black text-zinc-900 dark:text-zinc-100 tracking-tight">
-                  {currentUser?.name || 'Dilshod Rahimov'}
+                  {currentUser?.name || '—'}
                 </h2>
                 <span className="inline-flex items-center space-x-1.5 px-3 py-1 rounded-full bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 text-xs font-mono font-bold border border-emerald-200 dark:border-emerald-800/40">
                   <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                  <span>{currentUser?.role || 'Bosh Dispecher (Admin)'}</span>
+                  <span>{currentUser?.role || '—'}</span>
                 </span>
                 {onLogout && (
                   <button
@@ -184,28 +157,23 @@ export default function ProfileView({
               <div className="flex items-center space-x-3 text-sm text-zinc-600 dark:text-zinc-300 font-medium flex-wrap gap-y-1">
                 <span className="flex items-center space-x-1.5">
                   <Building2 className="w-4 h-4 text-zinc-400" />
-                  <strong className="text-zinc-900 dark:text-zinc-100">{currentUser?.company || 'ApexHaul Logistics LLC'}</strong>
+                  <strong className="text-zinc-900 dark:text-zinc-100">{currentUser?.company || '—'}</strong>
                 </span>
                 <span>•</span>
-                <span className="font-mono font-bold">{currentUser?.mcNumber || 'MC-984210'}</span>
+                <span className="font-mono font-bold">{currentUser?.mcNumber || '—'}</span>
                 <span>•</span>
-                <span className="font-mono font-bold">{currentUser?.dotNumber || 'USDOT 3891452'}</span>
+                <span className="font-mono font-bold">{currentUser?.dotNumber || '—'}</span>
               </div>
 
               <div className="flex items-center space-x-4 text-xs text-zinc-500 dark:text-zinc-400 font-mono flex-wrap gap-y-1">
                 <span className="flex items-center space-x-1">
                   <Phone className="w-3.5 h-3.5 text-zinc-400" />
-                  <span>{currentUser?.phone || '+1 (312) 555-0100'}</span>
+                  <span>{currentUser?.phone || '—'}</span>
                 </span>
                 <span>•</span>
                 <span className="flex items-center space-x-1">
                   <Mail className="w-3.5 h-3.5 text-zinc-400" />
-                  <span>{currentUser?.email || 'dispatch@apexhaul.com'}</span>
-                </span>
-                <span>•</span>
-                <span className="flex items-center space-x-1">
-                  <MapPin className="w-3.5 h-3.5 text-zinc-400" />
-                  <span>Chicago, IL, USA</span>
+                  <span>{currentUser?.email || '—'}</span>
                 </span>
               </div>
             </div>
@@ -375,68 +343,7 @@ export default function ProfileView({
                 />
               </div>
 
-              {role === 'driver' && (
-                <>
-              {/* Drayver ID */}
-              <div>
-                <label className="block text-xs font-mono font-bold text-zinc-500 dark:text-zinc-400 uppercase mb-1.5">
-                  Drayver ID (#)
-                </label>
-                <input
-                  type="text"
-                  value={driverNumber}
-                  onChange={(e) => setDriverNumber(e.target.value)}
-                  placeholder="#1055"
-                  className="w-full bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl px-3.5 py-2.5 text-sm text-zinc-900 dark:text-zinc-100 font-mono placeholder-zinc-400 focus:outline-none focus:border-zinc-400 transition-colors"
-                />
-              </div>
 
-              {/* Tyagach */}
-              <div>
-                <label className="block text-xs font-mono font-bold text-zinc-500 dark:text-zinc-400 uppercase mb-1.5">
-                  Tyagach (Model & #)
-                </label>
-                <input
-                  type="text"
-                  value={truck}
-                  onChange={(e) => setTruck(e.target.value)}
-                  placeholder="Volvo VNL 860 (#702)"
-                  className="w-full bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl px-3.5 py-2.5 text-sm text-zinc-900 dark:text-zinc-100 placeholder-zinc-400 focus:outline-none focus:border-zinc-400 transition-colors"
-                />
-              </div>
-
-              {/* Treyler */}
-              <div>
-                <label className="block text-xs font-mono font-bold text-zinc-500 dark:text-zinc-400 uppercase mb-1.5">
-                  Treyler Turi
-                </label>
-                <select
-                  value={trailer}
-                  onChange={(e) => setTrailer(e.target.value)}
-                  className="w-full bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl px-3.5 py-2.5 text-sm text-zinc-900 dark:text-zinc-100 focus:outline-none focus:border-zinc-400 transition-colors cursor-pointer"
-                >
-                  <option value="53' Reefer">53' Reefer (Sovutgich)</option>
-                  <option value="53' Dry Van">53' Dry Van (Tent)</option>
-                  <option value="53' Flatbed">53' Flatbed (Ochiq platforma)</option>
-                  <option value="Step Deck">Step Deck</option>
-                </select>
-              </div>
-
-              {/* Joylashuv */}
-              <div>
-                <label className="block text-xs font-mono font-bold text-zinc-500 dark:text-zinc-400 uppercase mb-1.5">
-                  Hozirgi Joylashuv (Shahar, Shtat)
-                </label>
-                <input
-                  type="text"
-                  value={location}
-                  onChange={(e) => setLocation(e.target.value)}
-                  placeholder="Chicago, IL"
-                  className="w-full bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl px-3.5 py-2.5 text-sm text-zinc-900 dark:text-zinc-100 placeholder-zinc-400 focus:outline-none focus:border-zinc-400 transition-colors"
-                />
-              </div>
-                </>
-              )}
             </div>
 
             {/* Actions */}
@@ -545,7 +452,6 @@ export default function ProfileView({
                         <div>
                           <div className="flex items-center space-x-2 whitespace-nowrap">
                             <span className="font-bold text-sm text-zinc-900 dark:text-zinc-100">{driver.name}</span>
-                            <span className="text-amber-500 font-bold text-xs">{driver.rating} ★</span>
                           </div>
                           <div className="text-xs text-zinc-400 font-mono whitespace-nowrap mt-0.5">
                             <span className="font-bold text-zinc-600 dark:text-zinc-300">{driver.driverNumber}</span> • <span>{driver.phone}</span>

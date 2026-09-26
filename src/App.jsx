@@ -12,26 +12,33 @@ import AnalyticsOverview from './components/AnalyticsOverview';
 import ProfileView from './components/ProfileView';
 import DocumentsView from './components/DocumentsView';
 import BrokerInbox from './components/BrokerInbox';
-import DispatchChat from './components/DispatchChat';
 import PlatformAdminPanel from './components/PlatformAdminPanel';
 import AuthView from './components/AuthView';
 import { useAuth } from './hooks/useAuth';
 import {
   createAndOfferLoad,
+  createLoadFromBrokerProposal,
   prepareLoadFromDocument,
   reassignLoad,
   deleteUnassignedLoad,
   sendOffersForLoad,
   fetchWorkspace,
   createMember,
+  fetchBrokerInboxUnreadCount,
   subscribeWorkspace,
 } from './services/operationsService';
 import { fetchUnreadChatCount, subscribeUnreadChats } from './services/chatService';
 
 const tabs = ['kanban', 'drivers', 'map', 'analytics', 'docs', 'inbox', 'chat', 'profile'];
+const DispatchChat = React.lazy(() => import('./components/DispatchChat'));
 
 export default function App() {
-  const { currentUser, loading: authLoading, configured, authError, login, logout } = useAuth();
+  const auth = useAuth();
+  return <Workspace key={auth.currentUser?.id || 'signed-out'} auth={auth} />;
+}
+
+function Workspace({ auth }) {
+  const { currentUser, loading: authLoading, configured, authError, login, logout } = auth;
   const [activeTab, setActiveTab] = useState(() => {
     const hash = typeof window !== 'undefined' ? window.location.hash.replace('#', '') : '';
     return tabs.includes(hash) ? hash : 'kanban';
@@ -42,12 +49,17 @@ export default function App() {
   const [workspaceError, setWorkspaceError] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [selectedDriverForLoad, setSelectedDriverForLoad] = useState(null);
+  const [selectedDriverId, setSelectedDriverId] = useState(null);
+  const [chatDriverId, setChatDriverId] = useState(null);
+  const [chatSelectionRequest, setChatSelectionRequest] = useState(0);
   const [aiPreparedLoad, setAiPreparedLoad] = useState(null);
   const [aiProcessing, setAiProcessing] = useState(false);
   const [selectedLoadForDocs, setSelectedLoadForDocs] = useState(null);
   const [toast, setToast] = useState({ show: false, message: '' });
   const [theme, setTheme] = useState(() => localStorage.getItem('apex_theme') || 'light');
   const [unreadChatCount, setUnreadChatCount] = useState(0);
+  const [unreadInboxCount, setUnreadInboxCount] = useState(0);
 
   const showToast = useCallback((message) => {
     setToast({ show: true, message });
@@ -78,6 +90,15 @@ export default function App() {
     }
   }, [currentUser]);
 
+  const refreshUnreadInbox = useCallback(async () => {
+    if (!currentUser || currentUser.roleCode === 'driver') return;
+    try {
+      setUnreadInboxCount(await fetchBrokerInboxUnreadCount());
+    } catch {
+      // The page stays usable if the badge cannot refresh.
+    }
+  }, [currentUser]);
+
   useEffect(() => {
     document.documentElement.classList.toggle('dark', theme === 'dark');
     localStorage.setItem('apex_theme', theme);
@@ -94,15 +115,25 @@ export default function App() {
 
   useEffect(() => {
     if (!currentUser || currentUser.roleCode === 'driver') return undefined;
+    // oxlint-disable-next-line react/set-state-in-effect -- synchronize the authenticated workspace with remote data.
     refreshWorkspace();
     return subscribeWorkspace(() => refreshWorkspace({ quiet: true }));
   }, [currentUser, refreshWorkspace]);
 
   useEffect(() => {
     if (!currentUser || currentUser.roleCode === 'driver') return undefined;
+    // oxlint-disable-next-line react/set-state-in-effect -- subscribe and load the external unread count.
     refreshUnreadChats();
     return subscribeUnreadChats(refreshUnreadChats);
   }, [currentUser, refreshUnreadChats]);
+
+  useEffect(() => {
+    if (!currentUser || currentUser.roleCode === 'driver') return undefined;
+    // oxlint-disable-next-line react/set-state-in-effect -- poll the remote inbox badge.
+    refreshUnreadInbox();
+    const intervalId = window.setInterval(refreshUnreadInbox, 15_000);
+    return () => window.clearInterval(intervalId);
+  }, [currentUser, refreshUnreadInbox]);
 
   const handleSelectTab = (tab) => {
     setActiveTab(tab);
@@ -117,8 +148,9 @@ export default function App() {
       const offlineCount = result.offers.filter((offer) => offer.status === 'missed_offline').length;
       await refreshWorkspace({ quiet: true });
       setIsCreateModalOpen(false);
+      setSelectedDriverForLoad(null);
       showToast(
-        `Yuk yaratildi. Yo‘l masofasi: ${result.route.loadedMiles} mil${result.route.attribution ? ` (${result.route.attribution})` : ''}. ${deliveredCount} ta online haydovchiga yetkazildi${offlineCount ? `, ${offlineCount} ta oflayn haydovchi o\'tkazib yuborildi` : ''}.`,
+        `Yuk yaratildi. Yo‘l masofasi: ${result.route.loadedMiles} mil${result.route.attribution ? ` (${result.route.attribution})` : ''}. ${deliveredCount} ta online haydovchiga yetkazildi${offlineCount ? `, ${offlineCount} ta oflayn haydovchi o'tkazib yuborildi` : ''}.`,
       );
     } catch (error) {
       showToast(error.message || 'Yukni yaratib bo\'lmadi.');
@@ -127,6 +159,16 @@ export default function App() {
       setWorkspaceLoading(false);
     }
   };
+
+  const handleOpenCreateLoad = (driver = null) => {
+    setSelectedDriverForLoad(driver);
+    setIsCreateModalOpen(true);
+  };
+
+  const handleCloseCreateLoad = useCallback(() => {
+    setIsCreateModalOpen(false);
+    setSelectedDriverForLoad(null);
+  }, []);
 
   const handleCreateMember = async (member) => {
     await createMember({
@@ -184,13 +226,16 @@ export default function App() {
     if (!aiPreparedLoad) return;
     setWorkspaceLoading(true);
     try {
-      const isReassignment = ['assigned', 'in_progress'].includes(aiPreparedLoad.lifecycleStatus);
+      const preparedLoad = !aiPreparedLoad.id && aiPreparedLoad.brokerMessageId
+        ? await createLoadFromBrokerProposal(aiPreparedLoad)
+        : aiPreparedLoad;
+      const isReassignment = ['assigned', 'in_progress'].includes(preparedLoad.lifecycleStatus);
       const dispatch = isReassignment
-        ? { offers: [await reassignLoad(aiPreparedLoad.id, driverIds[0])], route: null }
+        ? { offers: [await reassignLoad(preparedLoad.id, driverIds[0])], route: null }
         : await sendOffersForLoad(
-          aiPreparedLoad.id,
+          preparedLoad.id,
           driverIds,
-          aiPreparedLoad.missingFields,
+          preparedLoad.missingFields,
         );
       const offers = dispatch.offers;
       const deliveredCount = offers.filter((offer) => offer.status === 'pending').length;
@@ -202,7 +247,7 @@ export default function App() {
           ? deliveredCount
             ? 'Yuk yangi haydovchiga qayta tayinlash uchun yuborildi.'
             : 'Tanlangan haydovchi oflayn. Taklif o‘tkazib yuborildi.'
-          : `Yo‘l masofasi: ${dispatch.route.loadedMiles} mil${dispatch.route.attribution ? ` (${dispatch.route.attribution})` : ''}. ${deliveredCount} ta online haydovchiga taklif yuborildi${offlineCount ? `, ${offlineCount} ta oflayn haydovchi o\'tkazib yuborildi` : ''}.`,
+          : `Yo‘l masofasi: ${dispatch.route.loadedMiles} mil${dispatch.route.attribution ? ` (${dispatch.route.attribution})` : ''}. ${deliveredCount} ta online haydovchiga taklif yuborildi${offlineCount ? `, ${offlineCount} ta oflayn haydovchi o'tkazib yuborildi` : ''}.`,
       );
     } catch (error) {
       showToast(error.message || 'Taklifni yuborib bo\'lmadi.');
@@ -272,30 +317,34 @@ export default function App() {
   }
 
   return (
-    <div className="flex h-screen bg-zinc-50 dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 overflow-hidden font-sans transition-colors">
+    <div className="workspace-shell flex h-screen bg-zinc-50 dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 overflow-hidden font-sans transition-colors">
       <Sidebar
         activeTab={activeTab}
         setActiveTab={handleSelectTab}
         loadsCount={loads.length}
         driversCount={drivers.length}
         unreadChatCount={unreadChatCount}
+        unreadInboxCount={unreadInboxCount}
         onDropFile={() => showToast('Broker fayllari Gmail/AI worker orqali avtomatik keladi.')}
         currentUser={currentUser}
         onLogout={logout}
       />
 
       <div className="flex-1 flex flex-col min-w-0 h-screen overflow-hidden">
-        <TopHeader
-          activeTab={activeTab}
-          searchQuery={searchQuery}
-          setSearchQuery={setSearchQuery}
-          onOpenCreateModal={() => setIsCreateModalOpen(true)}
-          activeLoadsCount={metrics.activeLoadsCount}
-          totalRevenue={metrics.totalRevenue}
-          avgRPM={metrics.avgRPM}
-          theme={theme}
-          toggleTheme={() => setTheme((value) => value === 'dark' ? 'light' : 'dark')}
-        />
+        {activeTab !== 'chat' && (
+          <TopHeader
+            activeTab={activeTab}
+            searchQuery={searchQuery}
+            setSearchQuery={setSearchQuery}
+            onOpenCreateModal={() => handleOpenCreateLoad()}
+            activeLoadsCount={metrics.activeLoadsCount}
+            totalRevenue={metrics.totalRevenue}
+            avgRPM={metrics.avgRPM}
+            theme={theme}
+            toggleTheme={() => setTheme((value) => value === 'dark' ? 'light' : 'dark')}
+            onExitDriver={activeTab === 'drivers' && selectedDriverId ? () => setSelectedDriverId(null) : undefined}
+          />
+        )}
 
         {(toast.show || workspaceError) && (
           <div className="px-5 pt-2.5">
@@ -308,7 +357,7 @@ export default function App() {
           </div>
         )}
 
-        <main className="flex-1 overflow-y-auto p-5 space-y-4 relative">
+        <main className={`workspace-main min-h-0 flex-1 relative ${activeTab === 'chat' ? 'workspace-main-chat' : 'overflow-y-auto p-5 space-y-4'}`}>
           {workspaceLoading && (
             <div className="absolute inset-0 z-30 bg-white/60 dark:bg-zinc-950/60 backdrop-blur-[1px] flex items-center justify-center">
               <LoaderCircle className="w-7 h-7 animate-spin text-zinc-700 dark:text-zinc-300" />
@@ -330,19 +379,42 @@ export default function App() {
             <DriverRoster
               drivers={drivers}
               loads={loads}
-              onAssignLoad={() => setIsCreateModalOpen(true)}
-              onAddDriver={handleCreateMember}
+              onAssignLoad={handleOpenCreateLoad}
+              onOpenDocs={setSelectedLoadForDocs}
+              onDeleteLoad={handleDeleteLoad}
+              onDropOnOffer={handleAiDocument}
+              isAiProcessing={aiProcessing}
+              currentUser={currentUser}
+              onUnreadChange={refreshUnreadChats}
+              selectedDriverId={selectedDriverId}
+              onSelectDriver={setSelectedDriverId}
+              onOpenChat={(driver) => { setChatDriverId(driver.id); setChatSelectionRequest((value) => value + 1); handleSelectTab('chat'); }}
             />
           )}
           {activeTab === 'docs' && <DocumentsView loads={loads} drivers={drivers} onOpenDocs={setSelectedLoadForDocs} />}
-          {activeTab === 'inbox' && <BrokerInbox onCreateLoad={() => setIsCreateModalOpen(true)} />}
+          {activeTab === 'inbox' && (
+            <BrokerInbox
+              drivers={drivers}
+              onUnreadChange={refreshUnreadInbox}
+              onCreateLoad={(message) => setAiPreparedLoad({
+                ...message.extraction.result,
+                brokerMessageId: message.id,
+              })}
+            />
+          )}
           {activeTab === 'analytics' && <AnalyticsOverview loads={loads} />}
-          <DispatchChat
-            drivers={drivers}
-            currentUser={currentUser}
-            isVisible={activeTab === 'chat'}
-            onUnreadChange={refreshUnreadChats}
-          />
+          <div className={activeTab === 'chat' ? 'h-full min-h-0' : 'hidden'}>
+            <React.Suspense fallback={<div className="dispatch-chat-workspace grid h-full place-items-center"><LoaderCircle className="h-7 w-7 animate-spin" /></div>}>
+              <DispatchChat
+                drivers={drivers}
+                currentUser={currentUser}
+                isVisible={activeTab === 'chat'}
+                activeChatDriver={drivers.find((driver) => driver.id === chatDriverId)}
+                selectionRequestKey={chatSelectionRequest}
+                onUnreadChange={refreshUnreadChats}
+              />
+            </React.Suspense>
+          </div>
           {activeTab === 'profile' && (
             currentUser.roleCode === 'super_admin' ? <PlatformAdminPanel onLogout={logout} /> : (
               <ProfileView
@@ -358,14 +430,17 @@ export default function App() {
         </main>
       </div>
 
-      <CreateLoadModal
+      {isCreateModalOpen && <CreateLoadModal
+        key={selectedDriverForLoad?.id || 'all-drivers'}
         isOpen={isCreateModalOpen}
-        onClose={() => setIsCreateModalOpen(false)}
+        onClose={handleCloseCreateLoad}
         drivers={drivers}
         onCreateLoad={handleCreateLoad}
-      />
+        onDocument={(file) => { handleCloseCreateLoad(); return handleAiDocument(file); }}
+        initialDriverId={selectedDriverForLoad?.id || null}
+      />}
       <QuickDriverModal
-        key={aiPreparedLoad?.id || 'closed'}
+        key={aiPreparedLoad?.id || aiPreparedLoad?.brokerMessageId || 'closed'}
         isOpen={Boolean(aiPreparedLoad)}
         onClose={() => setAiPreparedLoad(null)}
         loadData={aiPreparedLoad}

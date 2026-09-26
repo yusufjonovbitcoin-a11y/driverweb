@@ -10,7 +10,6 @@ import {
   BarChart3, 
   DollarSign, 
   Activity, 
-  ShieldCheck,
   Radio
 } from 'lucide-react';
 

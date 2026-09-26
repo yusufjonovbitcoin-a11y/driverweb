@@ -20,6 +20,7 @@ export default function Sidebar({
   loadsCount, 
   driversCount, 
   unreadChatCount,
+  unreadInboxCount,
   onDropFile,
   currentUser,
   onLogout
@@ -27,12 +28,6 @@ export default function Sidebar({
   const [collapsed, setCollapsed] = useState(false);
 
   const navigation = [
-    { 
-      id: 'kanban', 
-      label: 'Yuklar', 
-      icon: LayoutDashboard, 
-      badge: loadsCount 
-    },
     { 
       id: 'drivers', 
       label: 'Haydovchilar', 
@@ -53,12 +48,15 @@ export default function Sidebar({
       id: 'inbox',
       label: 'Broker Inbox',
       icon: Inbox,
+      badge: unreadInboxCount || null,
+      badgeTone: 'alert',
     },
     {
       id: 'chat',
       label: 'Chat',
       icon: MessageSquare,
       badge: unreadChatCount || null,
+      badgeTone: 'alert',
     },
     { 
       id: 'analytics', 
@@ -69,18 +67,24 @@ export default function Sidebar({
       id: 'profile',
       label: 'Profil',
       icon: User
+    },
+    {
+      id: 'kanban',
+      label: 'Yuklar',
+      icon: LayoutDashboard,
+      badge: loadsCount
     }
   ];
 
   return (
     <aside 
-      className={`bg-white dark:bg-zinc-950 border-r border-zinc-200 dark:border-zinc-800 flex flex-col justify-between transition-all duration-150 select-none ${
-        collapsed ? 'w-20' : 'w-64'
+      className={`workspace-sidebar bg-white dark:bg-zinc-950 border-r border-zinc-200 dark:border-zinc-800 flex flex-col justify-between transition-all duration-150 select-none ${
+        collapsed ? 'is-collapsed w-20' : 'w-56'
       }`}
     >
       <div>
         {/* Workspace Brand Header */}
-        <div className="h-16 flex items-center justify-between px-5 border-b border-zinc-200 dark:border-zinc-800">
+        <div className="sidebar-brand h-16 flex items-center justify-between px-5 border-b border-zinc-200 dark:border-zinc-800">
           <div className="flex items-center space-x-3 overflow-hidden">
             <div className="w-9 h-9 rounded-xl bg-zinc-900 dark:bg-zinc-100 flex items-center justify-center text-white dark:text-zinc-950 flex-shrink-0 shadow-sm">
               <Truck className="w-5 h-5" />
@@ -88,7 +92,7 @@ export default function Sidebar({
 
             {!collapsed && (
               <span className="font-bold text-lg text-zinc-900 dark:text-zinc-100 tracking-tight">
-                ApexHaul
+                DRIVEX
               </span>
             )}
           </div>
@@ -103,7 +107,8 @@ export default function Sidebar({
         </div>
 
         {/* Navigation List */}
-        <nav className="p-3 space-y-1.5">
+        <nav aria-label="Asosiy menyu" className="sidebar-nav p-3 space-y-1.5">
+          <p className="nav-section-label">{collapsed ? '•' : 'ISH MAYDONI'}</p>
           {navigation.map((item) => {
             const Icon = item.icon;
             const isActive = activeTab === item.id;
@@ -111,6 +116,8 @@ export default function Sidebar({
             return (
               <button
                 key={item.id}
+                aria-label={item.label}
+                aria-current={isActive ? 'page' : undefined}
                 onClick={() => setActiveTab(item.id)}
                 onDragOver={(e) => {
                   if (item.id === 'kanban') {
@@ -126,11 +133,11 @@ export default function Sidebar({
                     }
                   }
                 }}
-                className={`w-full flex items-center rounded-xl text-base transition-colors relative ${
+                className={`nav-item w-full flex items-center rounded-xl text-base transition-colors relative ${
                   collapsed ? 'justify-center h-12 px-0' : 'justify-between px-3.5 h-11'
                 } ${
                   isActive
-                    ? 'bg-zinc-100 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 font-bold shadow-xs'
+                    ? 'nav-item-active font-semibold'
                     : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 hover:bg-zinc-50 dark:hover:bg-zinc-900 font-medium'
                 }`}
                 title={collapsed ? item.label : undefined}
@@ -140,8 +147,12 @@ export default function Sidebar({
                   {!collapsed && <span className="truncate">{item.label}</span>}
                 </div>
 
-                {!collapsed && item.badge && (
-                  <span className="text-xs font-mono font-bold px-2 py-0.5 rounded-md bg-zinc-200/80 dark:bg-zinc-700 text-zinc-800 dark:text-zinc-200">
+                {Boolean(item.badge) && (
+                  <span className={`font-mono font-bold rounded-md ${collapsed ? 'absolute right-1 top-1 min-w-4 px-1 text-[10px]' : 'px-2 py-0.5 text-xs'} ${
+                    item.badgeTone === 'alert'
+                      ? 'bg-red-500 text-white'
+                      : 'bg-zinc-200/80 dark:bg-zinc-700 text-zinc-800 dark:text-zinc-200'
+                  }`}>
                     {item.badge}
                   </span>
                 )}
@@ -152,7 +163,7 @@ export default function Sidebar({
       </div>
 
       {/* Footer Profile Section */}
-      <div className="p-3 border-t border-zinc-200 dark:border-zinc-800">
+      <div className="sidebar-footer p-3 border-t border-zinc-200 dark:border-zinc-800">
         <div 
           onClick={() => setActiveTab('profile')}
           className={`p-2 rounded-2xl border transition-all cursor-pointer flex items-center ${
@@ -173,7 +184,7 @@ export default function Sidebar({
               <p className="text-sm font-bold text-zinc-900 dark:text-zinc-100 truncate">
                 {currentUser?.name || 'Dispecher'}
               </p>
-              <p className="text-[11px] text-emerald-500 font-medium truncate flex items-center space-x-1">
+              <p className="text-[11px] text-zinc-500 font-medium truncate flex items-center space-x-1">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 inline-block" />
                 <span className="truncate">{currentUser?.role || 'Onlayn (Profil)'}</span>
               </p>

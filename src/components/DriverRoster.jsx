@@ -1,94 +1,29 @@
 import React, { useState } from 'react';
 import { 
   MapPin, 
+  MessageSquare,
   Plus, 
   Search,
-  Truck,
-  UserPlus,
-  X,
-  CheckCircle2
 } from 'lucide-react';
+import KanbanBoard from './KanbanBoard';
 
-export default function DriverRoster({ drivers, loads, onAssignLoad, onAddDriver }) {
+export default function DriverRoster({
+  drivers,
+  loads,
+  onAssignLoad,
+  onOpenDocs,
+  onDeleteLoad,
+  onDropOnOffer,
+  isAiProcessing,
+  selectedDriverId,
+  onSelectDriver,
+  onOpenChat,
+}) {
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('ALL');
-  const [isAddFormOpen, setIsAddFormOpen] = useState(false);
-  const [successToast, setSuccessToast] = useState('');
-  const [formError, setFormError] = useState('');
-  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Form State for Adding Driver Inline (No Modal)
-  const [name, setName] = useState('');
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [phone, setPhone] = useState('');
-  const [driverNumber, setDriverNumber] = useState('');
-  const [truck, setTruck] = useState('');
-  const [trailer, setTrailer] = useState("53' Reefer");
-  const [location, setLocation] = useState('Chicago, IL');
-
-  const handlePrepareForm = () => {
-    const nextNum = `#10${drivers.length + 50}`;
-    setDriverNumber(nextNum);
-    setName('');
-    setEmail('');
-    setPassword('');
-    setFormError('');
-    setPhone('+1 (773) 555-');
-    setTruck('Freightliner Cascadia (#' + Math.floor(100 + Math.random() * 900) + ')');
-    setTrailer("53' Reefer (#R-" + Math.floor(100 + Math.random() * 900) + ")");
-    setLocation('Chicago, IL');
-  };
-
-  const handleToggleAddForm = () => {
-    if (!isAddFormOpen) {
-      handlePrepareForm();
-      setIsAddFormOpen(true);
-    } else {
-      setIsAddFormOpen(false);
-    }
-  };
-
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    if (!name.trim() || !email.trim() || password.length < 6) return;
-
-    const newDriver = {
-      name: name.trim(),
-      email: email.trim().toLowerCase(),
-      password,
-      role: 'driver',
-      driverNumber: driverNumber.trim() || `#10${Math.floor(10 + Math.random() * 90)}`,
-      phone: phone.trim() || '+1 (555) 000-0000',
-      truck: truck.trim() || 'Volvo VNL 860',
-      trailer: trailer.trim() || "53' Reefer",
-      currentLocation: location.trim() || 'Chicago, IL',
-      lat: 41.8781,
-      lng: -87.6298,
-      status: 'AVAILABLE',
-      dutyStatus: 'ON_DUTY',
-      hos: {
-        driveLeft: '11:00',
-        shiftLeft: '14:00',
-        cycleLeft: '70:00'
-      },
-      rating: 5.0,
-      completedLoads: 0,
-      onTimeRate: '100%'
-    };
-
-    setIsSubmitting(true);
-    setFormError('');
-    try {
-      if (onAddDriver) await onAddDriver(newDriver);
-      setIsAddFormOpen(false);
-      setSuccessToast(`Haydovchi hisobi yaratildi: ${newDriver.name}.`);
-      setTimeout(() => setSuccessToast(''), 4000);
-    } catch (error) {
-      setFormError(error.message || 'Haydovchi hisobini yaratib bo‘lmadi.');
-    } finally {
-      setIsSubmitting(false);
-    }
+  const openDriver = (driverId) => {
+    onSelectDriver(driverId);
   };
 
   const availableDriversCount = drivers.filter(d => !loads.some(l => l.driverId === d.id && l.status !== 'COMPLETED')).length;
@@ -114,246 +49,45 @@ export default function DriverRoster({ drivers, loads, onAssignLoad, onAddDriver
     );
   });
 
+  const selectedDriver = drivers.find((driver) => driver.id === selectedDriverId);
+
+  if (selectedDriver) {
+    const driverLoads = loads.filter((load) => (
+      load.driverId === selectedDriver.id
+      || load.targetDriverIds?.includes(selectedDriver.id)
+    ));
+
+    return (
+      <DriverLoadWorkspace
+        driver={selectedDriver}
+        loads={driverLoads}
+        drivers={drivers}
+        onOpenChat={onOpenChat}
+        onOpenDocs={onOpenDocs}
+        onDeleteLoad={onDeleteLoad}
+        onDropOnOffer={onDropOnOffer}
+        isAiProcessing={isAiProcessing}
+      />
+    );
+  }
+
   return (
     <div className="w-full space-y-6 pb-12">
-      
-      {/* Toast */}
-      {successToast && (
-        <div className="bg-emerald-500 text-white px-5 py-3 rounded-xl shadow-lg flex items-center justify-between text-sm font-bold animate-in fade-in slide-in-from-top duration-200">
-          <div className="flex items-center space-x-3">
-            <CheckCircle2 className="w-5 h-5 flex-shrink-0" />
-            <span>{successToast}</span>
-          </div>
-          <button onClick={() => setSuccessToast('')} className="opacity-80 hover:opacity-100 p-1 cursor-pointer">
-            <X className="w-4 h-4" />
-          </button>
-        </div>
-      )}
-
-      {/* Flat Header — No Card Box */}
-      <div className="pb-4 border-b border-zinc-200 dark:border-zinc-800 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h2 className="text-xl font-black text-zinc-900 dark:text-zinc-100 tracking-tight">
-            Haydovchilar Floti
-          </h2>
-          <p className="text-sm text-zinc-500 dark:text-zinc-400 mt-0.5">
-            Barcha drayverlar, HOS qoldiqlari, biriktirilgan texnika va reyslar ro'yxati
-          </p>
-        </div>
-
-        <div className="flex items-center space-x-3">
-          {/* Inline Add Driver Toggle */}
-          <button
-            onClick={handleToggleAddForm}
-            className={`inline-flex items-center space-x-2 px-4 py-2.5 rounded-xl font-bold text-sm shadow-xs transition-colors cursor-pointer ${
-              isAddFormOpen
-                ? 'bg-zinc-200 hover:bg-zinc-300 text-zinc-800 dark:bg-zinc-800 dark:hover:bg-zinc-700 dark:text-zinc-100'
-                : 'bg-zinc-900 hover:bg-zinc-800 text-white dark:bg-zinc-100 dark:hover:bg-white dark:text-zinc-950'
-            }`}
-          >
-            {isAddFormOpen ? (
-              <>
-                <X className="w-4 h-4" />
-                <span>Formani yopish</span>
-              </>
-            ) : (
-              <>
-                <Plus className="w-4 h-4" />
-                <span>Yangi haydovchi qo'shish</span>
-              </>
-            )}
-          </button>
-        </div>
-      </div>
-
-      {/* Inline Add Driver Form — No Modal */}
-      {isAddFormOpen && (
-        <div className="w-full bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl p-5 lg:p-6 space-y-5 animate-in fade-in slide-in-from-top-3 duration-200 shadow-xs">
-          <div className="flex items-center justify-between pb-3 border-b border-zinc-200 dark:border-zinc-800">
-            <div className="flex items-center space-x-2.5">
-              <div className="w-8 h-8 rounded-xl bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-950 flex items-center justify-center font-bold">
-                <UserPlus className="w-4 h-4" />
-              </div>
-              <div>
-                <h4 className="font-bold text-base text-zinc-900 dark:text-zinc-100">
-                  Yangi Haydovchi Ro'yxatdan O'tkazish
-                </h4>
-                <p className="text-xs text-zinc-500 dark:text-zinc-400">
-                  Akkaunt email taklifisiz darhol faol holatda yaratiladi
-                </p>
-              </div>
-            </div>
-
-            {formError && (
-              <p className="text-sm font-semibold text-red-600 dark:text-red-400">{formError}</p>
-            )}
-
-            <button
-              type="button"
-              onClick={() => setIsAddFormOpen(false)}
-              className="p-1.5 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors cursor-pointer"
-              title="Formani yopish"
-            >
-              <X className="w-5 h-5" />
-            </button>
-          </div>
-
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              <div>
-                <label className="block text-xs font-mono font-bold text-zinc-500 dark:text-zinc-400 uppercase mb-1.5">
-                  F.I.Sh (Ism Familiya) *
-                </label>
-                <input
-                  type="text"
-                  required
-                  autoFocus
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  placeholder="Masalan: Jasur Aliyev"
-                  className="w-full bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl px-3.5 py-2.5 text-sm text-zinc-900 dark:text-zinc-100 placeholder-zinc-400 focus:outline-none focus:border-zinc-400 transition-colors"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-mono font-bold text-zinc-500 dark:text-zinc-400 uppercase mb-1.5">
-                  Email *
-                </label>
-                <input
-                  type="email"
-                  required
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="driver@company.com"
-                  className="w-full bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl px-3.5 py-2.5 text-sm text-zinc-900 dark:text-zinc-100 placeholder-zinc-400 focus:outline-none focus:border-zinc-400 transition-colors"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-mono font-bold text-zinc-500 dark:text-zinc-400 uppercase mb-1.5">
-                  Boshlang'ich parol *
-                </label>
-                <input
-                  type="password"
-                  required
-                  minLength={6}
-                  autoComplete="new-password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder="Kamida 6 ta belgi"
-                  className="w-full bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl px-3.5 py-2.5 text-sm text-zinc-900 dark:text-zinc-100 placeholder-zinc-400 focus:outline-none focus:border-zinc-400 transition-colors"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-mono font-bold text-zinc-500 dark:text-zinc-400 uppercase mb-1.5">
-                  Telefon Raqami *
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={phone}
-                  onChange={(e) => setPhone(e.target.value)}
-                  placeholder="+1 (773) 555-0188"
-                  className="w-full bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl px-3.5 py-2.5 text-sm text-zinc-900 dark:text-zinc-100 placeholder-zinc-400 focus:outline-none focus:border-zinc-400 transition-colors"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-mono font-bold text-zinc-500 dark:text-zinc-400 uppercase mb-1.5">
-                  Drayver ID (#)
-                </label>
-                <input
-                  type="text"
-                  value={driverNumber}
-                  onChange={(e) => setDriverNumber(e.target.value)}
-                  placeholder="#1056"
-                  className="w-full bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl px-3.5 py-2.5 text-sm text-zinc-900 dark:text-zinc-100 font-mono placeholder-zinc-400 focus:outline-none focus:border-zinc-400 transition-colors"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-mono font-bold text-zinc-500 dark:text-zinc-400 uppercase mb-1.5">
-                  Tyagach (Model & #)
-                </label>
-                <input
-                  type="text"
-                  value={truck}
-                  onChange={(e) => setTruck(e.target.value)}
-                  placeholder="Peterbilt 579 (#410)"
-                  className="w-full bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl px-3.5 py-2.5 text-sm text-zinc-900 dark:text-zinc-100 placeholder-zinc-400 focus:outline-none focus:border-zinc-400 transition-colors"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-mono font-bold text-zinc-500 dark:text-zinc-400 uppercase mb-1.5">
-                  Treyler Turi
-                </label>
-                <select
-                  value={trailer}
-                  onChange={(e) => setTrailer(e.target.value)}
-                  className="w-full bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl px-3.5 py-2.5 text-sm text-zinc-900 dark:text-zinc-100 focus:outline-none focus:border-zinc-400 transition-colors cursor-pointer"
-                >
-                  <option value="53' Reefer">53' Reefer (Sovutgich)</option>
-                  <option value="53' Dry Van">53' Dry Van (Tent)</option>
-                  <option value="53' Flatbed">53' Flatbed (Ochiq platforma)</option>
-                  <option value="Step Deck">Step Deck</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-xs font-mono font-bold text-zinc-500 dark:text-zinc-400 uppercase mb-1.5">
-                  Hozirgi Joylashuv (Shahar, Shtat)
-                </label>
-                <input
-                  type="text"
-                  value={location}
-                  onChange={(e) => setLocation(e.target.value)}
-                  placeholder="Dallas, TX"
-                  className="w-full bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl px-3.5 py-2.5 text-sm text-zinc-900 dark:text-zinc-100 placeholder-zinc-400 focus:outline-none focus:border-zinc-400 transition-colors"
-                />
-              </div>
-            </div>
-
-            <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-3 border-t border-zinc-100 dark:border-zinc-800">
-              <p className="text-xs text-zinc-500 dark:text-zinc-400">
-                * Hisob darhol faol bo'ladi. Haydovchi email va boshlang'ich parol bilan kiradi.
-              </p>
-              <div className="flex items-center space-x-3 self-end sm:self-auto">
-                <button
-                  type="button"
-                  onClick={() => setIsAddFormOpen(false)}
-                  className="px-4 py-2 rounded-xl border border-zinc-200 dark:border-zinc-800 text-sm font-bold text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors cursor-pointer"
-                >
-                  Bekor qilish
-                </button>
-                <button
-                  type="submit"
-                  disabled={isSubmitting}
-                  className="px-5 py-2 rounded-xl bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-950 text-sm font-bold shadow-xs hover:bg-zinc-800 dark:hover:bg-white transition-colors cursor-pointer"
-                >
-                  {isSubmitting ? 'Hisob yaratilmoqda…' : 'Haydovchi hisobi yaratish'}
-                </button>
-              </div>
-            </div>
-          </form>
-        </div>
-      )}
-
       {/* Filters & Search Row */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+      <div className="driver-list-toolbar">
         <div className="relative flex-1 max-w-sm">
           <Search className="w-4 h-4 text-zinc-400 absolute left-3 top-1/2 -translate-y-1/2" />
           <input
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Drayver, texnika yoki joylashuv..."
+            placeholder="Haydovchi yoki joylashuv..."
             className="w-full bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl pl-9 pr-3.5 py-2 text-sm text-zinc-900 dark:text-zinc-100 placeholder-zinc-400 focus:outline-none focus:border-zinc-400 transition-colors"
           />
         </div>
 
-        <div className="flex items-center bg-zinc-100 dark:bg-zinc-900 rounded-xl p-1 text-xs font-bold">
+        <div className="driver-list-actions">
+          <div className="flex items-center bg-zinc-100 dark:bg-zinc-900 rounded-xl p-1 text-xs font-bold">
           <button
             onClick={() => setStatusFilter('ALL')}
             className={`px-3 py-1.5 rounded-lg transition-colors cursor-pointer ${
@@ -384,19 +118,18 @@ export default function DriverRoster({ drivers, loads, onAssignLoad, onAddDriver
           >
             Yukda ({onDutyDriversCount})
           </button>
+          </div>
         </div>
       </div>
 
       {/* Full-Width Clean Table — No Card Box */}
       <div className="w-full overflow-x-auto border-t border-b border-zinc-200 dark:border-zinc-800">
-        <table className="w-full text-left border-collapse min-w-[760px]">
+        <table className="w-full text-left border-collapse min-w-[700px]">
           <thead className="bg-zinc-50/80 dark:bg-zinc-900/80 text-zinc-500 dark:text-zinc-400 font-mono text-xs font-bold uppercase tracking-wider border-b border-zinc-200 dark:border-zinc-800">
             <tr>
               <th className="py-3.5 px-4">Haydovchi</th>
-              <th className="py-3.5 px-4">Holat</th>
               <th className="py-3.5 px-4">Joylashuv</th>
               <th className="py-3.5 px-4">HOS Qoldig'i</th>
-              <th className="py-3.5 px-4">Texnika & Treyler</th>
               <th className="py-3.5 px-4">Faol Reys</th>
               <th className="py-3.5 px-4 text-right">Harakat</th>
             </tr>
@@ -404,7 +137,7 @@ export default function DriverRoster({ drivers, loads, onAssignLoad, onAddDriver
           <tbody className="divide-y divide-zinc-200 dark:divide-zinc-800 text-sm">
             {filteredDrivers.length === 0 ? (
               <tr>
-                <td colSpan={7} className="py-12 text-center text-zinc-400 font-medium">
+                <td colSpan={5} className="py-12 text-center text-zinc-400 font-medium">
                   Haydovchilar topilmadi
                 </td>
               </tr>
@@ -415,40 +148,41 @@ export default function DriverRoster({ drivers, loads, onAssignLoad, onAddDriver
                 return (
                   <tr 
                     key={driver.id} 
-                    className="hover:bg-zinc-50/80 dark:hover:bg-zinc-800/40 transition-colors"
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => openDriver(driver.id)}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter' || event.key === ' ') {
+                        event.preventDefault();
+                        openDriver(driver.id);
+                      }
+                    }}
+                    className="driver-row hover:bg-zinc-50/80 dark:hover:bg-zinc-800/40 transition-colors cursor-pointer"
+                    aria-label={`${driver.name} ma’lumotlarini ochish`}
                   >
                     {/* Driver Info */}
                     <td className="py-3.5 px-4 whitespace-nowrap">
                       <div className="flex items-center space-x-3">
-                        <div className="w-8 h-8 rounded-xl bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 flex items-center justify-center font-mono font-bold text-xs text-zinc-800 dark:text-zinc-200 flex-shrink-0">
+                        <div className="relative w-8 h-8 overflow-hidden rounded-xl bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 flex items-center justify-center font-mono font-bold text-xs text-zinc-800 dark:text-zinc-200 flex-shrink-0">
                           {driver.name.charAt(0)}{driver.name.split(' ')[1]?.charAt(0) || ''}
+                          {driver.avatar && (
+                            <img
+                              src={driver.avatar}
+                              alt=""
+                              className="absolute inset-0 h-full w-full object-cover"
+                              onError={(event) => { event.currentTarget.style.display = 'none'; }}
+                            />
+                          )}
                         </div>
                         <div>
                           <div className="flex items-center space-x-1.5 whitespace-nowrap">
                             <span className="font-bold text-sm text-zinc-900 dark:text-zinc-100">{driver.name}</span>
-                            <span className="text-amber-500 font-semibold text-xs">{driver.rating} ★</span>
                           </div>
                           <div className="text-xs text-zinc-400 font-mono whitespace-nowrap mt-0.5">
                             <span className="font-bold text-zinc-600 dark:text-zinc-300">{driver.driverNumber}</span> • <span>{driver.phone}</span>
                           </div>
                         </div>
                       </div>
-                    </td>
-
-                    {/* Duty Status */}
-                    <td className="py-3.5 px-4 whitespace-nowrap">
-                      <span className={`inline-flex items-center space-x-1.5 text-xs font-mono font-bold px-2.5 py-1 rounded-lg border ${
-                        driver.dutyStatus === 'DRIVING'
-                          ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800/50'
-                          : driver.dutyStatus === 'ON_DUTY'
-                          ? 'bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400 border-blue-200 dark:border-blue-800/50'
-                          : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-500 dark:text-zinc-400 border-zinc-200 dark:border-zinc-700'
-                      }`}>
-                        <span className={`w-2 h-2 rounded-full ${
-                          driver.dutyStatus === 'DRIVING' ? 'bg-emerald-500' : driver.dutyStatus === 'ON_DUTY' ? 'bg-blue-500' : 'bg-zinc-400'
-                        }`} />
-                        <span>{driver.dutyStatus}</span>
-                      </span>
                     </td>
 
                     {/* Location */}
@@ -466,17 +200,6 @@ export default function DriverRoster({ drivers, loads, onAssignLoad, onAddDriver
                       </div>
                       <div className="text-xs text-zinc-400 font-normal mt-0.5">
                         {driver.hos.shiftLeft} Shft • {driver.hos.cycleLeft} Cyc
-                      </div>
-                    </td>
-
-                    {/* Equipment */}
-                    <td className="py-3.5 px-4 whitespace-nowrap">
-                      <div className="flex items-center space-x-2 text-sm font-bold text-zinc-800 dark:text-zinc-200">
-                        <Truck className="w-4 h-4 text-zinc-400 flex-shrink-0" />
-                        <span>{driver.truck}</span>
-                      </div>
-                      <div className="text-xs text-zinc-400 font-mono mt-0.5 pl-6">
-                        {driver.trailer}
                       </div>
                     </td>
 
@@ -501,18 +224,17 @@ export default function DriverRoster({ drivers, loads, onAssignLoad, onAddDriver
                     {/* Actions */}
                     <td className="py-3.5 px-4 text-right whitespace-nowrap">
                       <div className="flex items-center justify-end">
-                        {!activeLoad ? (
-                          <button
-                            onClick={() => onAssignLoad(driver)}
-                            className="inline-flex items-center space-x-1.5 bg-zinc-900 hover:bg-zinc-800 text-white dark:bg-zinc-100 dark:hover:bg-white dark:text-zinc-950 px-3.5 py-1.5 rounded-xl font-bold text-xs transition-colors shadow-2xs cursor-pointer"
-                            title="Yangi yuk tayinlash"
-                          >
-                            <Plus className="w-3.5 h-3.5" />
-                            <span>Yuk berish</span>
-                          </button>
-                        ) : (
-                          <span className="text-xs text-zinc-400 font-mono">—</span>
-                        )}
+                        <button
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            onAssignLoad(driver);
+                          }}
+                          className="inline-flex items-center space-x-1.5 bg-zinc-900 hover:bg-zinc-800 text-white dark:bg-zinc-100 dark:hover:bg-white dark:text-zinc-950 px-3.5 py-1.5 rounded-xl font-bold text-xs transition-colors shadow-2xs cursor-pointer"
+                          title={activeLoad ? 'Qo‘shimcha yuk tayinlash' : 'Yangi yuk tayinlash'}
+                        >
+                          <Plus className="w-3.5 h-3.5" />
+                          <span>{activeLoad ? 'Qo‘shimcha yuk' : 'Yuk berish'}</span>
+                        </button>
                       </div>
                     </td>
 
@@ -524,6 +246,63 @@ export default function DriverRoster({ drivers, loads, onAssignLoad, onAddDriver
         </table>
       </div>
 
+    </div>
+  );
+}
+
+function DriverLoadWorkspace({
+  driver,
+  loads,
+  drivers,
+  onOpenChat,
+  onOpenDocs,
+  onDeleteLoad,
+  onDropOnOffer,
+  isAiProcessing,
+}) {
+  const activeLoads = loads.filter((load) => load.status !== 'COMPLETED').length;
+
+  return (
+    <div className="driver-workspace space-y-5 pb-12">
+      <div className="driver-detail-header">
+        <div className="driver-detail-identity">
+          <span className="driver-detail-avatar relative overflow-hidden">
+            {driver.name.charAt(0)}{driver.name.split(' ')[1]?.charAt(0) || ''}
+            {driver.avatar && (
+              <img
+                src={driver.avatar}
+                alt=""
+                className="absolute inset-0 h-full w-full object-cover"
+                onError={(event) => { event.currentTarget.style.display = 'none'; }}
+              />
+            )}
+          </span>
+          <div>
+            <div className="flex items-center gap-2">
+              <h2>{driver.name}</h2>
+            </div>
+            <p>{driver.driverNumber} <span>•</span> {driver.phone}</p>
+          </div>
+        </div>
+
+        <div className="driver-detail-meta">
+          <div><span>Faol reyslar</span><strong>{activeLoads}</strong></div>
+        </div>
+
+        <button type="button" onClick={() => onOpenChat(driver)} className="primary-button">
+          <MessageSquare size={16} aria-hidden="true" />
+          <span>Chat</span>
+        </button>
+      </div>
+
+        <KanbanBoard
+          loads={loads}
+          drivers={drivers}
+          onOpenDocs={onOpenDocs}
+          onDeleteLoad={onDeleteLoad}
+          onDropOnOffer={onDropOnOffer}
+          isAiProcessing={isAiProcessing}
+        />
     </div>
   );
 }

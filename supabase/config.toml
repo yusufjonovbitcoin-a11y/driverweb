@@ -54,3 +54,15 @@ verify_jwt = true
 
 [functions.calculate-load-route]
 verify_jwt = true
+
+[functions.ask-load-ai]
+verify_jwt = true
+
+[functions.forward-gmail-attachment]
+verify_jwt = true
+
+[functions.process-broker-attachment]
+verify_jwt = false
+
+[functions.cloudinary-media]
+verify_jwt = false

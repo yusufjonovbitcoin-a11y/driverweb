@@ -1,0 +1,41 @@
+# Cloudinary media setup
+
+All new private media uses the `cloudinary-media` Supabase Edge Function. The
+browser and Flutter app never receive `CLOUDINARY_API_SECRET`. Assets are
+uploaded with Cloudinary's `authenticated` delivery type and the database stores
+only `cloudinary:<media_asset_id>` references.
+
+## Required Supabase secrets
+
+```text
+CLOUDINARY_CLOUD_NAME
+CLOUDINARY_API_KEY
+CLOUDINARY_API_SECRET
+```
+
+Apply `supabase/migrations/202609250020_cloudinary_media.sql`, deploy the
+`cloudinary-media` function, and redeploy the functions that read or create
+media:
+
+```text
+parse-load-document
+check-load-document
+process-broker-attachment
+forward-gmail-attachment
+```
+
+The existing `GMAIL_WORKER_TOKEN` secret is used for private function-to-function
+downloads. After deployment, set `CLOUDINARY_REQUIRED=true` in `.env.gmail` and
+restart the Gmail sync timer.
+
+## Existing media
+
+Copy `.env.cloudinary.example` to `.env.cloudinary`, fill its values, then run:
+
+```bash
+npm run media:migrate-cloudinary
+```
+
+The default migration keeps the original Supabase Storage objects so the move is
+reversible. Verify the UI and database references first. A final run with
+`CLOUDINARY_DELETE_SOURCE=true` removes successfully migrated source objects.

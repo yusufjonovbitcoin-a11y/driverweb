@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { uploadPrivateMedia } from "../_shared/cloudinary-media.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -579,11 +580,15 @@ Deno.serve(async (request) => {
   };
 
   try {
-    const storagePath = `${profile.company_id}/manual/${importId}/${safeFileName(file.name)}`;
-    const { error: storageError } = await adminClient.storage
-      .from("broker-originals")
-      .upload(storagePath, bytes, { contentType: file.type, upsert: true });
-    if (storageError) return await fail(storageError.message, 500);
+    const manualUpload = await uploadPrivateMedia({
+      supabaseUrl,
+      apiKey: publicKey,
+      authorization,
+      file,
+      scope: "manual_import",
+      contextId: importId,
+    });
+    const storagePath = manualUpload.reference;
     await adminClient.from("manual_load_imports").update({ storage_path: storagePath })
       .eq("id", importId);
 
@@ -678,13 +683,21 @@ Deno.serve(async (request) => {
         },
       );
       if (planError) return await fail(planError.message, 500);
-      const { error: uploadError } = await callerClient.storage
-        .from(uploadPlan.bucket)
-        .upload(uploadPlan.storagePath, bytes, { contentType: file.type, upsert: false });
-      if (uploadError) return await fail(uploadError.message, 500);
+      const documentUpload = await uploadPrivateMedia({
+        supabaseUrl,
+        apiKey: publicKey,
+        authorization,
+        file,
+        scope: "load_document",
+        contextId: loadId,
+      });
       const { error: completeError } = await callerClient.rpc(
-        "complete_document_upload",
-        { version_id: uploadPlan.versionId, checksum_sha256: checksum },
+        "bind_document_version_media",
+        {
+          version_id: uploadPlan.versionId,
+          media_ref: documentUpload.reference,
+          checksum_sha256: checksum,
+        },
       );
       if (completeError) return await fail(completeError.message, 500);
       documentVersionId = uploadPlan.versionId;
