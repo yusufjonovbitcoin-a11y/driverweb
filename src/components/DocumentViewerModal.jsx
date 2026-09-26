@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { 
   X, 
   FileText, 
@@ -8,6 +9,8 @@ import {
   TriangleAlert,
   LoaderCircle,
 } from 'lucide-react';
+import { formatCurrency, formatNumber } from '../i18n/format';
+import { warningLabel } from '../i18n/labels';
 
 export default function DocumentViewerModal({ 
   isOpen, 
@@ -15,6 +18,7 @@ export default function DocumentViewerModal({
   load, 
   onApproveAndInvoice 
 }) {
+  const { t } = useTranslation();
   const [activeDocTab, setActiveDocTab] = useState('rateCon');
   const [approvedLoadId, setApprovedLoadId] = useState(null);
 
@@ -24,30 +28,30 @@ export default function DocumentViewerModal({
   const docs = [
     {
       id: 'rateCon',
-      title: 'Broker Rate Con',
+      title: t('documents.brokerRateCon'),
       available: !!load.documents?.rateCon,
       url: load.documents?.rateCon,
       mimeType: load.documentMeta?.rateCon?.mimeType,
       review: load.documentChecks?.rateCon,
-      type: 'Shartnoma & Stavka'
+      type: t('documents.contractRate')
     },
     {
       id: 'shipperBol',
-      title: 'Shipper BOL',
+      title: t('documents.shipperBol'),
       available: !!load.documents?.shipperBol,
       url: load.documents?.shipperBol,
       mimeType: load.documentMeta?.shipperBol?.mimeType,
       review: load.documentChecks?.shipperBol,
-      type: 'Bill of Lading'
+      type: t('documents.billOfLading')
     },
     {
       id: 'receiverPod',
-      title: 'Receiver POD',
+      title: t('documents.receiverPod'),
       available: !!load.documents?.receiverPod,
       url: load.documents?.receiverPod,
       mimeType: load.documentMeta?.receiverPod?.mimeType,
       review: load.documentChecks?.receiverPod,
-      type: 'Proof of Delivery'
+      type: t('documents.proofOfDelivery')
     }
   ];
 
@@ -71,13 +75,13 @@ export default function DocumentViewerModal({
         <div className="flex items-center justify-between px-6 py-4 border-b border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/50">
           <div>
             <div className="flex items-center space-x-2.5">
-              <span className="font-semibold text-zinc-900 dark:text-zinc-100 text-base">Hujjatlar Tekshiruvi & Faktura</span>
+              <span className="font-semibold text-zinc-900 dark:text-zinc-100 text-base">{t('documents.reviewInvoice')}</span>
               <span className="font-mono text-zinc-700 dark:text-zinc-300 bg-zinc-200 dark:bg-zinc-800 px-2 py-0.5 rounded text-xs font-semibold">
                 {load.loadNumber}
               </span>
             </div>
             <p className="text-xs text-zinc-500 mt-0.5">
-              {load.origin.city}, {load.origin.state} ➔ {load.destination.city}, {load.destination.state} • ${load.rate}
+              {load.origin.city || t('common.notProvided')}, {load.origin.state} ➔ {load.destination.city || t('common.notProvided')}, {load.destination.state} • {formatCurrency(load.rate)}
             </p>
           </div>
 
@@ -140,15 +144,15 @@ export default function DocumentViewerModal({
                     className="absolute bottom-3 right-3 bg-white/95 dark:bg-zinc-900/95 border border-zinc-300 dark:border-zinc-700 text-zinc-800 dark:text-zinc-200 px-3 py-1.5 rounded-lg text-xs font-medium flex items-center space-x-1.5 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors shadow-xs"
                   >
                     <ZoomIn className="w-4 h-4" />
-                    <span>Kattalashtirish</span>
+                    <span>{t('documents.enlarge')}</span>
                   </a>
                 </div>
               ) : (
                 <div className="text-center p-8 space-y-2.5 text-zinc-400 dark:text-zinc-500">
                   <FileText className="w-10 h-10 mx-auto text-zinc-400 dark:text-zinc-600" />
-                  <div className="text-sm text-zinc-700 dark:text-zinc-300 font-semibold">Hujjat yuklanmagan</div>
+                  <div className="text-sm text-zinc-700 dark:text-zinc-300 font-semibold">{t('documents.notUploaded')}</div>
                   <p className="text-xs max-w-xs text-zinc-500">
-                    Haydovchi yukni olish yoki topshirish paytida mobil ilova orqali yuklaganda bu yerda paydo bo'ladi.
+                    {t('documents.uploadHint')}
                   </p>
                 </div>
               )}
@@ -157,38 +161,40 @@ export default function DocumentViewerModal({
             {currentDoc.available && ['queued', 'checking'].includes(currentDoc.review?.check_status) && (
               <div className="flex items-center gap-2 rounded-xl border border-blue-200 bg-blue-50 px-3.5 py-3 text-xs font-semibold text-blue-800 dark:border-blue-900/60 dark:bg-blue-950/30 dark:text-blue-300">
                 <LoaderCircle className="h-4 w-4 animate-spin" />
-                AI hujjatni tekshirmoqda
+                {t('documents.aiChecking')}
               </div>
             )}
             {currentDoc.available && ['warning', 'failed_to_read'].includes(currentDoc.review?.check_status) && (
               <div className="rounded-xl border border-amber-200 bg-amber-50 px-3.5 py-3 text-xs text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200">
                 <div className="flex items-center gap-2 font-bold">
-                  <TriangleAlert className="h-4 w-4" /> AI ogohlantirishi
+                  <TriangleAlert className="h-4 w-4" /> {t('documents.aiWarning')}
                 </div>
                 <ul className="mt-2 list-disc space-y-1 pl-5">
-                  {(currentDoc.review.active_warnings || []).map((warning) => (
-                    <li key={warning.id || warning.code}>{warning.message}</li>
+                  {(currentDoc.review.active_warnings || []).map((warning, index) => (
+                    <li key={warning.id || `${warning.code || 'unknown'}-${warning.field || index}`}>
+                      {warningLabel(t, warning)}
+                    </li>
                   ))}
                 </ul>
               </div>
             )}
             {currentDoc.available && currentDoc.review?.check_status === 'passed' && (
               <div className="flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-3.5 py-3 text-xs font-semibold text-emerald-800 dark:border-emerald-900/60 dark:bg-emerald-950/30 dark:text-emerald-300">
-                <ShieldCheck className="h-4 w-4" /> AI tekshiruvidan o‘tdi
+                <ShieldCheck className="h-4 w-4" /> {t('documents.aiPassed')}
               </div>
             )}
 
             <div className="flex items-center justify-between text-zinc-500 text-xs pt-1">
               <span className="flex items-center space-x-1.5">
                 <ShieldCheck className="w-4 h-4 text-zinc-500 dark:text-zinc-400" />
-                <span>Raqamli audit va vaqt tamg'asi tasdiqlangan</span>
+                <span>{t('documents.auditVerified')}</span>
               </span>
               <button 
                 onClick={() => window.print()}
                 className="hover:text-zinc-800 dark:hover:text-zinc-300 flex items-center space-x-1.5"
               >
                 <Printer className="w-3.5 h-3.5" />
-                <span>Chop etish</span>
+                <span>{t('documents.print')}</span>
               </button>
             </div>
           </div>
@@ -199,60 +205,60 @@ export default function DocumentViewerModal({
             {/* Specs Table */}
             <div className="bg-zinc-50/70 dark:bg-zinc-900/40 border border-zinc-200 dark:border-zinc-800 rounded-xl p-4 space-y-3">
               <span className="text-xs font-bold text-zinc-700 dark:text-zinc-300 uppercase tracking-wide block pb-1 border-b border-zinc-200 dark:border-zinc-800">
-                Yuk parametrlari
+                {t('documents.loadParameters')}
               </span>
 
               <div className="space-y-2 text-sm">
                 <div className="flex justify-between">
-                  <span className="text-zinc-500">Broker:</span>
-                  <span className="text-zinc-800 dark:text-zinc-200 font-medium">{load.broker}</span>
+                  <span className="text-zinc-500">{t('loads.broker')}:</span>
+                  <span className="text-zinc-800 dark:text-zinc-200 font-medium">{load.broker || t('inbox.brokerMissing')}</span>
                 </div>
                 <div className="flex justify-between font-mono">
-                  <span className="text-zinc-500 font-sans">Aloqa:</span>
-                  <span className="text-zinc-700 dark:text-zinc-300">{load.brokerPhone}</span>
+                  <span className="text-zinc-500 font-sans">{t('profile.contact')}:</span>
+                  <span className="text-zinc-700 dark:text-zinc-300">{load.brokerPhone || t('common.notProvided')}</span>
                 </div>
                 <div className="flex justify-between font-mono">
-                  <span className="text-zinc-500 font-sans">Stavka:</span>
-                  <span className="text-zinc-900 dark:text-zinc-100 font-bold">${load.rate}</span>
+                  <span className="text-zinc-500 font-sans">{t('loads.rate')}:</span>
+                  <span className="text-zinc-900 dark:text-zinc-100 font-bold">{formatCurrency(load.rate)}</span>
                 </div>
                 <div className="flex justify-between font-mono">
                   <span className="text-zinc-500 font-sans">RPM:</span>
                   <span className="text-emerald-600 dark:text-emerald-400 font-bold">${load.ratePerMile}/mi</span>
                 </div>
                 <div className="flex justify-between font-mono">
-                  <span className="text-zinc-500 font-sans">Vazni:</span>
-                  <span className="text-zinc-700 dark:text-zinc-300">{load.weightLbs?.toLocaleString()} lbs</span>
+                  <span className="text-zinc-500 font-sans">{t('loads.weight')}:</span>
+                  <span className="text-zinc-700 dark:text-zinc-300">{formatNumber(load.weightLbs)} lbs</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-zinc-500">Texnika:</span>
-                  <span className="text-zinc-700 dark:text-zinc-300 font-medium">{load.equipment}</span>
+                  <span className="text-zinc-500">{t('loads.equipment')}:</span>
+                  <span className="text-zinc-700 dark:text-zinc-300 font-medium">{load.equipment || t('common.notProvided')}</span>
                 </div>
               </div>
             </div>
 
             {/* Checklist */}
             <div className="bg-zinc-50/70 dark:bg-zinc-900/40 border border-zinc-200 dark:border-zinc-800 rounded-xl p-4 space-y-2.5">
-              <span className="text-xs font-semibold text-zinc-800 dark:text-zinc-300 block">Hujjatlar tekshiruvi:</span>
+              <span className="text-xs font-semibold text-zinc-800 dark:text-zinc-300 block">{t('documents.checklist')}:</span>
               
               <div className="space-y-2 text-xs">
                 <div className="flex items-center space-x-2.5">
                   <span className={`w-2 h-2 rounded-full ${load.documents?.rateCon ? 'bg-emerald-500' : 'bg-zinc-400 dark:bg-zinc-600'}`} />
                   <span className={load.documents?.rateCon ? 'text-zinc-800 dark:text-zinc-200 font-medium' : 'text-zinc-400 dark:text-zinc-500'}>
-                    Rate Confirmation (Shartnoma)
+                    {t('documents.rateConfirmationChecklist')}
                   </span>
                 </div>
 
                 <div className="flex items-center space-x-2.5">
                   <span className={`w-2 h-2 rounded-full ${load.documents?.shipperBol ? 'bg-emerald-500' : 'bg-zinc-400 dark:bg-zinc-600'}`} />
                   <span className={load.documents?.shipperBol ? 'text-zinc-800 dark:text-zinc-200 font-medium' : 'text-zinc-400 dark:text-zinc-500'}>
-                    Shipper Bill of Lading (BOL)
+                    {t('documents.shipperBolChecklist')}
                   </span>
                 </div>
 
                 <div className="flex items-center space-x-2.5">
                   <span className={`w-2 h-2 rounded-full ${load.documents?.receiverPod ? 'bg-emerald-500' : 'bg-zinc-400 dark:bg-zinc-600'}`} />
                   <span className={load.documents?.receiverPod ? 'text-zinc-800 dark:text-zinc-200 font-medium' : 'text-zinc-400 dark:text-zinc-500'}>
-                    Receiver Proof of Delivery (POD)
+                    {t('documents.receiverPodChecklist')}
                   </span>
                 </div>
               </div>
@@ -269,7 +275,7 @@ export default function DocumentViewerModal({
                     : 'bg-zinc-900 hover:bg-zinc-800 text-white dark:bg-zinc-100 dark:hover:bg-white dark:text-zinc-950'
                 }`}
               >
-                {isApproved ? '✓ Hisob-faktura yuborilgan' : 'Tasdiqlash va Invoys chiqarish'}
+                {isApproved ? t('documents.invoiceSent') : t('documents.approveInvoice')}
               </button>
             </div>
 

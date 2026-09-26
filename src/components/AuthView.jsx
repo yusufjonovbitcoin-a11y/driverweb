@@ -1,4 +1,6 @@
 import React, { useState } from 'react';
+import { useTranslation } from 'react-i18next';
+import { localizedError } from '../i18n/errors';
 import {
   ArrowRight,
   Eye,
@@ -12,6 +14,7 @@ import {
 } from 'lucide-react';
 
 export default function AuthView({ onLogin, externalError, theme, toggleTheme }) {
+  const { t } = useTranslation();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -23,7 +26,7 @@ export default function AuthView({ onLogin, externalError, theme, toggleTheme })
     setErrorMsg('');
 
     if (!email.trim() || !password.trim()) {
-      setErrorMsg('Email va parolni kiriting.');
+      setErrorMsg(t('auth.required'));
       return;
     }
 
@@ -31,7 +34,7 @@ export default function AuthView({ onLogin, externalError, theme, toggleTheme })
     try {
       await onLogin(email, password);
     } catch (error) {
-      setErrorMsg(error.message || 'Email yoki parol noto‘g‘ri.');
+      setErrorMsg(localizedError(t, error, 'errors.invalidCredentials'));
     } finally {
       setSubmitting(false);
     }
@@ -39,7 +42,7 @@ export default function AuthView({ onLogin, externalError, theme, toggleTheme })
 
   return (
     <main className="auth-shell">
-      <section className="auth-brand-panel" aria-label="DRIVEX haqida">
+      <section className="auth-brand-panel" aria-label={t('auth.about')}>
         <div className="auth-brand">
           <span className="auth-logo" aria-hidden="true"><Truck size={22} /></span>
           <div>
@@ -49,14 +52,14 @@ export default function AuthView({ onLogin, externalError, theme, toggleTheme })
         </div>
 
         <div className="auth-brand-copy">
-          <p className="auth-eyebrow">DISPECHER ISH MAYDONI</p>
-          <h1>Reyslarni tartibli boshqaring.</h1>
-          <p>Yuklar, haydovchilar va hujjatlar bitta xavfsiz ish maydonida.</p>
+          <p className="auth-eyebrow">{t('auth.workspace')}</p>
+          <h1>{t('auth.heroTitle')}</h1>
+          <p>{t('auth.heroText')}</p>
         </div>
 
         <div className="auth-security-note">
           <ShieldCheck size={17} aria-hidden="true" />
-          <span>Himoyalangan kompaniya hisobi</span>
+          <span>{t('auth.secureAccount')}</span>
         </div>
       </section>
 
@@ -67,8 +70,8 @@ export default function AuthView({ onLogin, externalError, theme, toggleTheme })
             type="button"
             onClick={toggleTheme}
             className="auth-theme-button"
-            aria-label={theme === 'dark' ? 'Oq rejim' : 'Qora rejim'}
-            title={theme === 'dark' ? 'Oq rejim' : 'Qora rejim'}
+            aria-label={theme === 'dark' ? t('header.lightMode') : t('header.darkMode')}
+            title={theme === 'dark' ? t('header.lightMode') : t('header.darkMode')}
           >
             {theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
           </button>
@@ -76,9 +79,9 @@ export default function AuthView({ onLogin, externalError, theme, toggleTheme })
 
         <div className="auth-form-wrap">
           <div className="auth-form-heading">
-            <p className="auth-eyebrow">XUSH KELIBSIZ</p>
-            <h2>Tizimga kirish</h2>
-            <p>Ish maydoniga davom etish uchun hisob ma’lumotlaringizni kiriting.</p>
+            <p className="auth-eyebrow">{t('auth.welcome')}</p>
+            <h2>{t('auth.signIn')}</h2>
+            <p>{t('auth.instructions')}</p>
           </div>
 
           {(errorMsg || externalError) && (
@@ -89,7 +92,7 @@ export default function AuthView({ onLogin, externalError, theme, toggleTheme })
 
           <form onSubmit={handleSubmit} className="auth-form">
             <div className="auth-field">
-              <label htmlFor="auth-email">Elektron pochta</label>
+              <label htmlFor="auth-email">{t('auth.email')}</label>
               <div className="auth-input-wrap">
                 <Mail size={17} aria-hidden="true" />
                 <input
@@ -105,7 +108,7 @@ export default function AuthView({ onLogin, externalError, theme, toggleTheme })
             </div>
 
             <div className="auth-field">
-              <label htmlFor="auth-password">Parol</label>
+              <label htmlFor="auth-password">{t('auth.password')}</label>
               <div className="auth-input-wrap">
                 <Lock size={17} aria-hidden="true" />
                 <input
@@ -115,13 +118,13 @@ export default function AuthView({ onLogin, externalError, theme, toggleTheme })
                   required
                   value={password}
                   onChange={(event) => setPassword(event.target.value)}
-                  placeholder="Parolingizni kiriting"
+                  placeholder={t('auth.passwordPlaceholder')}
                 />
                 <button
                   type="button"
                   onClick={() => setShowPassword((value) => !value)}
                   className="auth-password-toggle"
-                  aria-label={showPassword ? 'Parolni yashirish' : 'Parolni ko‘rsatish'}
+                  aria-label={showPassword ? t('common.hidePassword') : t('common.showPassword')}
                 >
                   {showPassword ? <EyeOff size={17} /> : <Eye size={17} />}
                 </button>
@@ -129,17 +132,17 @@ export default function AuthView({ onLogin, externalError, theme, toggleTheme })
             </div>
 
             <button type="submit" disabled={submitting} className="auth-submit">
-              <span>{submitting ? 'Tekshirilmoqda…' : 'Kirish'}</span>
+              <span>{submitting ? t('auth.checking') : t('auth.submit')}</span>
               <ArrowRight size={17} aria-hidden="true" />
             </button>
           </form>
 
           <p className="auth-help">
-            Kirish ma’lumotlari yo‘qmi? Kompaniya administratoriga murojaat qiling.
+            {t('auth.help')}
           </p>
         </div>
 
-        <p className="auth-footer">© 2026 DRIVEX. Xavfsiz aloqa.</p>
+        <p className="auth-footer">{t('auth.footer')}</p>
       </section>
     </main>
   );

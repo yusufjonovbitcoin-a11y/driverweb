@@ -1,6 +1,7 @@
 import { requireSupabase } from '../lib/supabase';
 import { cloudinarySignedUrl, isCloudinaryReference } from './cloudinaryMediaService';
 import { createCoalescedAsyncTrigger } from './realtimeRefresh';
+import { normalizeLocale } from '../i18n/locales';
 
 async function throwFunctionError(error, fallback) {
   let message = error?.message || fallback;
@@ -55,6 +56,16 @@ async function invokeAuthenticatedFunction(name, body) {
   return result;
 }
 
+export async function updateMyLocale(locale) {
+  const client = requireSupabase();
+  const normalized = normalizeLocale(locale);
+  const { data, error } = await client.rpc('set_my_locale', {
+    requested_locale: normalized,
+  });
+  if (error) throw error;
+  return normalizeLocale(data);
+}
+
 const STATUS_TO_UI = {
   draft: 'OFFER',
   review: 'OFFER',
@@ -69,11 +80,11 @@ const STATUS_TO_UI = {
 };
 
 function splitAppointment(value) {
-  if (!value) return { date: '', time: 'Vaqt belgilanmagan' };
-  const date = new Date(value);
+  if (!value) return { appointmentAt: null, date: null, time: null };
   return {
-    date: date.toISOString().slice(0, 10),
-    time: date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }),
+    appointmentAt: value,
+    date: value,
+    time: null,
   };
 }
 
@@ -100,7 +111,7 @@ function toUiLoad(row, offersByLoad, documentsByLoad, warningsByLoad, reviewsByD
     loadNumber: row.load_number?.startsWith('#') ? row.load_number : `#${row.load_number}`,
     status: STATUS_TO_UI[row.status] || 'OFFER',
     databaseStatus: row.status,
-    broker: row.broker_name || 'Broker ko\'rsatilmagan',
+    broker: row.broker_name || null,
     brokerContact: row.broker_contact_name || '',
     brokerPhone: row.broker_phone || '',
     brokerEmail: row.broker_email || '',
@@ -111,9 +122,9 @@ function toUiLoad(row, offersByLoad, documentsByLoad, warningsByLoad, reviewsByD
     distanceKnown: row.loaded_miles != null,
     ratePerMile: Number(row.loaded_rpm || 0),
     origin: {
-      city: row.pickup_city || '—',
+      city: row.pickup_city || null,
       state: row.pickup_region || '',
-      facility: row.pickup_facility || 'Pickup',
+      facility: row.pickup_facility || null,
       address: row.pickup_address || [row.pickup_city, row.pickup_region].filter(Boolean).join(', '),
       ...pickup,
       postalCode: row.pickup_postal_code || '',
@@ -124,9 +135,9 @@ function toUiLoad(row, offersByLoad, documentsByLoad, warningsByLoad, reviewsByD
       lng: row.pickup_longitude == null ? null : Number(row.pickup_longitude),
     },
     destination: {
-      city: row.delivery_city || '—',
+      city: row.delivery_city || null,
       state: row.delivery_region || '',
-      facility: row.delivery_facility || 'Delivery',
+      facility: row.delivery_facility || null,
       address: row.delivery_address || [row.delivery_city, row.delivery_region].filter(Boolean).join(', '),
       ...delivery,
       postalCode: row.delivery_postal_code || '',
@@ -136,9 +147,9 @@ function toUiLoad(row, offersByLoad, documentsByLoad, warningsByLoad, reviewsByD
       lat: row.delivery_latitude == null ? null : Number(row.delivery_latitude),
       lng: row.delivery_longitude == null ? null : Number(row.delivery_longitude),
     },
-    commodity: row.cargo_description || 'Yuk tavsifi kiritilmagan',
+    commodity: row.cargo_description || null,
     weightLbs: row.weight_lbs,
-    equipment: row.equipment_type || '—',
+    equipment: row.equipment_type || null,
     freightMode: row.freight_mode || '',
     temperature: row.temperature_fahrenheit == null ? null : Number(row.temperature_fahrenheit),
     pallets: row.pallet_count,
@@ -149,7 +160,7 @@ function toUiLoad(row, offersByLoad, documentsByLoad, warningsByLoad, reviewsByD
     warnings: activeWarnings,
     driverId: row.driver_id,
     targetDriverIds: offers.map((offer) => offer.driver_id),
-    dispatchedAt: row.updated_at ? new Date(row.updated_at).toLocaleString('uz-UZ') : '',
+    dispatchedAt: row.updated_at || null,
     documents: {
       rateCon: docUrl('rate_confirmation'),
       shipperBol: docUrl('bol'),
@@ -176,12 +187,12 @@ function toUiDriver(member, presence, avatar = null) {
     id: member.id,
     name: member.full_name,
     driverNumber: `#${member.id.slice(0, 4).toUpperCase()}`,
-    phone: member.phone || '—',
+    phone: member.phone || null,
     status: online ? 'AVAILABLE' : 'RESTING',
     dutyStatus: online ? 'ON_DUTY' : 'OFF_DUTY',
     currentLocation: online && presence?.latitude && presence?.longitude
       ? `${Number(presence.latitude).toFixed(4)}, ${Number(presence.longitude).toFixed(4)}`
-      : 'Oflayn',
+      : null,
     lat: online && presence?.latitude ? Number(presence.latitude) : null,
     lng: online && presence?.longitude ? Number(presence.longitude) : null,
     hos: {
@@ -191,8 +202,8 @@ function toUiDriver(member, presence, avatar = null) {
       shiftLeft: '—',
       cycleLeft: '—',
     },
-    truck: member.vehicle_type || 'Texnika kiritilmagan',
-    trailer: member.trailer_type || 'Treyler kiritilmagan',
+    truck: member.vehicle_type || null,
+    trailer: member.trailer_type || null,
     equipment: member.equipment || [],
     rating: null,
     completedLoads: 0,
@@ -270,7 +281,7 @@ export async function fetchWorkspace() {
     client.from('documents').select('id,load_id,document_type,current_version_id'),
     client.from('member_directory').select('*').order('full_name'),
     client.from('driver_presence').select('*'),
-    client.from('warnings').select('id,load_id,code,message').eq('is_active', true).order('created_at'),
+    client.from('warnings').select('id,load_id,code,message,params').eq('is_active', true).order('created_at'),
     client.from('document_review_overview').select('*'),
   ]);
   for (const result of [
@@ -417,6 +428,21 @@ export async function forwardGmailAttachmentToDriver({ attachmentId, driverId })
   return data;
 }
 
+const LEGACY_AI_PLACEHOLDERS = Object.freeze({
+  broker: 'Broker aniqlanmadi',
+  commodity: 'Yuk tavsifi aniqlanmadi',
+  equipment: 'Aniqlanmadi',
+  pickupFacility: 'Pickup',
+  deliveryFacility: 'Delivery',
+  region: '--',
+});
+
+function nullableProposalValue(value, legacyPlaceholder) {
+  if (typeof value !== 'string') return value ?? null;
+  const normalized = value.trim();
+  return normalized && normalized !== legacyPlaceholder ? normalized : null;
+}
+
 export async function createLoadFromBrokerProposal(proposal) {
   const client = requireSupabase();
   if (!proposal?.brokerMessageId || !proposal?.origin || !proposal?.destination) {
@@ -424,17 +450,17 @@ export async function createLoadFromBrokerProposal(proposal) {
   }
   const { data: loadId, error: createError } = await client.rpc('create_load_draft', {
     load_number: String(proposal.loadNumber || '').replace(/^#/, '') || `GMAIL-${Date.now()}`,
-    broker_name: proposal.broker || 'Broker aniqlanmadi',
-    cargo_description: proposal.commodity || 'Yuk tavsifi aniqlanmadi',
-    equipment_type: proposal.equipment || 'Aniqlanmadi',
+    broker_name: nullableProposalValue(proposal.broker, LEGACY_AI_PLACEHOLDERS.broker),
+    cargo_description: nullableProposalValue(proposal.commodity, LEGACY_AI_PLACEHOLDERS.commodity),
+    equipment_type: nullableProposalValue(proposal.equipment, LEGACY_AI_PLACEHOLDERS.equipment),
     weight_lbs: proposal.weightLbs || null,
     broker_rate: Number(proposal.rate || 0),
     loaded_miles: Number(proposal.distanceMiles || 0),
     pickup: {
-      facilityName: proposal.origin.facility || 'Pickup',
+      facilityName: nullableProposalValue(proposal.origin.facility, LEGACY_AI_PLACEHOLDERS.pickupFacility),
       addressLine: proposal.origin.address || [proposal.origin.city, proposal.origin.state].filter(Boolean).join(', '),
-      city: proposal.origin.city || 'Aniqlanmadi',
-      region: proposal.origin.state || '--',
+      city: proposal.origin.city || '',
+      region: nullableProposalValue(proposal.origin.state, LEGACY_AI_PLACEHOLDERS.region) || '',
       postalCode: proposal.origin.postalCode || null,
       latitude: null,
       longitude: null,
@@ -443,10 +469,10 @@ export async function createLoadFromBrokerProposal(proposal) {
       requiresDocument: true,
     },
     delivery: {
-      facilityName: proposal.destination.facility || 'Delivery',
+      facilityName: nullableProposalValue(proposal.destination.facility, LEGACY_AI_PLACEHOLDERS.deliveryFacility),
       addressLine: proposal.destination.address || [proposal.destination.city, proposal.destination.state].filter(Boolean).join(', '),
-      city: proposal.destination.city || 'Aniqlanmadi',
-      region: proposal.destination.state || '--',
+      city: proposal.destination.city || '',
+      region: nullableProposalValue(proposal.destination.state, LEGACY_AI_PLACEHOLDERS.region) || '',
       postalCode: proposal.destination.postalCode || null,
       latitude: null,
       longitude: null,
@@ -574,7 +600,7 @@ export async function sendOffersForLoad(loadId, driverIds, missingFields = []) {
     .map((field) => ({
       code: 'ai_missing_field',
       field,
-      message: `AI hujjatdan ${field} maydonini aniq topa olmadi.`,
+      params: { field },
     }));
   const { data, error } = await client.rpc('send_routed_offers', {
     load_id: loadId,

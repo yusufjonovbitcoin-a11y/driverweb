@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { LocateFixed, MapPin, Truck } from 'lucide-react';
 
 const fallbackCenter = { lat: 39.6542, lng: 66.9597 };
@@ -12,6 +13,7 @@ function stopAddress(stop) {
 }
 
 export default function FleetMap({ drivers, loads }) {
+  const { t } = useTranslation();
   const [selectedTruckId, setSelectedTruckId] = useState(drivers[0]?.id || null);
   const selectedDriver = drivers.find((driver) => driver.id === selectedTruckId) || drivers[0];
   const driverLoad = loads.find((load) => (
@@ -33,7 +35,7 @@ export default function FleetMap({ drivers, loads }) {
         <div className="relative min-h-[560px] overflow-hidden rounded-2xl border border-zinc-200 bg-zinc-100 shadow-sm dark:border-zinc-800 dark:bg-zinc-900 lg:col-span-3 lg:h-full">
           <iframe
             key={mapUrl}
-            title="Google Maps flot xaritasi"
+            title={t('map.title')}
             src={mapUrl}
             className="absolute inset-0 w-full h-full border-0"
             loading="eager"
@@ -54,25 +56,25 @@ export default function FleetMap({ drivers, loads }) {
               </div>
               {driverLoad ? (
                 <div className="mt-3 space-y-2 border-t border-zinc-200 pt-3 dark:border-zinc-700">
-                  <RouteStop marker="A" label="Pickup" stop={driverLoad.origin} />
-                  <RouteStop marker="B" label="Delivery" stop={driverLoad.destination} />
+                  <RouteStop marker="A" label={t('inbox.pickup')} stop={driverLoad.origin} />
+                  <RouteStop marker="B" label={t('inbox.delivery')} stop={driverLoad.destination} />
                 </div>
               ) : (
-                <p className="mt-1 text-xs text-zinc-500">{selectedDriver.driverNumber} · {selectedDriver.currentLocation}</p>
+                <p className="mt-1 text-xs text-zinc-500">{selectedDriver.driverNumber} · {selectedDriver.currentLocation || t('common.offline')}</p>
               )}
             </div>
           )}
         </div>
 
         <aside className="space-y-2">
-          <div className="px-1 text-sm font-semibold text-zinc-700 dark:text-zinc-300">Mashinalar ro‘yxati</div>
-          {drivers.length === 0 && <div className="rounded-xl border border-zinc-200 p-4 text-sm text-zinc-500 dark:border-zinc-800">Driver topilmadi.</div>}
+          <div className="px-1 text-sm font-semibold text-zinc-700 dark:text-zinc-300">{t('map.vehicles')}</div>
+          {drivers.length === 0 && <div className="rounded-xl border border-zinc-200 p-4 text-sm text-zinc-500 dark:border-zinc-800">{t('drivers.noDrivers')}</div>}
           {drivers.map((driver) => {
             const selected = driver.id === selectedDriver?.id;
             return (
               <button key={driver.id} type="button" onClick={() => setSelectedTruckId(driver.id)} className={`w-full rounded-xl border p-3 text-left transition ${selected ? 'border-blue-300 bg-blue-50 dark:border-blue-800 dark:bg-blue-950/30' : 'border-zinc-200 bg-white hover:border-zinc-300 dark:border-zinc-800 dark:bg-zinc-900'}`}>
                 <div className="flex items-center justify-between gap-2"><span className="font-bold text-sm">{driver.name}</span><span className={`w-2.5 h-2.5 rounded-full ${hasCoordinates(driver) ? 'bg-emerald-500' : 'bg-zinc-300'}`} /></div>
-                <div className="mt-2 flex items-center gap-1 text-xs text-zinc-500"><LocateFixed className="w-3.5 h-3.5" />{driver.currentLocation}</div>
+                <div className="mt-2 flex items-center gap-1 text-xs text-zinc-500"><LocateFixed className="w-3.5 h-3.5" />{driver.currentLocation || t('common.offline')}</div>
               </button>
             );
           })}

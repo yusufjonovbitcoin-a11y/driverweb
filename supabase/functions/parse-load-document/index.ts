@@ -403,11 +403,11 @@ function normalizeStop(stop: StopExtraction) {
   };
 }
 
-function stopPayload(stop: ReturnType<typeof normalizeStop>, fallback: string) {
-  const city = text(stop.city, "Aniqlanmadi")!;
-  const region = text(stop.region, "--")!;
+function stopPayload(stop: ReturnType<typeof normalizeStop>) {
+  const city = text(stop.city, "")!;
+  const region = text(stop.region, "")!;
   return {
-    facilityName: text(stop.facilityName, fallback),
+    facilityName: text(stop.facilityName),
     addressLine: text(stop.addressLine, [city, region].join(", ")),
     city,
     region,
@@ -441,6 +441,15 @@ function normalizeMissingFields(
   });
   if (extracted.brokerRate == null) filtered.push("brokerRate");
   if (extracted.loadedMiles == null) filtered.push("loadedMiles");
+  if (!text(extracted.broker?.name)) filtered.push("broker.name");
+  if (!text(extracted.cargoDescription)) filtered.push("cargoDescription");
+  if (!text(extracted.equipmentType)) filtered.push("equipmentType");
+  if (!text(extracted.pickup?.city)) filtered.push("pickup.city");
+  if (!text(extracted.pickup?.region)) filtered.push("pickup.region");
+  if (!text(extracted.pickup?.facilityName)) filtered.push("pickup.facilityName");
+  if (!text(extracted.delivery?.city)) filtered.push("delivery.city");
+  if (!text(extracted.delivery?.region)) filtered.push("delivery.region");
+  if (!text(extracted.delivery?.facilityName)) filtered.push("delivery.facilityName");
   if (!pickup.appointmentFrom) filtered.push("pickup.appointment");
   if (!delivery.appointmentFrom) filtered.push("delivery.appointment");
   if (!text(extracted.broker?.phone)) filtered.push("broker.phone");
@@ -621,14 +630,14 @@ Deno.serve((request) => withCors(request, async () => {
         "create_load_draft",
         {
           load_number: loadNumber.replace(/^#/, ""),
-          broker_name: text(extracted.broker?.name, "Broker aniqlanmadi"),
-          cargo_description: text(extracted.cargoDescription, "Yuk tavsifi aniqlanmadi"),
-          equipment_type: text(extracted.equipmentType, "Aniqlanmadi"),
+          broker_name: text(extracted.broker?.name),
+          cargo_description: text(extracted.cargoDescription),
+          equipment_type: text(extracted.equipmentType),
           weight_lbs: integer(extracted.weightLbs),
           broker_rate: number(extracted.brokerRate),
           loaded_miles: number(extracted.loadedMiles),
-          pickup: stopPayload(normalizedPickup, "Pickup"),
-          delivery: stopPayload(normalizedDelivery, "Delivery"),
+          pickup: stopPayload(normalizedPickup),
+          delivery: stopPayload(normalizedDelivery),
           broker_message_id: null,
         },
       );
@@ -729,14 +738,14 @@ Deno.serve((request) => withCors(request, async () => {
     const preparedLoad = {
       id: loadId,
       loadNumber: `#${loadNumber.replace(/^#/, "")}`,
-      broker: text(extracted.broker?.name, "Broker aniqlanmadi"),
+      broker: text(extracted.broker?.name),
       brokerContact: text(extracted.broker?.contactName),
       brokerPhone: text(extracted.broker?.phone),
       brokerEmail: text(extracted.broker?.email),
       brokerFax: text(extracted.broker?.fax),
       rate: number(extracted.brokerRate),
       distanceMiles: number(extracted.loadedMiles),
-      equipment: text(extracted.equipmentType, "Aniqlanmadi"),
+      equipment: text(extracted.equipmentType),
       freightMode: text(extracted.freightMode),
       temperatureFahrenheit: extracted.temperatureFahrenheit,
       palletCount: integer(extracted.palletCount),
@@ -745,11 +754,11 @@ Deno.serve((request) => withCors(request, async () => {
       specialInstructions: text(extracted.specialInstructions),
       requirements,
       weightLbs: integer(extracted.weightLbs),
-      commodity: text(extracted.cargoDescription, "Yuk tavsifi aniqlanmadi"),
+      commodity: text(extracted.cargoDescription),
       origin: {
         city: pickupCity,
-        state: text(extracted.pickup.region, "--"),
-        facility: text(extracted.pickup.facilityName, "Pickup"),
+        state: text(extracted.pickup.region),
+        facility: text(extracted.pickup.facilityName),
         address: text(extracted.pickup.addressLine, pickupCity),
         postalCode: text(extracted.pickup.postalCode),
         appointmentFrom: normalizedPickup.appointmentFrom,
@@ -760,8 +769,8 @@ Deno.serve((request) => withCors(request, async () => {
       },
       destination: {
         city: deliveryCity,
-        state: text(extracted.delivery.region, "--"),
-        facility: text(extracted.delivery.facilityName, "Delivery"),
+        state: text(extracted.delivery.region),
+        facility: text(extracted.delivery.facilityName),
         address: text(extracted.delivery.addressLine, deliveryCity),
         postalCode: text(extracted.delivery.postalCode),
         appointmentFrom: normalizedDelivery.appointmentFrom,
@@ -783,7 +792,8 @@ Deno.serve((request) => withCors(request, async () => {
     if (check?.id) {
       const checkWarnings = missingFields.map((field) => ({
         code: "ai_missing_field",
-        message: `AI hujjatdan ${field} maydonini aniq topa olmadi.`,
+        field,
+        params: { field },
       }));
       const { error: checkError } = await adminClient.rpc("record_document_check", {
         check_id: check.id,

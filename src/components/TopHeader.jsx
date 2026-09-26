@@ -1,9 +1,10 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { ArrowLeft, FileText, LayoutGrid, Search, Plus, Sun, Moon, UserRound, X } from 'lucide-react';
 
-const titles = {
-  kanban: 'Yuklar', drivers: 'Haydovchilar', map: 'Xarita',
-  docs: 'Hujjatlar', inbox: 'Broker Inbox', chat: 'Chat', profile: 'Profil',
+const titleKeys = {
+  kanban: 'nav.loads', drivers: 'nav.drivers', map: 'nav.map',
+  docs: 'nav.documents', inbox: 'nav.inbox', chat: 'nav.chat', profile: 'nav.profile',
 };
 
 export default function TopHeader({
@@ -17,6 +18,7 @@ export default function TopHeader({
   toggleTheme,
   onExitDriver,
 }) {
+  const { t } = useTranslation();
   const searchRef = useRef(null);
   const searchInputRef = useRef(null);
   const mobileSearchTriggerRef = useRef(null);
@@ -103,20 +105,20 @@ export default function TopHeader({
             type="button"
             onClick={onExitDriver}
             className="driver-header-exit"
-            aria-label="Haydovchilar ro‘yxatiga qaytish"
-            title="Haydovchilar ro‘yxatiga qaytish"
+            aria-label={t('header.backToDrivers')}
+            title={t('header.backToDrivers')}
           >
             <ArrowLeft size={18} aria-hidden="true" />
           </button>
         )}
-        <h1>{titles[activeTab] || 'Boshqaruv'}</h1>
+        <h1>{t(titleKeys[activeTab] || 'nav.management')}</h1>
       </div>
       <div className="header-actions">
         <div
           ref={searchRef}
           role={isMobileSearchOpen ? 'dialog' : undefined}
           aria-modal={isMobileSearchOpen ? 'true' : undefined}
-          aria-label={isMobileSearchOpen ? 'Umumiy qidiruv' : undefined}
+          aria-label={isMobileSearchOpen ? t('header.globalSearch') : undefined}
           className={`workspace-search-wrap ${isMobileSearchOpen ? 'workspace-search-wrap-mobile-open' : ''}`}
           onKeyDown={handleSearchSurfaceKeyDown}
         >
@@ -124,7 +126,7 @@ export default function TopHeader({
             ref={mobileSearchTriggerRef}
             type="button"
             className="workspace-search-mobile-trigger"
-            aria-label="Qidiruvni ochish"
+            aria-label={t('header.openSearch')}
             onClick={() => {
               setIsMobileSearchOpen(true);
               setIsSearchOpen(true);
@@ -139,14 +141,14 @@ export default function TopHeader({
               ref={searchInputRef}
               type="search"
               role="combobox"
-              aria-label="Umumiy qidiruv"
+              aria-label={t('header.globalSearch')}
               aria-autocomplete="list"
               aria-expanded={hasQuery && isSearchOpen}
               aria-controls="workspace-search-results"
               aria-activedescendant={hasQuery && isSearchOpen && searchResults[safeActiveResultIndex]
                 ? `workspace-search-result-${safeActiveResultIndex}`
                 : undefined}
-              placeholder="Qidirish..."
+              placeholder={t('common.search')}
               value={searchQuery}
               onFocus={() => setIsSearchOpen(true)}
               onKeyDown={handleSearchKeyDown}
@@ -161,13 +163,13 @@ export default function TopHeader({
             ref={mobileSearchCloseRef}
             type="button"
             className="workspace-search-mobile-close"
-            aria-label="Qidiruvni yopish"
+            aria-label={t('header.closeSearch')}
             onClick={() => closeMobileSearch()}
           >
             <X size={18} aria-hidden="true" />
           </button>
           {hasQuery && isSearchOpen && (
-            <div id="workspace-search-results" role="listbox" aria-label="Qidiruv natijalari" className="workspace-search-results">
+            <div id="workspace-search-results" role="listbox" aria-label={t('header.searchResults')} className="workspace-search-results">
               {searchResults.length ? searchResults.map((result, index) => {
                 const ResultIcon = resultIcon(result.type);
                 return (
@@ -191,7 +193,7 @@ export default function TopHeader({
                   </button>
                 );
               }) : (
-                <p className="workspace-search-empty">“{searchQuery.trim()}” bo‘yicha natija topilmadi</p>
+                <p className="workspace-search-empty">{t('header.noResults', { query: searchQuery.trim() })}</p>
               )}
             </div>
           )}
@@ -200,14 +202,14 @@ export default function TopHeader({
           type="button"
           onClick={toggleTheme}
           className="quiet-icon-button"
-          aria-label={theme === 'dark' ? 'Oq rejim' : 'Qora rejim'}
-          title={theme === 'dark' ? 'Oq rejim' : 'Qora rejim'}
+          aria-label={theme === 'dark' ? t('header.lightMode') : t('header.darkMode')}
+          title={theme === 'dark' ? t('header.lightMode') : t('header.darkMode')}
         >
           {theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
         </button>
         <button type="button" onClick={onOpenCreateModal} className="primary-button">
           <Plus size={17} aria-hidden="true" />
-          <span>Yuk berish</span>
+          <span>{t('header.createLoad')}</span>
         </button>
       </div>
     </header>

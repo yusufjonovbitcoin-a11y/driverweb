@@ -1,4 +1,5 @@
 import { createPortal } from 'react-dom';
+import { useTranslation } from 'react-i18next';
 import { OperationScope, acquireCallMedia, stopMediaStream } from '../services/chatAsyncSafety';
 import React, { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -12,35 +13,37 @@ import {
 } from '../services/chatService';
 import { buildChatCursor, mergeChatMessages } from '../services/chatReliability';
 import { RtcSignalQueue } from '../services/rtcSignalQueue';
+import { formatDate, formatTime } from '../i18n/format';
+import { localizedError } from '../i18n/errors';
 
 const terminalCallStates = new Set(['declined', 'missed', 'ended']);
 
 function messageTime(value) {
-  return new Date(value).toLocaleTimeString('uz-UZ', { hour: '2-digit', minute: '2-digit' });
+  return formatTime(value);
 }
 
 function messageDayKey(value) {
   return new Date(value).toDateString();
 }
 
-function messageDayLabel(value) {
+function messageDayLabel(value, t) {
   const date = new Date(value);
   const today = new Date();
   const yesterday = new Date();
   yesterday.setDate(today.getDate() - 1);
-  if (date.toDateString() === today.toDateString()) return 'Bugun';
-  if (date.toDateString() === yesterday.toDateString()) return 'Kecha';
-  return date.toLocaleDateString('uz-UZ', { day: 'numeric', month: 'long' });
+  if (date.toDateString() === today.toDateString()) return t('common.today');
+  if (date.toDateString() === yesterday.toDateString()) return t('common.yesterday');
+  return formatDate(date, { day: 'numeric', month: 'long' });
 }
 
 function containsLink(message) {
   return message.kind === 'text' && /https?:\/\/\S+/i.test(message.body || '');
 }
 
-function messagePreview(message) {
-  if (!message) return 'Yangi suhbat';
+function messagePreview(message, t) {
+  if (!message) return t('chat.newConversation');
   if (message.kind === 'text') return message.body;
-  return { image: 'Rasm', video: 'Video', audio: 'Ovozli xabar', file: 'Fayl' }[message.kind] || 'Xabar';
+  return { image: t('common.image'), video: t('common.video'), audio: t('common.audio'), file: t('common.file') }[message.kind] || t('common.message');
 }
 
 function callDuration(totalSeconds) {
@@ -92,11 +95,12 @@ function CallDialog({ label, children }) {
 }
 
 function DriverAvatar({ driver, sizeClass = 'w-11 h-11' }) {
+  const { t } = useTranslation();
   return (
     <div className={`relative ${sizeClass} flex-none`}>
       <div className="h-full w-full overflow-hidden rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 text-white grid place-items-center font-black">
         {driver.avatar ? (
-          <img src={driver.avatar} alt={`${driver.name} profil surati`} className="h-full w-full object-cover" />
+          <img src={driver.avatar} alt={t('chat.avatarAlt', { name: driver.name })} className="h-full w-full object-cover" />
         ) : driver.name?.charAt(0)}
       </div>
       {driver.isOnline && <span className="absolute right-0 bottom-0 w-3 h-3 bg-emerald-500 rounded-full border-2 border-white dark:border-zinc-950" />}
@@ -105,6 +109,7 @@ function DriverAvatar({ driver, sizeClass = 'w-11 h-11' }) {
 }
 
 function MediaMessage({ message, onRefresh }) {
+  const { t } = useTranslation();
   const attemptsRef = useRef(0);
   const [failed, setFailed] = useState(false);
   const [recovering, setRecovering] = useState(false);
@@ -122,10 +127,10 @@ function MediaMessage({ message, onRefresh }) {
     }
   };
   if (!message.mediaUrl || failed) {
-    return <button type="button" onClick={() => retry(true)} disabled={recovering} className="font-bold underline disabled:opacity-60">{recovering ? 'Media yangilanmoqda…' : 'Mediani qayta yuklash'}</button>;
+    return <button type="button" onClick={() => retry(true)} disabled={recovering} className="font-bold underline disabled:opacity-60">{recovering ? t('chat.mediaRefreshing') : t('chat.reloadMedia')}</button>;
   }
   if (message.kind === 'image') {
-    return <img src={message.mediaUrl} onError={() => { void retry(); }} alt={message.file_name || 'Chat rasmi'} className="max-h-72 rounded-2xl object-cover" />;
+    return <img src={message.mediaUrl} onError={() => { void retry(); }} alt={message.file_name || t('chat.imageAlt')} className="max-h-72 rounded-2xl object-cover" />;
   }
   if (message.kind === 'video') {
     return <video src={message.mediaUrl} onError={() => { void retry(); }} controls playsInline className="max-h-72 max-w-full rounded-2xl" />;
@@ -136,7 +141,7 @@ function MediaMessage({ message, onRefresh }) {
   return (
     <a href={message.mediaUrl} target="_blank" rel="noreferrer" className="flex items-center gap-2 font-semibold underline">
       <FileText className="w-5 h-5" />
-      <span className="truncate">{message.file_name || 'Fayl'}</span>
+      <span className="truncate">{message.file_name || t('common.file')}</span>
       <Download className="w-4 h-4" />
     </a>
   );
@@ -152,6 +157,7 @@ export default function DispatchChat({
   compact = false,
   onClose,
 }) {
+  const { t } = useTranslation();
   const [selectedDriverId, setSelectedDriverId] = useState(activeChatDriver?.id || drivers[0]?.id || null);
   const [conversationId, setConversationId] = useState(null);
   const [messages, setMessages] = useState([]);
@@ -522,7 +528,7 @@ export default function DispatchChat({
     let cancelled = false;
     const unsubscribe = subscribeCalls({
       onCall: processCall,
-      onSignal: (signal) => handleSignal(signal).catch((signalError) => setError(signalError.message)),
+      onSignal: (signal) => handleSignal(signal).catch((signalError) => setError(localizedError(t, signalError, 'errors.call'))),
     });
     fetchRingingCalls()
       .then((calls) => {
@@ -530,13 +536,13 @@ export default function DispatchChat({
         calls.forEach(processCall);
       })
       .catch((callError) => {
-        if (!cancelled) setError(callError.message || 'Qo‘ng‘iroqlarni tekshirib bo‘lmadi.');
+        if (!cancelled) setError(localizedError(t, callError, 'errors.call'));
       });
     return () => {
       cancelled = true;
       unsubscribe();
     };
-  }, [handleSignal, processCall]);
+  }, [handleSignal, processCall, t]);
 
   useEffect(() => {
     fetchRtcIceServers().catch(() => {});
@@ -612,14 +618,14 @@ export default function DispatchChat({
       } catch (loadError) {
         if (!cancelled) {
           setConnectionStatus('offline');
-          setError(loadError.message || 'Chatni ochib bo‘lmadi.');
+          setError(localizedError(t, loadError, 'errors.chatOpen'));
         }
       } finally {
         if (!cancelled) setLoading(false);
       }
     })();
     return () => { cancelled = true; conversationScope.cancel(); subscription?.unsubscribe(); };
-  }, [selectedDriver?.id, currentUser.id, conversationScope]);
+  }, [selectedDriver?.id, currentUser.id, conversationScope, t]);
 
   useEffect(() => {
     if (isVisible) return;
@@ -642,8 +648,8 @@ export default function DispatchChat({
       setMessages((previous) => mergeChatMessages(previous, page.messages));
       await markChatRead(conversationId);
       unreadChangeRef.current?.();
-    }).catch((cause) => { if (isCurrent()) setError(cause.message); });
-  }, [isVisible, conversationId]);
+    }).catch((cause) => { if (isCurrent()) setError(localizedError(t, cause, 'errors.chatOpen')); });
+  }, [isVisible, conversationId, t]);
 
   useEffect(() => {
     // oxlint-disable-next-line react/set-state-in-effect -- synchronize externally requested driver navigation.
@@ -685,7 +691,7 @@ export default function DispatchChat({
     } catch (sendError) {
       if (!isCurrent()) return;
       setInputMessage((draft) => draft ? `${text}\n${draft}` : text);
-      setError(sendError.message || 'Xabar yuborilmadi.');
+      setError(localizedError(t, sendError, 'errors.messageSend'));
     } finally {
       if (isCurrent()) setSending(false);
     }
@@ -695,7 +701,7 @@ export default function DispatchChat({
     if (!file || !conversationId || uploadAbortRef.current) return;
     const isCurrent = conversationCurrentRef.current;
     if (file.size > 50 * 1024 * 1024) {
-      setError('Fayl hajmi 50 MB dan oshmasligi kerak.');
+      setError(t('chat.fileTooLarge'));
       return;
     }
     const controller = new AbortController();
@@ -716,7 +722,7 @@ export default function DispatchChat({
     } catch (uploadError) {
       if (isCurrent() && uploadError.name !== 'AbortError') {
         setFailedUpload({ file, durationMs, conversationId });
-        setError(uploadError.message || 'Media yuborilmadi.');
+        setError(localizedError(t, uploadError, 'errors.mediaSend'));
       }
     } finally {
       if (uploadAbortRef.current === controller) uploadAbortRef.current = null;
@@ -735,7 +741,7 @@ export default function DispatchChat({
       setHasOlderMessages(page.hasMore);
     } catch (loadError) {
       if (!isCurrent()) return;
-      setError(loadError.message || 'Eski xabarlar yuklanmadi.');
+      setError(localizedError(t, loadError, 'errors.oldMessages'));
     } finally {
       if (isCurrent()) setLoadingOlder(false);
     }
@@ -747,14 +753,14 @@ export default function DispatchChat({
       const refreshed = await refreshChatMessageMedia(message);
       if (isCurrent()) setMessages((current) => mergeChatMessages(current, [refreshed]));
     } catch (refreshError) {
-      if (isCurrent()) setError(refreshError.message || 'Mediani qayta yuklab bo‘lmadi.');
+      if (isCurrent()) setError(localizedError(t, refreshError, 'errors.mediaReload'));
       throw refreshError;
     }
   };
 
   const removeMessage = async (message) => {
     if (message.sender_id !== currentUser.id) return;
-    if (!window.confirm('Xabarni ikkala tomondan o‘chirasizmi?')) return;
+    if (!window.confirm(t('chat.deleteForEveryoneConfirm'))) return;
     const isCurrent = conversationCurrentRef.current;
     setError('');
     try {
@@ -762,7 +768,7 @@ export default function DispatchChat({
       if (isCurrent()) setMessages((previous) => previous.filter((item) => item.id !== message.id));
       unreadChangeRef.current?.();
     } catch (deleteError) {
-      if (isCurrent()) setError(deleteError.message || 'Xabar o‘chirilmadi.');
+      if (isCurrent()) setError(localizedError(t, deleteError, 'errors.messageDelete'));
     }
   };
 
@@ -799,7 +805,7 @@ export default function DispatchChat({
     } catch (recordError) {
       stopMediaStream(stream);
       if (!isCurrent()) return;
-      setError(recordError.message || 'Mikrofonga ruxsat berilmadi.');
+      setError(localizedError(t, recordError, 'errors.microphone'));
     }
   };
 
@@ -819,7 +825,7 @@ export default function DispatchChat({
       if (call) await respondCall(call.id, 'ended').catch(() => {});
       if (isCurrent()) {
         cleanupCall();
-        if (callError.name !== 'AbortError') setError(callError.message || 'Qo‘ng‘iroq boshlanmadi.');
+        if (callError.name !== 'AbortError') setError(localizedError(t, callError, 'errors.callStart'));
       }
     } finally {
       if (isCurrent()) callStartingRef.current = false;
@@ -848,7 +854,7 @@ export default function DispatchChat({
       await respondCall(call.id, 'ended').catch(() => {});
       if (isCurrent()) {
         cleanupCall();
-        if (callError.name !== 'AbortError') setError(callError.message || 'Qo‘ng‘iroqqa ulanib bo‘lmadi.');
+        if (callError.name !== 'AbortError') setError(localizedError(t, callError, 'errors.callConnect'));
       }
     } finally {
       if (isCurrent()) callStartingRef.current = false;
@@ -898,7 +904,7 @@ export default function DispatchChat({
       return;
     }
     if (!navigator.mediaDevices?.getDisplayMedia) {
-      setError('Bu brauzer ekran ulashishni qo‘llamaydi.');
+      setError(t('chat.screenUnsupported'));
       return;
     }
     const callId = activeCallRef.current?.id;
@@ -920,7 +926,7 @@ export default function DispatchChat({
       setScreenSharing(true);
     } catch (shareError) {
       stopMediaStream(displayStream);
-      if (shareError.name !== 'NotAllowedError') setError(shareError.message || 'Ekran ulashilmadi.');
+      if (shareError.name !== 'NotAllowedError') setError(localizedError(t, shareError, 'errors.screenShare'));
     }
   };
 
@@ -928,11 +934,11 @@ export default function DispatchChat({
     try {
       if (document.fullscreenElement) await document.exitFullscreen();
       else await callOverlayRef.current?.requestFullscreen?.();
-    } catch (cause) { setError(cause.message || 'To‘liq ekran ochilmadi.'); }
+    } catch (cause) { setError(localizedError(t, cause, 'errors.fullscreen')); }
   };
 
   if (!selectedDriver) {
-    return <div className="dispatch-chat-workspace h-full grid place-items-center text-zinc-500">Chat uchun haydovchi topilmadi.</div>;
+    return <div className="dispatch-chat-workspace h-full grid place-items-center text-zinc-500">{t('chat.noDriver')}</div>;
   }
 
   return (
@@ -950,7 +956,7 @@ export default function DispatchChat({
               type="search"
               value={driverSearch}
               onChange={(event) => setDriverSearch(event.target.value)}
-              placeholder="Chatlarni qidirish"
+              placeholder={t('chat.searchChats')}
               className="min-w-0 flex-1 bg-transparent text-sm text-zinc-900 outline-none placeholder:text-zinc-500 dark:text-white"
             />
           </label>
@@ -973,13 +979,14 @@ export default function DispatchChat({
                   <p className="font-bold truncate">{driver.name}</p>
                   <p className="mt-1 truncate text-xs text-zinc-400">{messagePreview(
                     selected ? messages[messages.length - 1] || driverPreviews[driver.id] : driverPreviews[driver.id],
+                    t,
                   )}</p>
                 </div>
               </button>
             );
           })}
           {filteredDrivers.length === 0 && (
-            <div className="px-4 py-10 text-center text-sm text-zinc-500">Mos chat topilmadi.</div>
+            <div className="px-4 py-10 text-center text-sm text-zinc-500">{t('chat.noChats')}</div>
           )}
         </div>
       </aside>}
@@ -994,10 +1001,10 @@ export default function DispatchChat({
                 type="search"
                 value={messageSearch}
                 onChange={(event) => setMessageSearch(event.target.value)}
-                placeholder="Xabarlardan qidirish"
+                placeholder={t('chat.search')}
                 className="min-w-0 flex-1 bg-transparent text-sm outline-none"
               />
-              <button type="button" onClick={() => { setShowMessageSearch(false); setMessageSearch(''); }} title="Qidiruvni yopish" className="rounded-full p-1 hover:bg-zinc-200 dark:hover:bg-zinc-700"><X className="h-4 w-4" /></button>
+              <button type="button" onClick={() => { setShowMessageSearch(false); setMessageSearch(''); }} title={t('header.closeSearch')} className="rounded-full p-1 hover:bg-zinc-200 dark:hover:bg-zinc-700"><X className="h-4 w-4" /></button>
             </div>
           ) : (
             <button type="button" onClick={() => setShowProfile(true)} className="flex min-w-0 items-center gap-3 text-left">
@@ -1005,31 +1012,31 @@ export default function DispatchChat({
               <span className="min-w-0">
                 <span className="block truncate font-black">{selectedDriver.name}</span>
                 <span className={`block text-xs font-semibold ${connectionStatus === 'connected' ? (selectedDriver.isOnline ? 'text-emerald-500' : 'text-zinc-400') : 'text-amber-600'}`}>
-                  {connectionStatus === 'connected' ? (selectedDriver.isOnline ? 'Onlayn' : 'Oflayn') : connectionStatus === 'connecting' ? 'Ulanmoqda…' : 'Qayta ulanmoqda…'}
+                  {connectionStatus === 'connected' ? (selectedDriver.isOnline ? t('common.online') : t('common.offline')) : connectionStatus === 'connecting' ? t('chat.connecting') : t('chat.reconnecting')}
                 </span>
               </span>
             </button>
           )}
           <div className="flex items-center gap-1">
-            {!showMessageSearch && <button type="button" onClick={() => setShowMessageSearch(true)} title="Xabarlardan qidirish" className="p-2.5 rounded-full hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-500"><Search className="w-5 h-5" /></button>}
-            <button onClick={() => placeCall('audio')} title="Audio qo‘ng‘iroq" className="p-2.5 rounded-full hover:bg-zinc-100 dark:hover:bg-zinc-800 text-blue-600"><Phone className="w-5 h-5" /></button>
-            <button onClick={() => placeCall('video')} title="Video qo‘ng‘iroq" className="p-2.5 rounded-full hover:bg-zinc-100 dark:hover:bg-zinc-800 text-blue-600"><Video className="w-5 h-5" /></button>
-            <button type="button" aria-pressed={showProfile} onClick={() => setShowProfile((current) => !current)} title="Driver ma’lumotlari" className={`p-2.5 rounded-full hover:bg-zinc-100 dark:hover:bg-zinc-800 ${showProfile ? 'text-blue-600' : 'text-zinc-500'}`}><PanelRight className="w-5 h-5" /></button>
-            {compact && <button onClick={onClose} title="Chatni yopish" className="p-2.5 rounded-full hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-500"><X className="w-5 h-5" /></button>}
+            {!showMessageSearch && <button type="button" onClick={() => setShowMessageSearch(true)} title={t('chat.search')} className="p-2.5 rounded-full hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-500"><Search className="w-5 h-5" /></button>}
+            <button onClick={() => placeCall('audio')} title={t('chat.audioCall')} className="p-2.5 rounded-full hover:bg-zinc-100 dark:hover:bg-zinc-800 text-blue-600"><Phone className="w-5 h-5" /></button>
+            <button onClick={() => placeCall('video')} title={t('chat.videoCall')} className="p-2.5 rounded-full hover:bg-zinc-100 dark:hover:bg-zinc-800 text-blue-600"><Video className="w-5 h-5" /></button>
+            <button type="button" aria-pressed={showProfile} onClick={() => setShowProfile((current) => !current)} title={t('chat.driverInfo')} className={`p-2.5 rounded-full hover:bg-zinc-100 dark:hover:bg-zinc-800 ${showProfile ? 'text-blue-600' : 'text-zinc-500'}`}><PanelRight className="w-5 h-5" /></button>
+            {compact && <button onClick={onClose} title={t('chat.close')} className="p-2.5 rounded-full hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-500"><X className="w-5 h-5" /></button>}
           </div>
         </header>
 
         {mediaFilter !== 'all' && (
           <div className="flex items-center justify-between border-b border-zinc-200 bg-white/80 px-4 py-2 text-xs dark:border-zinc-800 dark:bg-zinc-950/80">
-            <span className="font-bold text-zinc-700 dark:text-zinc-200">{({ image: 'Rasmlar', video: 'Videolar', file: 'Fayllar', audio: 'Audio', links: 'Havolalar' })[mediaFilter]}</span>
-            <button type="button" onClick={() => setMediaFilter('all')} className="font-bold text-blue-600">Barchasini ko‘rsatish</button>
+            <span className="font-bold text-zinc-700 dark:text-zinc-200">{({ image: t('chat.images'), video: t('chat.videos'), file: t('chat.files'), audio: t('common.audio'), links: t('chat.links') })[mediaFilter]}</span>
+            <button type="button" onClick={() => setMediaFilter('all')} className="font-bold text-blue-600">{t('chat.showAll')}</button>
           </div>
         )}
 
         {error && (
           <div className="mx-4 mt-3 flex items-center justify-between gap-3 rounded-xl bg-red-50 px-3 py-2 text-xs text-red-700 dark:bg-red-950/30 dark:text-red-300" role="alert">
             <span>{error}</span>
-            {failedUpload?.conversationId === conversationId && <button type="button" onClick={() => uploadFile(failedUpload.file, failedUpload.durationMs)} className="shrink-0 font-black underline">Qayta yuborish</button>}
+            {failedUpload?.conversationId === conversationId && <button type="button" onClick={() => uploadFile(failedUpload.file, failedUpload.durationMs)} className="shrink-0 font-black underline">{t('chat.resend')}</button>}
           </div>
         )}
 
@@ -1038,18 +1045,18 @@ export default function DispatchChat({
           {!loading && hasOlderMessages && (
             <div className="flex justify-center pb-2">
               <button type="button" disabled={loadingOlder} onClick={loadOlderMessages} className="rounded-full border border-zinc-200 bg-white px-3 py-1.5 text-xs font-bold text-zinc-600 shadow-sm hover:bg-zinc-50 disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300">
-                {loadingOlder ? 'Yuklanmoqda…' : 'Eski xabarlarni yuklash'}
+                {loadingOlder ? t('common.loading') : t('chat.loadOlder')}
               </button>
             </div>
           )}
           {!loading && messages.length === 0 && (
             <div className="h-full grid place-items-center text-center text-zinc-500">
-              <div><div className="text-5xl mb-3">👋</div><p className="font-black text-zinc-800 dark:text-zinc-100">Suhbatni boshlang</p><p className="text-sm">Xabar, rasm, video yoki ovoz yuboring.</p></div>
+              <div><div className="text-5xl mb-3">👋</div><p className="font-black text-zinc-800 dark:text-zinc-100">{t('chat.start')}</p><p className="text-sm">{t('chat.startHint')}</p></div>
             </div>
           )}
           {!loading && messages.length > 0 && visibleMessages.length === 0 && (
             <div className="h-full grid place-items-center text-center text-zinc-500">
-              <div><Search className="mx-auto mb-3 h-8 w-8" /><p className="font-bold">Mos xabar topilmadi.</p></div>
+              <div><Search className="mx-auto mb-3 h-8 w-8" /><p className="font-bold">{t('chat.noMatches')}</p></div>
             </div>
           )}
           {visibleMessages.map((message, index) => {
@@ -1059,11 +1066,11 @@ export default function DispatchChat({
               <Fragment key={message.id}>
                 {showDate && (
                   <div className="sticky top-1 z-10 flex justify-center py-2">
-                    <span className="rounded-full bg-zinc-800/75 px-3 py-1 text-[11px] font-bold text-white shadow-sm backdrop-blur dark:bg-zinc-700/85">{messageDayLabel(message.created_at)}</span>
+                    <span className="rounded-full bg-zinc-800/75 px-3 py-1 text-[11px] font-bold text-white shadow-sm backdrop-blur dark:bg-zinc-700/85">{messageDayLabel(message.created_at, t)}</span>
                   </div>
                 )}
                 <div className={`group flex items-center gap-1 ${mine ? 'justify-end' : 'justify-start'}`}>
-                  {mine && <button type="button" onClick={() => removeMessage(message)} title="Xabarni o‘chirish" className="p-1.5 rounded-full text-zinc-400 opacity-0 group-hover:opacity-100 focus:opacity-100 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30 transition"><Trash2 className="w-4 h-4" /></button>}
+                  {mine && <button type="button" onClick={() => removeMessage(message)} title={t('chat.deleteMessage')} className="p-1.5 rounded-full text-zinc-400 opacity-0 group-hover:opacity-100 focus:opacity-100 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30 transition"><Trash2 className="w-4 h-4" /></button>}
                   <div className={`max-w-[82%] rounded-2xl px-3.5 py-2 shadow-sm ${mine ? 'bg-blue-600 text-white rounded-br-md' : 'bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-bl-md'}`}>
                     {message.kind === 'text' ? <p className="text-sm whitespace-pre-wrap break-words">{message.body}</p> : <MediaMessage message={message} onRefresh={refreshMedia} />}
                     <div className={`mt-1 text-[10px] flex items-center justify-end gap-1 ${mine ? 'text-blue-100' : 'text-zinc-400'}`}>
@@ -1080,21 +1087,21 @@ export default function DispatchChat({
 
         {uploadProgress !== null && (
           <div className="border-t border-zinc-200 bg-white px-4 py-2 dark:border-zinc-800 dark:bg-zinc-950" aria-live="polite">
-            <div className="mb-1 flex items-center justify-between text-[11px] font-bold text-zinc-500"><span>Media yuborilmoqda</span><button type="button" onClick={() => uploadAbortRef.current?.abort()} className="text-red-600">Bekor qilish</button></div>
+            <div className="mb-1 flex items-center justify-between text-[11px] font-bold text-zinc-500"><span>{t('chat.mediaUploading')}</span><button type="button" onClick={() => uploadAbortRef.current?.abort()} className="text-red-600">{t('common.cancel')}</button></div>
             <div className="h-1.5 overflow-hidden rounded-full bg-zinc-200 dark:bg-zinc-800"><div className="h-full bg-blue-600 transition-[width]" style={{ width: `${Math.round(uploadProgress * 100)}%` }} /></div>
           </div>
         )}
         <form onSubmit={sendMessage} className="relative shrink-0 px-3 py-3 bg-white dark:bg-zinc-950 border-t border-zinc-200 dark:border-zinc-800 flex items-end gap-2">
           <input ref={fileInputRef} type="file" className="hidden" accept="image/*,video/*,audio/*,.pdf" onChange={(event) => { uploadFile(event.target.files?.[0]); event.target.value = ''; }} />
-          <button type="button" onClick={() => fileInputRef.current?.click()} title="Media yuborish" className="p-2.5 rounded-full text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800"><Paperclip className="w-5 h-5" /></button>
+          <button type="button" onClick={() => fileInputRef.current?.click()} title={t('chat.sendMedia')} className="p-2.5 rounded-full text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800"><Paperclip className="w-5 h-5" /></button>
           <div className="flex-1 rounded-2xl border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-900 px-3">
-            <textarea ref={composerRef} rows="1" value={inputMessage} onChange={(event) => setInputMessage(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); sendMessage(); } }} placeholder="Xabar yozing…" className="w-full max-h-28 resize-none bg-transparent py-2.5 text-sm outline-none" />
+            <textarea ref={composerRef} rows="1" value={inputMessage} onChange={(event) => setInputMessage(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); sendMessage(); } }} placeholder={t('chat.typeMessage')} className="w-full max-h-28 resize-none bg-transparent py-2.5 text-sm outline-none" />
           </div>
-          <button type="button" onClick={() => setShowEmojiPicker((current) => !current)} title="Emoji" className="p-2.5 rounded-full text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800"><Smile className="w-5 h-5" /></button>
+          <button type="button" onClick={() => setShowEmojiPicker((current) => !current)} title={t('chat.emoji')} className="p-2.5 rounded-full text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800"><Smile className="w-5 h-5" /></button>
           {inputMessage.trim() ? (
             <button type="submit" disabled={sending} className="p-2.5 rounded-full bg-blue-600 text-white hover:bg-blue-500 disabled:opacity-50">{sending ? <LoaderCircle className="w-5 h-5 animate-spin" /> : <Send className="w-5 h-5" />}</button>
           ) : (
-            <button type="button" onClick={toggleRecording} title="Ovozli xabar" className={`p-2.5 rounded-full text-white ${recording ? 'bg-red-600 animate-pulse' : 'bg-blue-600'}`}>{recording ? <Square className="w-5 h-5" /> : <Mic className="w-5 h-5" />}</button>
+            <button type="button" onClick={toggleRecording} title={t('common.audio')} className={`p-2.5 rounded-full text-white ${recording ? 'bg-red-600 animate-pulse' : 'bg-blue-600'}`}>{recording ? <Square className="w-5 h-5" /> : <Mic className="w-5 h-5" />}</button>
           )}
           {showEmojiPicker && (
             <div className="absolute bottom-[calc(100%+8px)] right-14 flex flex-wrap gap-1 rounded-2xl border border-zinc-200 bg-white p-2 shadow-xl dark:border-zinc-700 dark:bg-zinc-900">
@@ -1108,35 +1115,35 @@ export default function DispatchChat({
 
       {showProfile && (
         <>
-        <button type="button" aria-label="Driver ma’lumotlari panelini yopish" onClick={() => setShowProfile(false)} className="absolute inset-0 z-20 bg-zinc-950/25 backdrop-blur-[1px] lg:hidden" />
+        <button type="button" aria-label={t('chat.closeDriverInfo')} onClick={() => setShowProfile(false)} className="absolute inset-0 z-20 bg-zinc-950/25 backdrop-blur-[1px] lg:hidden" />
         <aside className="absolute inset-y-0 right-0 z-30 flex w-[min(300px,calc(100%-1rem))] min-w-0 flex-col border-l border-zinc-200 bg-white shadow-2xl dark:border-zinc-800 dark:bg-zinc-950 lg:static lg:w-auto lg:shadow-none">
           <div className="flex h-16 shrink-0 items-center justify-between border-b border-zinc-200 px-4 dark:border-zinc-800">
-            <p className="font-black">Driver ma’lumotlari</p>
-            <button type="button" onClick={() => setShowProfile(false)} title="Panelni yopish" className="rounded-full p-2 text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800"><X className="h-5 w-5" /></button>
+            <p className="font-black">{t('chat.driverInfo')}</p>
+            <button type="button" onClick={() => setShowProfile(false)} title={t('common.close')} className="rounded-full p-2 text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800"><X className="h-5 w-5" /></button>
           </div>
           <div className="flex-1 overflow-y-auto">
             <div className="border-b border-zinc-200 px-4 py-6 text-center dark:border-zinc-800">
               <div className="mx-auto w-fit"><DriverAvatar driver={selectedDriver} sizeClass="w-20 h-20" /></div>
               <h3 className="mt-3 truncate text-lg font-black">{selectedDriver.name}</h3>
-              <p className={`mt-1 text-xs font-semibold ${selectedDriver.isOnline ? 'text-emerald-500' : 'text-zinc-400'}`}>{selectedDriver.isOnline ? 'Onlayn' : 'Oflayn'}</p>
+              <p className={`mt-1 text-xs font-semibold ${selectedDriver.isOnline ? 'text-emerald-500' : 'text-zinc-400'}`}>{selectedDriver.isOnline ? t('common.online') : t('common.offline')}</p>
               <div className="mt-5 grid grid-cols-2 gap-2">
-                <button type="button" onClick={() => placeCall('audio')} className="rounded-xl bg-zinc-100 px-2 py-3 text-xs font-bold hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700"><Phone className="mx-auto mb-1 h-5 w-5 text-blue-600" />Audio</button>
-                <button type="button" onClick={() => placeCall('video')} className="rounded-xl bg-zinc-100 px-2 py-3 text-xs font-bold hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700"><Video className="mx-auto mb-1 h-5 w-5 text-blue-600" />Video</button>
+                <button type="button" onClick={() => placeCall('audio')} className="rounded-xl bg-zinc-100 px-2 py-3 text-xs font-bold hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700"><Phone className="mx-auto mb-1 h-5 w-5 text-blue-600" />{t('common.audio')}</button>
+                <button type="button" onClick={() => placeCall('video')} className="rounded-xl bg-zinc-100 px-2 py-3 text-xs font-bold hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700"><Video className="mx-auto mb-1 h-5 w-5 text-blue-600" />{t('common.video')}</button>
               </div>
             </div>
 
             <div className="space-y-4 border-b border-zinc-200 px-4 py-5 text-sm dark:border-zinc-800">
-              <div className="flex items-start gap-3"><Phone className="mt-0.5 h-4 w-4 text-zinc-400" /><div className="min-w-0"><p className="break-all font-semibold">{selectedDriver.phone || 'Telefon kiritilmagan'}</p><p className="text-xs text-zinc-500">Telefon</p></div></div>
-              <div className="flex items-start gap-3"><UserRound className="mt-0.5 h-4 w-4 text-zinc-400" /><div><p className="font-semibold">{selectedDriver.driverNumber}</p><p className="text-xs text-zinc-500">Driver ID</p></div></div>
+              <div className="flex items-start gap-3"><Phone className="mt-0.5 h-4 w-4 text-zinc-400" /><div className="min-w-0"><p className="break-all font-semibold">{selectedDriver.phone || t('common.notProvided')}</p><p className="text-xs text-zinc-500">{t('common.phone')}</p></div></div>
+              <div className="flex items-start gap-3"><UserRound className="mt-0.5 h-4 w-4 text-zinc-400" /><div><p className="font-semibold">{selectedDriver.driverNumber}</p><p className="text-xs text-zinc-500">{t('chat.driverId')}</p></div></div>
             </div>
 
             <div className="py-2">
               {[
-                ['image', 'Rasmlar', ImageIcon, mediaStats.image],
-                ['video', 'Videolar', Video, mediaStats.video],
-                ['file', 'Fayllar', FileText, mediaStats.file],
-                ['audio', 'Audio', Music2, mediaStats.audio],
-                ['links', 'Havolalar', Link2, mediaStats.links],
+                ['image', t('chat.images'), ImageIcon, mediaStats.image],
+                ['video', t('chat.videos'), Video, mediaStats.video],
+                ['file', t('chat.files'), FileText, mediaStats.file],
+                ['audio', t('common.audio'), Music2, mediaStats.audio],
+                ['links', t('chat.links'), Link2, mediaStats.links],
               ].map(([filter, label, Icon, count]) => (
                 <button
                   key={filter}
@@ -1158,41 +1165,41 @@ export default function DispatchChat({
     </div>
 
       {incomingCall && createPortal(
-        <CallDialog label="Kiruvchi qo‘ng‘iroq"><div className="fixed inset-0 z-[100] bg-zinc-950/80 backdrop-blur flex items-center justify-center p-6">
+        <CallDialog label={t('chat.incomingCall')}><div className="fixed inset-0 z-[100] bg-zinc-950/80 backdrop-blur flex items-center justify-center p-6">
           <div className="w-full max-w-sm text-center text-white">
             <div className="w-24 h-24 mx-auto rounded-full bg-blue-600 grid place-items-center text-4xl font-black shadow-2xl">{callDriver?.name?.charAt(0) || '?'}</div>
-            <h3 className="mt-5 text-2xl font-black">{callDriver?.name || 'Haydovchi'}</h3>
-            <p className="text-zinc-300 mt-1">Kiruvchi {incomingCall.kind === 'video' ? 'video' : 'audio'} qo‘ng‘iroq</p>
+            <h3 className="mt-5 text-2xl font-black">{callDriver?.name || t('roles.driver')}</h3>
+            <p className="text-zinc-300 mt-1">{incomingCall.kind === 'video' ? t('chat.incomingVideo') : t('chat.incomingAudio')}</p>
             <div className="mt-8 flex justify-center gap-8">
-              <button onClick={declineIncomingCall} aria-label="Qo‘ng‘iroqni rad etish" className="w-16 h-16 rounded-full bg-red-600 grid place-items-center"><PhoneOff /></button>
-              <button onClick={acceptIncomingCall} aria-label="Qo‘ng‘iroqni qabul qilish" className="w-16 h-16 rounded-full bg-emerald-500 grid place-items-center"><Phone /></button>
+              <button onClick={declineIncomingCall} aria-label={t('chat.decline')} className="w-16 h-16 rounded-full bg-red-600 grid place-items-center"><PhoneOff /></button>
+              <button onClick={acceptIncomingCall} aria-label={t('chat.accept')} className="w-16 h-16 rounded-full bg-emerald-500 grid place-items-center"><Phone /></button>
             </div>
           </div>
         </div></CallDialog>, document.body
       )}
 
       {activeCall && createPortal(
-        <CallDialog label="Faol qo‘ng‘iroq"><div ref={callOverlayRef} className="fixed inset-0 z-[100] flex flex-col overflow-hidden bg-[#191d22] text-white">
+        <CallDialog label={t('chat.activeCall')}><div ref={callOverlayRef} className="fixed inset-0 z-[100] flex flex-col overflow-hidden bg-[#191d22] text-white">
           {activeCall.kind === 'audio' && <audio ref={attachRemoteVideo} autoPlay />}
-          {playbackBlocked && <button type="button" onClick={() => remoteVideoRef.current?.play().then(() => setPlaybackBlocked(false)).catch(() => {})} className="absolute left-4 top-4 z-30 rounded-lg bg-blue-600 px-4 py-2">Ovozni yoqish</button>}
+          {playbackBlocked && <button type="button" onClick={() => remoteVideoRef.current?.play().then(() => setPlaybackBlocked(false)).catch(() => {})} className="absolute left-4 top-4 z-30 rounded-lg bg-blue-600 px-4 py-2">{t('chat.enableSound')}</button>}
           <header className="relative z-20 flex min-h-[118px] shrink-0 items-center justify-center px-5 pt-5 text-center sm:min-h-[136px]">
             <div>
               <div className="mx-auto grid h-14 w-14 place-items-center overflow-hidden rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 text-xl font-black shadow-lg ring-2 ring-white/10">
                 {callDriver?.avatar ? <img src={callDriver.avatar} alt="" className="h-full w-full object-cover" /> : callDriver?.name?.charAt(0) || '?'}
               </div>
-              <h2 className="mt-2 text-lg font-bold leading-tight">{callDriver?.name || 'Haydovchi'}</h2>
+              <h2 className="mt-2 text-lg font-bold leading-tight">{callDriver?.name || t('roles.driver')}</h2>
               <p className="mt-1 flex items-center justify-center gap-1.5 text-xs text-zinc-400">
                 <ShieldCheck className="h-3.5 w-3.5" />
                 {callConnectionState === 'connected'
-                  ? `${callDuration(callSeconds)} · Himoyalangan`
+                  ? `${callDuration(callSeconds)} · ${t('chat.encrypted')}`
                   : callConnectionState === 'reconnecting'
-                    ? 'Qayta ulanmoqda…'
+                    ? t('chat.reconnecting')
                     : callConnectionState === 'failed'
-                      ? 'Ulanish uzildi'
-                      : 'Shifrlangan ulanish o‘rnatilmoqda…'}
+                      ? t('chat.connectionLost')
+                      : t('chat.establishingSecure')}
               </p>
             </div>
-            <button type="button" onClick={toggleFullscreen} title="To‘liq ekran" className="absolute right-5 top-5 grid h-10 w-10 place-items-center rounded-full bg-white/5 text-zinc-300 hover:bg-white/10 hover:text-white">
+            <button type="button" onClick={toggleFullscreen} title={t('chat.fullscreen')} className="absolute right-5 top-5 grid h-10 w-10 place-items-center rounded-full bg-white/5 text-zinc-300 hover:bg-white/10 hover:text-white">
               <Maximize2 className="h-5 w-5" />
             </button>
           </header>
@@ -1215,14 +1222,14 @@ export default function DispatchChat({
                   <div className="mx-auto grid h-28 w-28 place-items-center overflow-hidden rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 text-5xl font-black shadow-2xl ring-4 ring-white/10">
                     {callDriver?.avatar ? <img src={callDriver.avatar} alt="" className="h-full w-full object-cover" /> : callDriver?.name?.charAt(0) || '?'}
                   </div>
-                  <h3 className="mt-5 text-2xl font-bold">{callDriver?.name || 'Haydovchi'}</h3>
-                  <p className="mt-2 text-sm text-zinc-400">{callConnectionState === 'connected' ? (activeCall.kind === 'video' ? 'Video kutilmoqda…' : 'Audio qo‘ng‘iroq') : 'Ulanmoqda…'}</p>
+                  <h3 className="mt-5 text-2xl font-bold">{callDriver?.name || t('roles.driver')}</h3>
+                  <p className="mt-2 text-sm text-zinc-400">{callConnectionState === 'connected' ? (activeCall.kind === 'video' ? t('chat.waitingVideo') : t('chat.audioCall')) : t('chat.connecting')}</p>
                 </div>
               )}
 
               {screenSharing && (
                 <div className="absolute left-4 top-4 z-20 flex items-center gap-2 rounded-full bg-blue-600/90 px-3 py-1.5 text-xs font-bold shadow-lg backdrop-blur">
-                  <MonitorUp className="h-4 w-4" /> Ekran uzatilmoqda
+                  <MonitorUp className="h-4 w-4" /> {t('chat.screenSharing')}
                 </div>
               )}
 
@@ -1230,7 +1237,7 @@ export default function DispatchChat({
                 <div className="absolute right-3 top-3 z-20 aspect-[3/4] w-24 overflow-hidden rounded-xl border border-white/20 bg-zinc-900 shadow-2xl sm:right-4 sm:top-4 sm:w-36">
                   <video ref={attachLocalVideo} autoPlay playsInline muted className={`h-full w-full object-cover ${cameraEnabled ? '' : 'invisible'}`} />
                   {!cameraEnabled && <div className="absolute inset-0 grid place-items-center"><VideoOff className="h-6 w-6 text-zinc-400" /></div>}
-                  <span className="absolute bottom-1.5 left-1.5 rounded bg-black/60 px-1.5 py-0.5 text-[10px] font-bold">Siz</span>
+                  <span className="absolute bottom-1.5 left-1.5 rounded bg-black/60 px-1.5 py-0.5 text-[10px] font-bold">{t('chat.you')}</span>
                 </div>
               )}
             </div>
@@ -1238,14 +1245,14 @@ export default function DispatchChat({
 
           <footer className="relative z-20 flex min-h-[118px] shrink-0 items-center justify-center px-4 pb-4 pt-5 sm:min-h-[136px]">
             <div className="flex items-start justify-center gap-2 rounded-2xl border border-white/10 bg-black/20 px-3 py-3 shadow-xl backdrop-blur sm:gap-5 sm:px-6">
-              {activeCall.kind === 'video' && <CallControl icon={MonitorUp} label={screenSharing ? 'Ulashishni to‘xtatish' : 'Ekran'} active={screenSharing} disabled={!localStream} onClick={toggleScreenShare} />}
-              {activeCall.kind === 'video' && <CallControl icon={cameraEnabled ? Video : VideoOff} label={cameraEnabled ? 'Kamerani o‘chirish' : 'Kamerani yoqish'} active={!cameraEnabled} disabled={screenSharing || !localStream} onClick={toggleCamera} />}
-              <CallControl icon={PhoneOff} label="Yakunlash" danger onClick={endCall} />
-              <CallControl icon={microphoneEnabled ? Mic : MicOff} label={microphoneEnabled ? 'Mikrofonni o‘chirish' : 'Mikrofonni yoqish'} active={!microphoneEnabled} disabled={!localStream} onClick={toggleMicrophone} />
-              <CallControl icon={Maximize2} label="To‘liq ekran" onClick={toggleFullscreen} />
+              {activeCall.kind === 'video' && <CallControl icon={MonitorUp} label={screenSharing ? t('chat.stopSharing') : t('chat.screen')} active={screenSharing} disabled={!localStream} onClick={toggleScreenShare} />}
+              {activeCall.kind === 'video' && <CallControl icon={cameraEnabled ? Video : VideoOff} label={cameraEnabled ? t('chat.cameraOff') : t('chat.cameraOn')} active={!cameraEnabled} disabled={screenSharing || !localStream} onClick={toggleCamera} />}
+              <CallControl icon={PhoneOff} label={t('chat.endCall')} danger onClick={endCall} />
+              <CallControl icon={microphoneEnabled ? Mic : MicOff} label={microphoneEnabled ? t('chat.micOff') : t('chat.micOn')} active={!microphoneEnabled} disabled={!localStream} onClick={toggleMicrophone} />
+              <CallControl icon={Maximize2} label={t('chat.fullscreen')} onClick={toggleFullscreen} />
             </div>
           </footer>
-          <p className="pointer-events-none absolute bottom-2 left-4 hidden text-[10px] text-zinc-600 lg:block">DRIVEX qo‘ng‘irog‘i</p>
+          <p className="pointer-events-none absolute bottom-2 left-4 hidden text-[10px] text-zinc-600 lg:block">{t('chat.drivexCall')}</p>
         </div></CallDialog>, document.body
       )}
     </Fragment>

@@ -6,6 +6,8 @@
   "scripts": {
     "dev": "vite",
     "test": "node --test src/**/*.test.js scripts/*.test.mjs",
+    "test:i18n": "node --test src/i18n/*.test.js",
+    "i18n:check": "node scripts/check-i18n.mjs",
     "gmail:sync": "node scripts/gmail-imap-sync.mjs",
     "media:migrate-cloudinary": "node scripts/migrate-media-to-cloudinary.mjs",
     "build": "vite build",
@@ -16,11 +18,13 @@
   "dependencies": {
     "@supabase/supabase-js": "^2.117.1",
     "dotenv": "^18.0.3",
+    "i18next": "^26.4.2",
     "imapflow": "^2.0.6",
     "lucide-react": "^1.47.0",
     "mailparser": "^3.9.28",
     "react": "^19.2.8",
-    "react-dom": "^19.2.8"
+    "react-dom": "^19.2.8",
+    "react-i18next": "^17.0.15"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.3.3",

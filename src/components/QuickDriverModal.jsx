@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { 
   X, 
   Sparkles, 
@@ -8,24 +9,25 @@ import {
   FileImage,
   TriangleAlert,
 } from 'lucide-react';
+import { formatCurrency } from '../i18n/format';
 
 const FIELD_LABELS = {
-  'broker.contactName': 'broker kontakt shaxsi',
-  'broker.phone': 'broker telefoni',
-  'pickup.appointmentFrom': 'pickup vaqti',
-  'pickup.appointment': 'pickup vaqti',
-  'pickup.appointmentTo': 'pickup vaqt oralig‘i',
-  'pickup.contactName': 'pickup kontakt shaxsi',
-  'pickup.contactPhone': 'pickup telefoni',
-  'delivery.appointmentFrom': 'delivery vaqti',
-  'delivery.appointment': 'delivery vaqti',
-  'delivery.appointmentTo': 'delivery vaqt oralig‘i',
-  'delivery.contactName': 'delivery kontakt shaxsi',
-  'delivery.contactPhone': 'delivery telefoni',
-  brokerRate: 'yuk narxi',
-  loadedMiles: 'yuk masofasi',
-  equipmentType: 'treyler turi',
-  weightLbs: 'yuk vazni',
+  'broker.contactName': 'missingFields.brokerContact',
+  'broker.phone': 'missingFields.brokerPhone',
+  'pickup.appointmentFrom': 'missingFields.pickupTime',
+  'pickup.appointment': 'missingFields.pickupTime',
+  'pickup.appointmentTo': 'missingFields.pickupTimeRange',
+  'pickup.contactName': 'missingFields.pickupContact',
+  'pickup.contactPhone': 'missingFields.pickupPhone',
+  'delivery.appointmentFrom': 'missingFields.deliveryTime',
+  'delivery.appointment': 'missingFields.deliveryTime',
+  'delivery.appointmentTo': 'missingFields.deliveryTimeRange',
+  'delivery.contactName': 'missingFields.deliveryContact',
+  'delivery.contactPhone': 'missingFields.deliveryPhone',
+  brokerRate: 'missingFields.rate',
+  loadedMiles: 'missingFields.distance',
+  equipmentType: 'missingFields.equipment',
+  weightLbs: 'missingFields.weight',
 };
 
 export default function QuickDriverModal({ 
@@ -35,6 +37,7 @@ export default function QuickDriverModal({
   drivers, 
   onConfirm 
 }) {
+  const { t } = useTranslation();
   const [selectedDriverIds, setSelectedDriverIds] = useState([]);
   const [isSelectAll, setIsSelectAll] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -108,12 +111,12 @@ export default function QuickDriverModal({
             </div>
             <div>
               <h2 className="text-base lg:text-lg font-bold text-zinc-900 dark:text-zinc-100">
-                {isReassignment ? 'Yukni Qayta Tayinlash' : 'AI Yukni Tayyorladi'}
+                {isReassignment ? t('loads.reassign') : t('loads.aiPreparedTitle')}
               </h2>
               <p className="text-xs lg:text-sm text-zinc-400">
                 {isReassignment
-                  ? 'Yangi haydovchini tanlang. Joriy tayinlov almashtiriladi.'
-                  : 'Faqat haydovchini tanlang va yuboring'}
+                  ? t('loads.reassignHint')
+                  : t('loads.selectAndSend')}
               </p>
             </div>
           </div>
@@ -137,7 +140,7 @@ export default function QuickDriverModal({
                 <span>{loadData.destination.city}, {loadData.destination.state}</span>
               </div>
               <span className="font-mono font-extrabold text-base lg:text-lg text-zinc-900 dark:text-zinc-100">
-                ${loadData.rate?.toLocaleString()}
+                {formatCurrency(loadData.rate)}
               </span>
             </div>
 
@@ -145,20 +148,20 @@ export default function QuickDriverModal({
               <span>{loadData.equipment} • {loadData.distanceMiles} mi</span>
               <span className="flex items-center space-x-1.5 text-blue-600 dark:text-blue-400 font-bold">
                 <FileImage className="w-4 h-4" />
-                <span className="truncate max-w-[140px]">{loadData.fileName || 'Surat biriktirildi'}</span>
+                <span className="truncate max-w-[140px]">{loadData.fileName || t('loads.imageAttached')}</span>
               </span>
             </div>
             <div className="flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-zinc-500 dark:text-zinc-400">
               {loadData.temperatureFahrenheit != null && (
                 <span>{loadData.temperatureFahrenheit}°F</span>
               )}
-              {loadData.palletCount != null && <span>{loadData.palletCount} pallet</span>}
+              {loadData.palletCount != null && <span>{t('loads.palletCount', { count: loadData.palletCount })}</span>}
               {loadData.freightMode && <span>{loadData.freightMode}</span>}
-              {loadData.isHazmat === false && <span>Non-hazmat</span>}
+          {loadData.isHazmat === false && <span>{t('loads.nonHazmat')}</span>}
             </div>
             {loadData.requirements?.length > 0 && (
               <div className="text-[11px] leading-relaxed text-zinc-600 dark:text-zinc-300">
-                <span className="font-bold">Talablar:</span> {loadData.requirements.join(' • ')}
+                <span className="font-bold">{t('loads.requirements')}:</span> {loadData.requirements.join(' • ')}
               </div>
             )}
           </div>
@@ -167,10 +170,9 @@ export default function QuickDriverModal({
             <div className="flex items-start gap-2.5 rounded-xl border border-amber-200 bg-amber-50 px-3.5 py-3 text-xs text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200">
               <TriangleAlert className="mt-0.5 h-4 w-4 flex-shrink-0" />
               <div>
-                <div className="font-bold">AI aniqlashtira olmagan maydonlar</div>
+                <div className="font-bold">{t('loads.missingFields')}</div>
                 <div className="mt-1 leading-relaxed">
-                  {missingFields.map((field) => FIELD_LABELS[field] || field).join(', ')}.
-                  Taklif ogohlantirish bilan yuboriladi.
+                  {missingFields.map((field) => FIELD_LABELS[field] ? t(FIELD_LABELS[field]) : field).join(', ')}. {t('loads.warningOffer')}
                 </div>
               </div>
             </div>
@@ -178,7 +180,7 @@ export default function QuickDriverModal({
 
           {isClosed && (
             <div className="rounded-xl border border-rose-200 bg-rose-50 px-3.5 py-3 text-xs font-semibold text-rose-800 dark:border-rose-900/60 dark:bg-rose-950/30 dark:text-rose-200">
-              Bu yuk yakunlangan yoki bekor qilingan. Unga yangi taklif yuborib bo‘lmaydi.
+              {t('loads.closedCannotOffer')}
             </div>
           )}
 
@@ -186,7 +188,7 @@ export default function QuickDriverModal({
           <div className="space-y-2.5 pt-1">
             <div className="flex items-center justify-between text-sm">
               <span className="font-bold text-zinc-800 dark:text-zinc-200">
-                Haydovchini tanlang
+                {t('loads.selectDriver')}
               </span>
               {!isReassignment && !isClosed && (
                 <button
@@ -194,7 +196,7 @@ export default function QuickDriverModal({
                   onClick={toggleSelectAll}
                   className="text-xs lg:text-sm text-blue-600 dark:text-blue-400 hover:underline font-bold"
                 >
-                  {isSelectAll ? 'Alohida tanlash' : 'Barchasiga yuborish'}
+                  {isSelectAll ? t('loads.selectIndividually') : t('loads.sendToAll')}
                 </button>
               )}
             </div>
@@ -206,7 +208,7 @@ export default function QuickDriverModal({
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Haydovchi ismi, truck raqami yoki shahar..."
+                placeholder={t('drivers.searchPlaceholder')}
                 className="w-full bg-zinc-50 dark:bg-zinc-900 border border-zinc-200/80 dark:border-zinc-800 rounded-xl pl-9 pr-8 py-2 text-sm text-zinc-900 dark:text-zinc-100 placeholder-zinc-400 focus:outline-none focus:border-zinc-400 transition-colors"
                 autoFocus
               />
@@ -226,16 +228,16 @@ export default function QuickDriverModal({
               {filteredDrivers.length === 0 ? (
                 <div className="py-4 text-center text-sm text-zinc-400 font-medium">
                   {searchQuery
-                    ? `"${searchQuery}" bo‘yicha haydovchi topilmadi`
+                    ? t('drivers.noSearchResults', { query: searchQuery })
                     : isReassignment
-                      ? 'Qayta tayinlash uchun boshqa haydovchi mavjud emas'
-                      : 'Faol haydovchi mavjud emas'}
+                      ? t('drivers.noReassignmentDriver')
+                      : t('drivers.noActiveDriver')}
                 </div>
               ) : (
                 filteredDrivers.map((driver) => {
                   const isSelected = selectedDriverIds.includes(driver.id);
-                  const truckModel = driver.truck ? driver.truck.split('(')[0].trim() : '';
-                  const city = driver.currentLocation ? driver.currentLocation.split(',')[0].trim() : '';
+                  const truckModel = driver.truck ? driver.truck.split('(')[0].trim() : t('common.notProvided');
+                  const city = driver.currentLocation ? driver.currentLocation.split(',')[0].trim() : t('common.offline');
 
                   return (
                     <div
@@ -278,7 +280,7 @@ export default function QuickDriverModal({
           {/* Footer */}
           <div className="pt-3.5 border-t border-zinc-100 dark:border-zinc-800 flex items-center justify-between">
             <span className="text-xs text-zinc-400 font-medium">
-              Tanlandi: <strong className="text-zinc-900 dark:text-zinc-100 font-bold">{selectedDriverIds.length} ta drayver</strong>
+              {t('loads.selected')}: <strong className="text-zinc-900 dark:text-zinc-100 font-bold">{t('loads.driverCount', { count: selectedDriverIds.length })}</strong>
             </span>
 
             <div className="flex items-center space-x-2.5">
@@ -287,7 +289,7 @@ export default function QuickDriverModal({
                 onClick={onClose}
                 className="px-3.5 py-2 text-xs font-semibold text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200"
               >
-                Bekor qilish
+                {t('common.cancel')}
               </button>
               <button
                 type="submit"
@@ -297,12 +299,12 @@ export default function QuickDriverModal({
                 <Send className="w-4 h-4" />
                 <span>
                   {isSubmitting
-                    ? 'Yuborilmoqda…'
+                    ? t('loads.sending')
                     : isReassignment
-                    ? 'Qayta tayinlash'
+                    ? t('loads.reassign')
                     : selectedDriverIds.length > 1
-                    ? `${selectedDriverIds.length} drayverga yuborish`
-                    : 'Haydovchiga yuborish'}
+                    ? t('loads.sendToDrivers', { count: selectedDriverIds.length })
+                    : t('loads.sendToDriver')}
                 </span>
               </button>
             </div>

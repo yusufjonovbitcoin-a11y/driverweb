@@ -1,22 +1,18 @@
 import { useEffect, useRef, useState } from 'react';
 import { isSupabaseConfigured, supabase } from '../lib/supabase';
 import { createAuthStateController } from '../services/authStateController';
+import { normalizeLocale } from '../i18n/locales';
 
 function toUiUser(profile, companyName) {
   if (!profile) return null;
-  const roleLabels = {
-    super_admin: 'Super Admin',
-    company_admin: 'Kompaniya Admini',
-    dispatcher: 'Dispecher',
-    driver: 'Haydovchi',
-  };
   return {
     id: profile.id,
     name: profile.full_name,
     email: profile.email,
     phone: profile.phone || '',
-    role: roleLabels[profile.role] || profile.role,
+    role: profile.role,
     roleCode: profile.role,
+    locale: profile.locale ? normalizeLocale(profile.locale) : null,
     companyId: profile.company_id,
     company: companyName || (profile.role === 'super_admin' ? 'ApexHaul Platform' : 'Kompaniya'),
     avatarInitial: profile.full_name?.charAt(0)?.toUpperCase() || 'U',

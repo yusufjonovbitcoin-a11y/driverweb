@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { LoaderCircle, X } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import Sidebar from './components/Sidebar';
 import TopHeader from './components/TopHeader';
 import LazyRouteBoundary from './components/LazyRouteBoundary';
@@ -15,9 +16,18 @@ import {
   createMember,
   fetchBrokerInboxUnreadCount,
   subscribeWorkspace,
+  updateMyLocale,
 } from './services/operationsService';
 import { fetchUnreadChatCount, subscribeUnreadChats } from './services/chatService';
 import { buildGlobalSearchResults } from './utils/globalSearch';
+import { localizedError } from './i18n/errors';
+import { setAppLocale } from './i18n';
+import { changeLocaleWithProfileSync } from './i18n/localeSync';
+import {
+  clearPendingLocaleOverride,
+  persistPendingLocaleOverride,
+  resolveLocaleForProfile,
+} from './i18n/locales';
 
 const tabs = ['kanban', 'drivers', 'map', 'docs', 'inbox', 'chat', 'profile'];
 const DispatchChat = React.lazy(() => import('./components/DispatchChat'));
@@ -39,6 +49,7 @@ export default function App() {
 }
 
 function Workspace({ auth }) {
+  const { t, i18n } = useTranslation();
   const { currentUser, loading: authLoading, configured, authError, login, logout } = auth;
   const [activeTab, setActiveTab] = useState(() => {
     const hash = typeof window !== 'undefined' ? window.location.hash.replace('#', '') : '';
@@ -67,11 +78,32 @@ function Workspace({ auth }) {
   const workspaceRequestRef = useRef(0);
   const foregroundRefreshCountRef = useRef(0);
   const inlineChatVisible = activeTab === 'drivers' && Boolean(inlineChatDriverId);
+  const currentUserId = currentUser?.id;
+
+  useEffect(() => {
+    if (currentUser) {
+      void setAppLocale(resolveLocaleForProfile(currentUser.locale, currentUser.id));
+    }
+  }, [currentUser]);
 
   const showToast = useCallback((message) => {
     setToast({ show: true, message });
     window.setTimeout(() => setToast((previous) => ({ ...previous, show: false })), 4500);
   }, []);
+
+  const handleLocaleChange = useCallback(async (locale) => {
+    await changeLocaleWithProfileSync(locale, {
+      applyLocale: setAppLocale,
+      syncLocale: updateMyLocale,
+      markPending: (selectedLocale) => persistPendingLocaleOverride(selectedLocale, currentUserId),
+      clearPending: (selectedLocale) => clearPendingLocaleOverride(selectedLocale, currentUserId),
+      // `t` is bound to the locale from the current React render. Use the
+      // selected locale explicitly so feedback shown during the same async
+      // change is never left in the previous language.
+      onSynced: (selectedLocale) => showToast(i18n.t('profile.languageSaved', { lng: selectedLocale })),
+      onSyncFailed: (_error, selectedLocale) => showToast(i18n.t('profile.languageLocalOnly', { lng: selectedLocale })),
+    });
+  }, [currentUserId, i18n, showToast]);
 
   const refreshWorkspace = useCallback(async ({ quiet = false } = {}) => {
     if (!currentUser || currentUser.roleCode === 'driver') return;
@@ -89,7 +121,7 @@ function Workspace({ auth }) {
       setWorkspaceError('');
     } catch (error) {
       if (requestId !== workspaceRequestRef.current) return;
-      setWorkspaceError(error.message || 'Ma\'lumotlarni yuklab bo\'lmadi.');
+      setWorkspaceError(localizedError(t, error, 'errors.workspace'));
     } finally {
       if (!quiet) {
         foregroundRefreshCountRef.current = Math.max(
@@ -99,7 +131,7 @@ function Workspace({ auth }) {
         if (foregroundRefreshCountRef.current === 0) setRefreshLoading(false);
       }
     }
-  }, [currentUser]);
+  }, [currentUser, t]);
 
   const refreshUnreadChats = useCallback(async () => {
     if (!currentUser || currentUser.roleCode === 'driver') return;
@@ -185,10 +217,16 @@ function Workspace({ auth }) {
       setIsCreateModalOpen(false);
       setSelectedDriverForLoad(null);
       showToast(
-        `Yuk yaratildi. Yo‘l masofasi: ${result.route.loadedMiles} mil${result.route.attribution ? ` (${result.route.attribution})` : ''}. ${deliveredCount} ta online haydovchiga yetkazildi${offlineCount ? `, ${offlineCount} ta oflayn haydovchi o'tkazib yuborildi` : ''}.`,
+        t('toasts.loadCreated', {
+          miles: result.route.loadedMiles,
+          attribution: result.route.attribution ? ` (${result.route.attribution})` : '',
+          deliveredCount,
+          offlineCount,
+          offline: offlineCount ? t('toasts.offlineSkipped', { count: offlineCount }) : '',
+        }),
       );
     } catch (error) {
-      showToast(error.message || 'Yukni yaratib bo\'lmadi.');
+      showToast(localizedError(t, error, 'errors.createLoad'));
       throw error;
     } finally {
       setOperationLoading(false);
@@ -228,13 +266,13 @@ function Workspace({ auth }) {
       const warningCount = result.preparedLoad.missingFields?.length || 0;
       showToast(
         result.duplicate
-          ? 'Bu hujjat oldin tahlil qilingan. Tayyor taklif ochildi.'
+          ? t('toasts.duplicateDocument')
           : warningCount
-            ? `AI yukni tayyorladi. ${warningCount} ta maydon aniqlashtirish talab qiladi.`
-            : 'AI yukni tayyorladi. Endi haydovchini tanlang.',
+            ? t('toasts.aiPreparedWarnings', { count: warningCount })
+            : t('toasts.aiPrepared'),
       );
     } catch (error) {
-      showToast(error.message || 'AI hujjatni tahlil qila olmadi.');
+      showToast(localizedError(t, error, 'errors.documentAnalysis'));
     } finally {
       setAiProcessing(false);
       setOperationLoading(false);
@@ -248,9 +286,9 @@ function Workspace({ auth }) {
       setAiPreparedLoad((current) => current?.id === load.id ? null : current);
       setSelectedLoadForDocs((current) => current?.id === load.id ? null : current);
       await refreshWorkspace({ quiet: true });
-      showToast(`${load.loadNumber} yuk o‘chirildi.`);
+      showToast(t('toasts.loadDeleted', { number: load.loadNumber }));
     } catch (error) {
-      showToast(error.message || 'Yukni o‘chirib bo‘lmadi.');
+      showToast(localizedError(t, error, 'errors.deleteLoad'));
       throw error;
     } finally {
       setOperationLoading(false);
@@ -280,12 +318,17 @@ function Workspace({ auth }) {
       showToast(
         isReassignment
           ? deliveredCount
-            ? 'Yuk yangi haydovchiga qayta tayinlash uchun yuborildi.'
-            : 'Tanlangan haydovchi oflayn. Taklif o‘tkazib yuborildi.'
-          : `Yo‘l masofasi: ${dispatch.route.loadedMiles} mil${dispatch.route.attribution ? ` (${dispatch.route.attribution})` : ''}. ${deliveredCount} ta online haydovchiga taklif yuborildi${offlineCount ? `, ${offlineCount} ta oflayn haydovchi o'tkazib yuborildi` : ''}.`,
+            ? t('toasts.reassignmentSent')
+            : t('toasts.driverOffline')
+          : t('toasts.offerSent', {
+            miles: dispatch.route.loadedMiles,
+            attribution: dispatch.route.attribution ? ` (${dispatch.route.attribution})` : '',
+            deliveredCount,
+            offline: offlineCount ? t('toasts.offlineSkipped', { count: offlineCount }) : '',
+          }),
       );
     } catch (error) {
-      showToast(error.message || 'Taklifni yuborib bo\'lmadi.');
+      showToast(localizedError(t, error, 'errors.sendOffer'));
     } finally {
       setOperationLoading(false);
     }
@@ -310,7 +353,9 @@ function Workspace({ auth }) {
     query: searchQuery,
     loads,
     drivers,
-  }), [drivers, loads, searchQuery]);
+    t,
+    locale: i18n.resolvedLanguage || i18n.language,
+  }), [drivers, i18n.language, i18n.resolvedLanguage, loads, searchQuery, t]);
 
   const handleSelectSearchResult = useCallback((result) => {
     if (result.type === 'driver') {
@@ -345,7 +390,7 @@ function Workspace({ auth }) {
     return (
       <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950 flex items-center justify-center text-zinc-600 dark:text-zinc-300">
         <LoaderCircle className="w-7 h-7 animate-spin mr-3" />
-        <span className="font-semibold">Sessiya tekshirilmoqda…</span>
+        <span className="font-semibold">{t('auth.checking')}</span>
       </div>
     );
   }
@@ -356,7 +401,7 @@ function Workspace({ auth }) {
         <React.Suspense fallback={<div className="grid min-h-screen place-items-center"><LoaderCircle className="h-7 w-7 animate-spin" /></div>}>
           <AuthView
             onLogin={login}
-            externalError={!configured ? 'Supabase sozlanmagan. .env.local faylini tekshiring.' : authError}
+            externalError={!configured ? t('errors.supabaseConfig') : authError && localizedError(t, new Error(authError))}
             theme={theme}
             toggleTheme={() => setTheme((value) => value === 'dark' ? 'light' : 'dark')}
           />
@@ -369,10 +414,10 @@ function Workspace({ auth }) {
     return (
       <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950 flex items-center justify-center p-6">
         <div className="max-w-md bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-3xl p-8 text-center shadow-xl">
-          <h1 className="text-xl font-black text-zinc-900 dark:text-white">Driver mobil ilovasidan foydalaning</h1>
-          <p className="text-sm text-zinc-500 mt-2">Web panel administrator va dispatcherlar uchun mo‘ljallangan.</p>
+          <h1 className="text-xl font-black text-zinc-900 dark:text-white">{t('auth.driverMobile')}</h1>
+          <p className="text-sm text-zinc-500 mt-2">{t('auth.webForStaff')}</p>
           <button onClick={logout} className="mt-6 px-5 py-2.5 rounded-xl bg-zinc-900 text-white dark:bg-white dark:text-zinc-950 font-bold">
-            Hisobdan chiqish
+            {t('nav.logout')}
           </button>
         </div>
       </div>
@@ -388,7 +433,7 @@ function Workspace({ auth }) {
         driversCount={drivers.length}
         unreadChatCount={unreadChatCount}
         unreadInboxCount={unreadInboxCount}
-        onDropFile={() => showToast('Broker fayllari Gmail/AI worker orqali avtomatik keladi.')}
+        onDropFile={() => showToast(t('toasts.brokerFilesAutomatic'))}
         currentUser={currentUser}
         onLogout={logout}
       />
@@ -436,7 +481,7 @@ function Workspace({ auth }) {
             <KanbanBoard
               loads={filteredLoads}
               drivers={drivers}
-              onAdvanceStatus={() => showToast('Load statusini driver mobil ilovadan o‘zgartiradi.')}
+              onAdvanceStatus={() => showToast(t('toasts.statusFromMobile'))}
               onOpenDocs={setSelectedLoadForDocs}
               onDeleteLoad={handleDeleteLoad}
               onDropOnOffer={handleAiDocument}
@@ -478,13 +523,15 @@ function Workspace({ auth }) {
                 members={members}
                 loads={loads}
                 onAddDriver={handleCreateMember}
-                onDeleteDriver={() => showToast('Foydalanuvchi o‘chirilmaydi; admin uni suspended holatiga o‘tkazadi.')}
+                onDeleteDriver={() => showToast(t('toasts.userSuspendedOnly'))}
                 currentUser={currentUser}
                 onNavigate={handleSelectTab}
                 theme={theme}
                 toggleTheme={() => setTheme((value) => value === 'dark' ? 'light' : 'dark')}
                 unreadChatCount={unreadChatCount}
                 unreadInboxCount={unreadInboxCount}
+                locale={i18n.resolvedLanguage || i18n.language}
+                onLocaleChange={handleLocaleChange}
               />
             )
           )}
@@ -532,7 +579,7 @@ function Workspace({ auth }) {
             isOpen
             onClose={() => setSelectedLoadForDocs(null)}
             load={selectedLoadForDocs}
-            onApproveAndInvoice={() => showToast('Hujjat warninglari ko‘rib chiqildi. AI loadni bloklamaydi.')}
+            onApproveAndInvoice={() => showToast(t('toasts.documentWarningsReviewed'))}
           />}
         </React.Suspense>
       </LazyRouteBoundary>

@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { 
   MapPin, 
   MessageSquare,
@@ -6,6 +7,7 @@ import {
   Search,
 } from 'lucide-react';
 import KanbanBoard from './KanbanBoard';
+import { formatCurrency } from '../i18n/format';
 
 export default function DriverRoster({
   drivers,
@@ -19,6 +21,7 @@ export default function DriverRoster({
   onSelectDriver,
   onOpenChat,
 }) {
+  const { t } = useTranslation();
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('ALL');
 
@@ -81,7 +84,7 @@ export default function DriverRoster({
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Haydovchi yoki joylashuv..."
+            placeholder={t('drivers.searchPlaceholder')}
             className="w-full bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl pl-9 pr-3.5 py-2 text-sm text-zinc-900 dark:text-zinc-100 placeholder-zinc-400 focus:outline-none focus:border-zinc-400 transition-colors"
           />
         </div>
@@ -96,7 +99,7 @@ export default function DriverRoster({
                 : 'text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-200'
             }`}
           >
-            Barchasi ({drivers.length})
+            {t('common.all')} ({drivers.length})
           </button>
           <button
             onClick={() => setStatusFilter('AVAILABLE')}
@@ -106,7 +109,7 @@ export default function DriverRoster({
                 : 'text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-200'
             }`}
           >
-            Bo'sh ({availableDriversCount})
+            {t('drivers.available')} ({availableDriversCount})
           </button>
           <button
             onClick={() => setStatusFilter('ON_LOAD')}
@@ -116,7 +119,7 @@ export default function DriverRoster({
                 : 'text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-200'
             }`}
           >
-            Yukda ({onDutyDriversCount})
+            {t('drivers.onLoad')} ({onDutyDriversCount})
           </button>
           </div>
         </div>
@@ -127,18 +130,18 @@ export default function DriverRoster({
         <table className="w-full text-left border-collapse min-w-[700px]">
           <thead className="bg-zinc-50/80 dark:bg-zinc-900/80 text-zinc-500 dark:text-zinc-400 font-mono text-xs font-bold uppercase tracking-wider border-b border-zinc-200 dark:border-zinc-800">
             <tr>
-              <th className="py-3.5 px-4">Haydovchi</th>
-              <th className="py-3.5 px-4">Joylashuv</th>
-              <th className="py-3.5 px-4">HOS Qoldig'i</th>
-              <th className="py-3.5 px-4">Faol Reys</th>
-              <th className="py-3.5 px-4 text-right">Harakat</th>
+              <th className="py-3.5 px-4">{t('drivers.driver')}</th>
+              <th className="py-3.5 px-4">{t('drivers.location')}</th>
+              <th className="py-3.5 px-4">{t('drivers.hosRemaining')}</th>
+              <th className="py-3.5 px-4">{t('drivers.activeTrip')}</th>
+              <th className="py-3.5 px-4 text-right">{t('common.actions')}</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-zinc-200 dark:divide-zinc-800 text-sm">
             {filteredDrivers.length === 0 ? (
               <tr>
                 <td colSpan={5} className="py-12 text-center text-zinc-400 font-medium">
-                  Haydovchilar topilmadi
+                  {t('drivers.noDrivers')}
                 </td>
               </tr>
             ) : (
@@ -158,7 +161,7 @@ export default function DriverRoster({
                       }
                     }}
                     className="driver-row hover:bg-zinc-50/80 dark:hover:bg-zinc-800/40 transition-colors cursor-pointer"
-                    aria-label={`${driver.name} ma’lumotlarini ochish`}
+                    aria-label={t('drivers.openDetails', { name: driver.name })}
                   >
                     {/* Driver Info */}
                     <td className="py-3.5 px-4 whitespace-nowrap">
@@ -179,7 +182,7 @@ export default function DriverRoster({
                             <span className="font-bold text-sm text-zinc-900 dark:text-zinc-100">{driver.name}</span>
                           </div>
                           <div className="text-xs text-zinc-400 font-mono whitespace-nowrap mt-0.5">
-                            <span className="font-bold text-zinc-600 dark:text-zinc-300">{driver.driverNumber}</span> • <span>{driver.phone}</span>
+                            <span className="font-bold text-zinc-600 dark:text-zinc-300">{driver.driverNumber}</span> • <span>{driver.phone || t('common.notProvided')}</span>
                           </div>
                         </div>
                       </div>
@@ -189,17 +192,17 @@ export default function DriverRoster({
                     <td className="py-3.5 px-4 font-medium text-zinc-800 dark:text-zinc-200 whitespace-nowrap">
                       <div className="flex items-center space-x-1.5 text-sm">
                         <MapPin className="w-4 h-4 text-zinc-400 flex-shrink-0" />
-                        <span>{driver.currentLocation}</span>
+                        <span>{driver.currentLocation || t('common.offline')}</span>
                       </div>
                     </td>
 
                     {/* HOS */}
                     <td className="py-3.5 px-4 font-mono whitespace-nowrap">
                       <div className="text-sm font-bold text-emerald-600 dark:text-emerald-400">
-                        {driver.hos.driveLeft} <span className="text-xs text-zinc-400 font-normal">Drive</span>
+                        {driver.hos.driveLeft} <span className="text-xs text-zinc-400 font-normal">{t('drivers.drive')}</span>
                       </div>
                       <div className="text-xs text-zinc-400 font-normal mt-0.5">
-                        {driver.hos.shiftLeft} Shft • {driver.hos.cycleLeft} Cyc
+                        {driver.hos.shiftLeft} {t('drivers.shiftAbbr')} • {driver.hos.cycleLeft} {t('drivers.cycleAbbr')}
                       </div>
                     </td>
 
@@ -209,15 +212,15 @@ export default function DriverRoster({
                         <div className="font-mono">
                           <div className="text-sm font-bold text-zinc-900 dark:text-zinc-100">
                             {activeLoad.loadNumber}
-                            {Number(activeLoad.rate) > 0 && ` • $${Number(activeLoad.rate).toLocaleString('en-US')}`}
+                            {Number(activeLoad.rate) > 0 && ` • ${formatCurrency(activeLoad.rate)}`}
                           </div>
                           <div className="text-xs text-zinc-500 truncate max-w-[170px] mt-0.5">
-                            {activeLoad.origin.city} ➔ {activeLoad.destination.city}
+                            {activeLoad.origin.city || t('common.notProvided')} ➔ {activeLoad.destination.city || t('common.notProvided')}
                           </div>
                         </div>
                       ) : (
                         <span className="inline-flex items-center text-xs font-semibold px-2.5 py-1 rounded-lg bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800/40">
-                          ✓ Bo'sh (Tayyor)
+                          ✓ {t('drivers.available')}
                         </span>
                       )}
                     </td>
@@ -231,10 +234,10 @@ export default function DriverRoster({
                             onAssignLoad(driver);
                           }}
                           className="inline-flex items-center space-x-1.5 bg-zinc-900 hover:bg-zinc-800 text-white dark:bg-zinc-100 dark:hover:bg-white dark:text-zinc-950 px-3.5 py-1.5 rounded-xl font-bold text-xs transition-colors shadow-2xs cursor-pointer"
-                          title={activeLoad ? 'Qo‘shimcha yuk tayinlash' : 'Yangi yuk tayinlash'}
+                          title={activeLoad ? t('drivers.assignAdditional') : t('drivers.assignLoad')}
                         >
                           <Plus className="w-3.5 h-3.5" />
-                          <span>{activeLoad ? 'Qo‘shimcha yuk' : 'Yuk berish'}</span>
+                          <span>{activeLoad ? t('drivers.additionalLoad') : t('header.createLoad')}</span>
                         </button>
                       </div>
                     </td>
@@ -261,6 +264,7 @@ function DriverLoadWorkspace({
   onDropOnOffer,
   isAiProcessing,
 }) {
+  const { t } = useTranslation();
   const activeLoads = loads.filter((load) => load.status !== 'COMPLETED').length;
 
   return (
@@ -282,17 +286,17 @@ function DriverLoadWorkspace({
             <div className="flex items-center gap-2">
               <h2>{driver.name}</h2>
             </div>
-            <p>{driver.driverNumber} <span>•</span> {driver.phone}</p>
+            <p>{driver.driverNumber} <span>•</span> {driver.phone || t('common.notProvided')}</p>
           </div>
         </div>
 
         <div className="driver-detail-meta">
-          <div><span>Faol reyslar</span><strong>{activeLoads}</strong></div>
+          <div><span>{t('drivers.activeTrips')}</span><strong>{activeLoads}</strong></div>
         </div>
 
         <button type="button" onClick={() => onOpenChat(driver)} className="primary-button">
           <MessageSquare size={16} aria-hidden="true" />
-          <span>Chat</span>
+          <span>{t('nav.chat')}</span>
         </button>
       </div>
 

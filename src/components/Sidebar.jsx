@@ -1,77 +1,80 @@
 import React, { useState } from 'react';
-import { 
-  Truck, 
-  LayoutDashboard, 
-  MapPin, 
-  Users, 
-  FileText, 
+import { useTranslation } from 'react-i18next';
+import { roleLabel } from '../i18n/labels';
+import {
+  Truck,
+  LayoutDashboard,
+  MapPin,
+  Users,
+  FileText,
   MessageSquare,
   Inbox,
   User,
-  ChevronLeft, 
+  ChevronLeft,
   ChevronRight,
   LogOut
 } from 'lucide-react';
 
-export default function Sidebar({ 
-  activeTab, 
-  setActiveTab, 
-  loadsCount, 
-  driversCount, 
+export default function Sidebar({
+  activeTab,
+  setActiveTab,
+  loadsCount,
+  driversCount,
   unreadChatCount,
   unreadInboxCount,
   onDropFile,
   currentUser,
   onLogout
 }) {
+  const { t } = useTranslation();
   const [collapsed, setCollapsed] = useState(false);
 
   const navigation = [
-    { 
-      id: 'drivers', 
-      label: 'Haydovchilar', 
-      icon: Users, 
-      badge: driversCount 
+    {
+      id: 'drivers',
+      label: t('nav.drivers'),
+      icon: Users,
+      badge: driversCount
     },
-    { 
-      id: 'map', 
-      label: 'Xarita', 
-      icon: MapPin 
+    {
+      id: 'map',
+      label: t('nav.map'),
+      icon: MapPin
     },
-    { 
-      id: 'docs', 
-      label: 'Hujjatlar', 
-      icon: FileText 
+    {
+      id: 'docs',
+      label: t('nav.documents'),
+      icon: FileText
     },
     {
       id: 'inbox',
-      label: 'Broker Inbox',
+      label: t('nav.inbox'),
       icon: Inbox,
       badge: unreadInboxCount || null,
       badgeTone: 'alert',
     },
     {
       id: 'chat',
-      label: 'Chat',
+      label: t('nav.chat'),
       icon: MessageSquare,
       badge: unreadChatCount || null,
       badgeTone: 'alert',
     },
     {
       id: 'profile',
-      label: 'Profil',
+      label: t('nav.profile'),
       icon: User
     },
     {
       id: 'kanban',
-      label: 'Yuklar',
+      label: t('nav.loads'),
       icon: LayoutDashboard,
       badge: loadsCount
     }
   ];
 
   return (
-    <aside 
+    <aside
       className={`workspace-sidebar bg-white dark:bg-zinc-950 border-r border-zinc-200 dark:border-zinc-800 flex flex-col justify-between transition-all duration-150 select-none ${
         collapsed ? 'is-collapsed w-20' : 'w-56'
       }`}
@@ -94,15 +97,15 @@ export default function Sidebar({
           <button
             onClick={() => setCollapsed(!collapsed)}
             className="p-1.5 text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 rounded-md transition-colors hidden lg:block"
-            title={collapsed ? 'Kengaytirish' : 'Yig\'ish'}
+            title={collapsed ? t('nav.expand') : t('nav.collapse')}
           >
             {collapsed ? <ChevronRight className="w-5 h-5" /> : <ChevronLeft className="w-5 h-5" />}
           </button>
         </div>
 
         {/* Navigation List */}
-        <nav aria-label="Asosiy menyu" className="sidebar-nav p-3 space-y-1.5">
-          <p className="nav-section-label">{collapsed ? '•' : 'ISH MAYDONI'}</p>
+        <nav aria-label={t('nav.mainMenu')} className="sidebar-nav p-3 space-y-1.5">
+          <p className="nav-section-label">{collapsed ? '•' : t('nav.workspace')}</p>
           {navigation.map((item) => {
             const Icon = item.icon;
             const isActive = activeTab === item.id;
@@ -158,7 +161,7 @@ export default function Sidebar({
 
       {/* Footer Profile Section */}
       <div className="sidebar-footer p-3 border-t border-zinc-200 dark:border-zinc-800">
-        <div 
+        <div
           onClick={() => setActiveTab('profile')}
           className={`p-2 rounded-2xl border transition-all cursor-pointer flex items-center ${
             collapsed ? 'justify-center' : 'space-x-2.5'
@@ -167,7 +170,7 @@ export default function Sidebar({
               ? 'bg-zinc-100 dark:bg-zinc-800 border-zinc-300 dark:border-zinc-700 shadow-2xs'
               : 'border-transparent hover:border-zinc-200 dark:hover:border-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-900'
           }`}
-          title="Dispetcher profili va drayverlar"
+          title={t('profile.overview')}
         >
           <div className="w-8 h-8 rounded-xl bg-zinc-950 dark:bg-zinc-100 text-white dark:text-zinc-950 flex items-center justify-center font-mono text-xs font-black flex-shrink-0 shadow-xs">
             {currentUser?.avatarInitial || currentUser?.name?.charAt(0) || 'D'}
@@ -176,11 +179,11 @@ export default function Sidebar({
           {!collapsed && (
             <div className="min-w-0 flex-1">
               <p className="text-sm font-bold text-zinc-900 dark:text-zinc-100 truncate">
-                {currentUser?.name || 'Dispecher'}
+                {currentUser?.name || t('roles.dispatcher')}
               </p>
               <p className="text-[11px] text-zinc-500 font-medium truncate flex items-center space-x-1">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 inline-block" />
-                <span className="truncate">{currentUser?.role || 'Onlayn (Profil)'}</span>
+                <span className="truncate">{roleLabel(t, currentUser?.roleCode || currentUser?.role)}</span>
               </p>
             </div>
           )}
@@ -190,12 +193,12 @@ export default function Sidebar({
               type="button"
               onClick={(e) => {
                 e.stopPropagation();
-                if (window.confirm('Tizimdan chiqishni xohlaysizmi?')) {
+                if (window.confirm(t('nav.logoutConfirm'))) {
                   onLogout();
                 }
               }}
               className="p-1.5 rounded-xl text-zinc-400 hover:text-red-500 hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors flex-shrink-0"
-              title="Hisobdan chiqish"
+              title={t('nav.logout')}
             >
               <LogOut className="w-4 h-4" />
             </button>

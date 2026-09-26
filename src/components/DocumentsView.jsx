@@ -1,12 +1,16 @@
 import React, { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { 
   FileText, 
   Search, 
   Table as TableIcon, 
   LayoutGrid
 } from 'lucide-react';
+import { formatCurrency } from '../i18n/format';
+import { loadStatusLabel } from '../i18n/labels';
 
 export default function DocumentsView({ loads, drivers, onOpenDocs }) {
+  const { t } = useTranslation();
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [viewMode, setViewMode] = useState('table'); // sukut bo'yicha flat jadval
@@ -26,7 +30,7 @@ export default function DocumentsView({ loads, drivers, onOpenDocs }) {
     const q = searchQuery.toLowerCase();
     return (
       load.loadNumber.toLowerCase().includes(q) ||
-      load.broker.toLowerCase().includes(q) ||
+      load.broker?.toLowerCase().includes(q) ||
       load.origin?.city?.toLowerCase().includes(q) ||
       load.destination?.city?.toLowerCase().includes(q) ||
       (driver && driver.name.toLowerCase().includes(q))
@@ -36,15 +40,15 @@ export default function DocumentsView({ loads, drivers, onOpenDocs }) {
   const getStatusBadge = (status) => {
     switch (status) {
       case 'OFFER':
-        return <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-mono font-bold bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400 border border-amber-200 dark:border-amber-800/40">Taklif</span>;
+        return <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-mono font-bold bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400 border border-amber-200 dark:border-amber-800/40">{loadStatusLabel(t, status)}</span>;
       case 'ASSIGNED':
-        return <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-mono font-bold bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400 border border-blue-200 dark:border-blue-800/40">Tayinlangan</span>;
+        return <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-mono font-bold bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400 border border-blue-200 dark:border-blue-800/40">{loadStatusLabel(t, status)}</span>;
       case 'IN_TRANSIT':
-        return <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-mono font-bold bg-purple-50 dark:bg-purple-950/40 text-purple-600 dark:text-purple-400 border border-purple-200 dark:border-purple-800/40">Tranzitda</span>;
+        return <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-mono font-bold bg-purple-50 dark:bg-purple-950/40 text-purple-600 dark:text-purple-400 border border-purple-200 dark:border-purple-800/40">{loadStatusLabel(t, status)}</span>;
       case 'DELIVERED':
-        return <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-mono font-bold bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800/40">Yetkazilgan</span>;
+        return <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-mono font-bold bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800/40">{loadStatusLabel(t, status)}</span>;
       case 'COMPLETED':
-        return <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-mono font-bold bg-zinc-100 dark:bg-zinc-800 text-zinc-500 border border-zinc-200 dark:border-zinc-700">Tugallangan</span>;
+        return <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-mono font-bold bg-zinc-100 dark:bg-zinc-800 text-zinc-500 border border-zinc-200 dark:border-zinc-700">{loadStatusLabel(t, status)}</span>;
       default:
         return null;
     }
@@ -57,10 +61,10 @@ export default function DocumentsView({ loads, drivers, onOpenDocs }) {
       <div className="pb-4 border-b border-zinc-200 dark:border-zinc-800 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h2 className="text-xl font-black text-zinc-900 dark:text-zinc-100 tracking-tight">
-            Hujjatlar Markazi
+            {t('documents.title')}
           </h2>
           <p className="text-sm text-zinc-500 dark:text-zinc-400 mt-0.5">
-            Barcha reyslarning Rate Con, Shipper BOL va imzolangan POD hujjatlari
+            {t('documents.subtitle')}
           </p>
         </div>
 
@@ -75,7 +79,7 @@ export default function DocumentsView({ loads, drivers, onOpenDocs }) {
             }`}
           >
             <TableIcon className="w-4 h-4" />
-            <span>Jadval</span>
+            <span>{t('loads.table')}</span>
           </button>
           <button
             onClick={() => setViewMode('cards')}
@@ -86,7 +90,7 @@ export default function DocumentsView({ loads, drivers, onOpenDocs }) {
             }`}
           >
             <LayoutGrid className="w-4 h-4" />
-            <span>Kartalar</span>
+            <span>{t('documents.cards')}</span>
           </button>
         </div>
       </div>
@@ -99,7 +103,7 @@ export default function DocumentsView({ loads, drivers, onOpenDocs }) {
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Reys #, broker, drayver..."
+            placeholder={t('documents.searchPlaceholder')}
             className="w-full bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl pl-9 pr-3.5 py-2 text-sm text-zinc-900 dark:text-zinc-100 placeholder-zinc-400 focus:outline-none focus:border-zinc-400 transition-colors"
           />
         </div>
@@ -114,7 +118,7 @@ export default function DocumentsView({ loads, drivers, onOpenDocs }) {
                 : 'text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-200'
             }`}
           >
-            Barchasi ({loads.length})
+            {t('common.all')} ({loads.length})
           </button>
           <button
             onClick={() => setStatusFilter('IN_TRANSIT')}
@@ -124,7 +128,7 @@ export default function DocumentsView({ loads, drivers, onOpenDocs }) {
                 : 'text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-200'
             }`}
           >
-            Tranzitda
+            {t('loadStatus.in_transit')}
           </button>
           <button
             onClick={() => setStatusFilter('DELIVERED')}
@@ -134,7 +138,7 @@ export default function DocumentsView({ loads, drivers, onOpenDocs }) {
                 : 'text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-200'
             }`}
           >
-            Yetkazilgan
+            {t('loadStatus.delivered')}
           </button>
         </div>
       </div>
@@ -145,20 +149,20 @@ export default function DocumentsView({ loads, drivers, onOpenDocs }) {
           <table className="w-full text-left border-collapse min-w-[760px]">
             <thead className="bg-zinc-50/80 dark:bg-zinc-900/80 text-zinc-500 dark:text-zinc-400 font-mono text-xs font-bold uppercase tracking-wider border-b border-zinc-200 dark:border-zinc-800">
               <tr>
-                <th className="py-3.5 px-4">Reys & Stavka</th>
-                <th className="py-3.5 px-4">Marshrut</th>
-                <th className="py-3.5 px-4">Broker</th>
-                <th className="py-3.5 px-4">Haydovchi</th>
-                <th className="py-3.5 px-4">Hujjatlar Holati</th>
-                <th className="py-3.5 px-4">Reys Holati</th>
-                <th className="py-3.5 px-4 text-right">Harakat</th>
+                <th className="py-3.5 px-4">{t('documents.tripAndRate')}</th>
+                <th className="py-3.5 px-4">{t('loads.route')}</th>
+                <th className="py-3.5 px-4">{t('loads.broker')}</th>
+                <th className="py-3.5 px-4">{t('drivers.driver')}</th>
+                <th className="py-3.5 px-4">{t('documents.documentStatus')}</th>
+                <th className="py-3.5 px-4">{t('documents.tripStatus')}</th>
+                <th className="py-3.5 px-4 text-right">{t('common.actions')}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-zinc-200 dark:divide-zinc-800 text-sm">
               {filteredLoads.length === 0 ? (
                 <tr>
                   <td colSpan={7} className="py-12 text-center text-zinc-400 font-medium">
-                    Hujjatlar topilmadi
+                    {t('documents.noDocuments')}
                   </td>
                 </tr>
               ) : (
@@ -180,25 +184,25 @@ export default function DocumentsView({ loads, drivers, onOpenDocs }) {
                             {load.loadNumber}
                           </span>
                           <span className="ml-2 font-black text-sm text-emerald-600 dark:text-emerald-400">
-                            ${Number(load.rate).toLocaleString('en-US')}
+                            {formatCurrency(load.rate)}
                           </span>
                         </div>
                         <div className="text-xs text-zinc-400 font-mono mt-0.5">
-                          {load.distanceMiles} mi • {load.equipment}
+                          {load.distanceMiles} mi • {load.equipment || t('common.notProvided')}
                         </div>
                       </td>
 
                       {/* Marshrut */}
                       <td className="py-3.5 px-4 whitespace-nowrap">
                         <div className="font-bold text-sm text-zinc-900 dark:text-zinc-100">
-                          {load.origin?.city}, {load.origin?.state} ➔ {load.destination?.city}, {load.destination?.state}
+                          {load.origin?.city || t('common.notProvided')}, {load.origin?.state} ➔ {load.destination?.city || t('common.notProvided')}, {load.destination?.state}
                         </div>
                       </td>
 
                       {/* Broker */}
                       <td className="py-3.5 px-4 whitespace-nowrap">
                         <div className="text-sm font-bold text-zinc-800 dark:text-zinc-200">
-                          {load.broker}
+                          {load.broker || t('inbox.brokerMissing')}
                         </div>
                       </td>
 
@@ -219,7 +223,7 @@ export default function DocumentsView({ loads, drivers, onOpenDocs }) {
                             </div>
                           </div>
                         ) : (
-                          <span className="text-xs text-zinc-400 italic font-mono">— Biriktirilmagan</span>
+                          <span className="text-xs text-zinc-400 italic font-mono">— {t('loads.unassigned')}</span>
                         )}
                       </td>
 
@@ -230,7 +234,7 @@ export default function DocumentsView({ loads, drivers, onOpenDocs }) {
                             hasRateCon 
                               ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800/40' 
                               : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-400'
-                          }`} title={hasRateCon ? 'Rate Con yuklangan' : 'Kutilmoqda'}>
+                          }`} title={hasRateCon ? t('documents.uploaded') : t('documents.waiting')}>
                             RateCon
                           </span>
 
@@ -238,7 +242,7 @@ export default function DocumentsView({ loads, drivers, onOpenDocs }) {
                             hasBol 
                               ? 'bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400 border border-blue-200 dark:border-blue-800/40' 
                               : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-400'
-                          }`} title={hasBol ? 'BOL tasdiqlangan' : 'Kutilmoqda'}>
+                          }`} title={hasBol ? t('documents.approved') : t('documents.waiting')}>
                             BOL
                           </span>
 
@@ -246,12 +250,12 @@ export default function DocumentsView({ loads, drivers, onOpenDocs }) {
                             hasPod 
                               ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800/40' 
                               : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-400'
-                          }`} title={hasPod ? 'POD qabul qilingan' : 'Kutilmoqda'}>
+                          }`} title={hasPod ? t('documents.approved') : t('documents.waiting')}>
                             POD
                           </span>
                           {hasDocumentWarning && (
                             <span className="inline-flex items-center rounded border border-amber-200 bg-amber-50 px-2 py-0.5 text-xs font-bold text-amber-700 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-300">
-                              AI ogohlantirish
+                              {t('documents.aiWarning')}
                             </span>
                           )}
                         </div>
@@ -267,10 +271,10 @@ export default function DocumentsView({ loads, drivers, onOpenDocs }) {
                         <button
                           onClick={() => onOpenDocs(load)}
                           className="inline-flex items-center space-x-1.5 px-3.5 py-1.5 rounded-xl bg-zinc-900 hover:bg-zinc-800 text-white dark:bg-zinc-100 dark:hover:bg-white dark:text-zinc-950 font-bold text-xs transition-colors shadow-2xs cursor-pointer"
-                          title="Hujjatlarni ko'rish va boshqarish"
+                          title={t('documents.viewManage')}
                         >
                           <FileText className="w-3.5 h-3.5" />
-                          <span>Ko'rish</span>
+                          <span>{t('loads.view')}</span>
                         </button>
                       </td>
 
@@ -298,19 +302,19 @@ export default function DocumentsView({ loads, drivers, onOpenDocs }) {
                     {load.loadNumber}
                   </span>
                   <span className="font-bold text-sm text-emerald-600 dark:text-emerald-400">
-                    ${Number(load.rate).toLocaleString('en-US')}
+                    {formatCurrency(load.rate)}
                   </span>
                 </div>
 
                 {/* Route */}
                 <div className="text-xs font-semibold text-zinc-800 dark:text-zinc-200">
-                  {load.origin?.city}, {load.origin?.state} ➔ {load.destination?.city}, {load.destination?.state}
+                  {load.origin?.city || t('common.notProvided')}, {load.origin?.state} ➔ {load.destination?.city || t('common.notProvided')}, {load.destination?.state}
                 </div>
 
                 {/* Details */}
                 <div className="flex items-center justify-between text-xs text-zinc-400 font-mono">
-                  <span>{load.broker}</span>
-                  <span>{load.equipment}</span>
+                  <span>{load.broker || t('inbox.brokerMissing')}</span>
+                  <span>{load.equipment || t('common.notProvided')}</span>
                 </div>
 
                 {/* Document Status Pills */}
@@ -340,7 +344,7 @@ export default function DocumentsView({ loads, drivers, onOpenDocs }) {
                     className="inline-flex items-center space-x-1 px-3 py-1.5 rounded-lg bg-zinc-900 hover:bg-zinc-800 text-white dark:bg-zinc-100 dark:hover:bg-white dark:text-zinc-950 font-bold text-xs transition-colors shadow-2xs cursor-pointer"
                   >
                     <FileText className="w-3.5 h-3.5" />
-                    <span>Ko'rish</span>
+                    <span>{t('loads.view')}</span>
                   </button>
                 </div>
               </div>

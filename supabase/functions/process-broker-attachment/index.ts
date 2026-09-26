@@ -415,6 +415,15 @@ function normalizeMissingFields(
   });
   if (extracted.brokerRate == null) filtered.push("brokerRate");
   if (extracted.loadedMiles == null) filtered.push("loadedMiles");
+  if (!text(extracted.broker?.name)) filtered.push("broker.name");
+  if (!text(extracted.cargoDescription)) filtered.push("cargoDescription");
+  if (!text(extracted.equipmentType)) filtered.push("equipmentType");
+  if (!text(extracted.pickup?.city)) filtered.push("pickup.city");
+  if (!text(extracted.pickup?.region)) filtered.push("pickup.region");
+  if (!text(extracted.pickup?.facilityName)) filtered.push("pickup.facilityName");
+  if (!text(extracted.delivery?.city)) filtered.push("delivery.city");
+  if (!text(extracted.delivery?.region)) filtered.push("delivery.region");
+  if (!text(extracted.delivery?.facilityName)) filtered.push("delivery.facilityName");
   if (!pickup.appointmentFrom) filtered.push("pickup.appointment");
   if (!delivery.appointmentFrom) filtered.push("delivery.appointment");
   if (!text(extracted.broker?.phone)) filtered.push("broker.phone");
@@ -439,14 +448,14 @@ function proposalFromExtraction(
     : [];
   return {
     loadNumber: `#${loadNumber.replace(/^#/, "")}`,
-    broker: text(extracted.broker?.name, "Broker aniqlanmadi"),
+    broker: text(extracted.broker?.name),
     brokerContact: text(extracted.broker?.contactName),
     brokerPhone: text(extracted.broker?.phone),
     brokerEmail: text(extracted.broker?.email),
     brokerFax: text(extracted.broker?.fax),
     rate: number(extracted.brokerRate),
     distanceMiles: number(extracted.loadedMiles),
-    equipment: text(extracted.equipmentType, "Aniqlanmadi"),
+    equipment: text(extracted.equipmentType),
     freightMode: text(extracted.freightMode),
     temperatureFahrenheit: extracted.temperatureFahrenheit,
     palletCount: integer(extracted.palletCount),
@@ -455,11 +464,11 @@ function proposalFromExtraction(
     specialInstructions: text(extracted.specialInstructions),
     requirements,
     weightLbs: integer(extracted.weightLbs),
-    commodity: text(extracted.cargoDescription, "Yuk tavsifi aniqlanmadi"),
+    commodity: text(extracted.cargoDescription),
     origin: {
-      city: text(extracted.pickup.city, "Aniqlanmadi"),
-      state: text(extracted.pickup.region, "--"),
-      facility: text(extracted.pickup.facilityName, "Pickup"),
+      city: text(extracted.pickup.city),
+      state: text(extracted.pickup.region),
+      facility: text(extracted.pickup.facilityName),
       address: text(extracted.pickup.addressLine),
       postalCode: text(extracted.pickup.postalCode),
       appointmentFrom: pickup.appointmentFrom,
@@ -469,9 +478,9 @@ function proposalFromExtraction(
       contactPhone: text(extracted.pickup.contactPhone),
     },
     destination: {
-      city: text(extracted.delivery.city, "Aniqlanmadi"),
-      state: text(extracted.delivery.region, "--"),
-      facility: text(extracted.delivery.facilityName, "Delivery"),
+      city: text(extracted.delivery.city),
+      state: text(extracted.delivery.region),
+      facility: text(extracted.delivery.facilityName),
       address: text(extracted.delivery.addressLine),
       postalCode: text(extracted.delivery.postalCode),
       appointmentFrom: delivery.appointmentFrom,

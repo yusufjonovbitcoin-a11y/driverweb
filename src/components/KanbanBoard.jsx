@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { 
   Columns3,
   CalendarDays,
@@ -10,16 +11,7 @@ import {
   Trash2,
   LoaderCircle,
 } from 'lucide-react';
-
-const STAGES = [
-  { id: 'OFFER', title: 'Takliflar', dot: 'bg-amber-500' },
-  { id: 'ASSIGNED', title: 'Tayinlangan', dot: 'bg-blue-500' },
-  { id: 'IN_TRANSIT', title: 'Tranzitda', dot: 'bg-blue-700' },
-  { id: 'DELIVERED', title: 'Yetkazildi', dot: 'bg-emerald-500' },
-  { id: 'COMPLETED', title: 'Tugallangan', dot: 'bg-zinc-400' }
-];
-
-const CALENDAR_DAYS = ['Du', 'Se', 'Ch', 'Pa', 'Ju', 'Sh', 'Ya'];
+import { formatCurrency, formatDate } from '../i18n/format';
 
 function getClipboardImage(clipboardData) {
   const imageItem = Array.from(clipboardData?.items || []).find(
@@ -50,6 +42,18 @@ export default function KanbanBoard({
   onDropOnOffer,
   isAiProcessing = false,
 }) {
+  const { t } = useTranslation();
+  const stages = [
+    { id: 'OFFER', title: t('loadStatus.offer'), dot: 'bg-amber-500' },
+    { id: 'ASSIGNED', title: t('loadStatus.assigned'), dot: 'bg-blue-500' },
+    { id: 'IN_TRANSIT', title: t('loadStatus.in_transit'), dot: 'bg-blue-700' },
+    { id: 'DELIVERED', title: t('loadStatus.delivered'), dot: 'bg-emerald-500' },
+    { id: 'COMPLETED', title: t('loadStatus.completed'), dot: 'bg-zinc-400' },
+  ];
+  const calendarDays = Array.from({ length: 7 }, (_, index) => formatDate(
+    new Date(2026, 0, 5 + index),
+    { weekday: 'short' },
+  ));
   const [viewMode, setViewMode] = useState(() => (
     localStorage.getItem('drivex_load_view_mode') === 'kanban' ? 'kanban' : 'table'
   ));
@@ -163,8 +167,8 @@ export default function KanbanBoard({
 
   return (
     <div className="loads-workspace space-y-4">
-      <div className="stage-filters" aria-label="Yuk holati bo‘yicha filtr">
-        {[{ id: 'ALL', title: 'Barcha yuklar', dot: 'bg-zinc-400' }, ...STAGES].map(stage => (
+      <div className="stage-filters" aria-label={t('loads.statusFilter')}>
+        {[{ id: 'ALL', title: t('loads.all'), dot: 'bg-zinc-400' }, ...stages].map(stage => (
           <button
             key={stage.id}
             type="button"
@@ -179,7 +183,7 @@ export default function KanbanBoard({
       </div>
       <div className="board-toolbar">
         <div className="flex min-w-0 items-center gap-2 text-sm text-zinc-500">
-          <span>{stageFilter === 'ALL' ? 'Barcha reyslar' : STAGES.find(stage => stage.id === stageFilter)?.title} <span className="toolbar-count">{visibleLoads.length}</span></span>
+          <span>{stageFilter === 'ALL' ? t('loads.allTrips') : stages.find(stage => stage.id === stageFilter)?.title} <span className="toolbar-count">{visibleLoads.length}</span></span>
           {hasDateFilter && (
             <span className="truncate text-xs text-zinc-400" title={`Reys sanasi: ${filterStart}${filterStart !== filterEnd ? ` — ${filterEnd}` : ''}`}>
               {filterStart}{filterStart !== filterEnd ? ` — ${filterEnd}` : ''}
@@ -200,7 +204,7 @@ export default function KanbanBoard({
               }`}
             >
               <Columns3 className="w-4 h-4" />
-              <span>Doska</span>
+              <span>{t('loads.board')}</span>
             </button>
             <button
               onClick={() => selectViewMode('table')}
@@ -212,13 +216,13 @@ export default function KanbanBoard({
               }`}
             >
               <TableIcon className="w-4 h-4" />
-              <span>Jadval</span>
+              <span>{t('loads.table')}</span>
             </button>
           </div>
 
           <button
             type="button"
-            aria-label="Sana bo‘yicha filtrlash"
+            aria-label={t('loads.dateFilter')}
             aria-expanded={isDateFilterOpen}
             onClick={() => setIsDateFilterOpen((isOpen) => !isOpen)}
             className={`inline-flex h-9 w-9 items-center justify-center rounded-lg border transition-colors ${
@@ -226,7 +230,7 @@ export default function KanbanBoard({
                 ? 'border-teal-600 bg-teal-50 text-teal-700 dark:border-teal-500 dark:bg-teal-950/40 dark:text-teal-300'
                 : 'border-zinc-200 bg-white text-zinc-500 hover:border-zinc-300 hover:text-zinc-900 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100'
             }`}
-            title="Sana bo‘yicha filtrlash"
+            title={t('loads.dateFilter')}
           >
             <CalendarDays className="h-5 w-5" />
           </button>
@@ -234,8 +238,8 @@ export default function KanbanBoard({
           {isDateFilterOpen && (
             <div className="absolute right-0 top-11 z-30 w-80 rounded-xl border border-zinc-200 bg-white p-4 shadow-xl dark:border-zinc-800 dark:bg-zinc-900">
               <div className="mb-3">
-                <p className="text-sm font-bold text-zinc-900 dark:text-zinc-100">Reys sanasi</p>
-                <p className="mt-0.5 text-xs leading-5 text-zinc-500">Bir kunni tanlang. Oralig‘i uchun ikkinchi kunni bosing.</p>
+                <p className="text-sm font-bold text-zinc-900 dark:text-zinc-100">{t('loads.tripDate')}</p>
+                <p className="mt-0.5 text-xs leading-5 text-zinc-500">{t('loads.dateRangeHint')}</p>
               </div>
               <div className="rounded-lg border border-zinc-100 p-2 dark:border-zinc-800">
                 <div className="mb-2 flex items-center justify-between">
@@ -243,24 +247,24 @@ export default function KanbanBoard({
                     type="button"
                     onClick={() => setCalendarMonth((current) => shiftCalendarMonth(current, -1))}
                     className="inline-flex h-7 w-7 items-center justify-center rounded-md text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
-                    aria-label="Oldingi oy"
+                    aria-label={t('loads.previousMonth')}
                   >
                     <ChevronLeft className="h-4 w-4" />
                   </button>
                   <span className="text-sm font-bold text-zinc-900 dark:text-zinc-100">
-                    {new Date(calendarMonth.year, calendarMonth.month, 1).toLocaleDateString('uz-UZ', { month: 'long', year: 'numeric' })}
+                    {formatDate(new Date(calendarMonth.year, calendarMonth.month, 1), { month: 'long', year: 'numeric' })}
                   </span>
                   <button
                     type="button"
                     onClick={() => setCalendarMonth((current) => shiftCalendarMonth(current, 1))}
                     className="inline-flex h-7 w-7 items-center justify-center rounded-md text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
-                    aria-label="Keyingi oy"
+                    aria-label={t('loads.nextMonth')}
                   >
                     <ChevronRight className="h-4 w-4" />
                   </button>
                 </div>
                 <div className="grid grid-cols-7 gap-1 text-center">
-                  {CALENDAR_DAYS.map((dayName) => (
+                  {calendarDays.map((dayName) => (
                     <span key={dayName} className="py-1 text-[10px] font-bold text-zinc-400">{dayName}</span>
                   ))}
                   {Array.from({ length: (new Date(calendarMonth.year, calendarMonth.month, 1).getDay() + 6) % 7 }).map((_, index) => (
@@ -307,14 +311,14 @@ export default function KanbanBoard({
                   disabled={!hasDateFilter}
                   className="text-xs font-bold text-zinc-500 transition-colors hover:text-zinc-900 disabled:cursor-not-allowed disabled:opacity-40 dark:hover:text-zinc-100"
                 >
-                  Tozalash
+                  {t('loads.clear')}
                 </button>
                 <button
                   type="button"
                   onClick={() => setIsDateFilterOpen(false)}
                   className="rounded-lg bg-zinc-900 px-3 py-2 text-xs font-bold text-white transition-colors hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-950 dark:hover:bg-white"
                 >
-                  Ko‘rish
+                  {t('loads.view')}
                 </button>
               </div>
             </div>
@@ -325,7 +329,7 @@ export default function KanbanBoard({
       {/* 1. Kanban View */}
       {viewMode === 'kanban' && (
         <div className="kanban-columns">
-          {STAGES.filter(col => stageFilter === 'ALL' || col.id === stageFilter).map((col) => {
+          {stages.filter(col => stageFilter === 'ALL' || col.id === stageFilter).map((col) => {
             const colLoads = dateFilteredLoads.filter((l) => l.status === col.id);
             const isOfferCol = col.id === 'OFFER';
 
@@ -367,10 +371,10 @@ export default function KanbanBoard({
                       <UploadCloud className="w-8 h-8" />
                     </div>
                     <span className="text-lg font-bold text-zinc-900 dark:text-white">
-                      Surat yoki PDF ni tashlang!
+                      {t('loads.drop')}
                     </span>
                     <span className="text-sm text-blue-600 dark:text-blue-400 mt-1 font-medium max-w-[220px]">
-                      AI avtomatik tayyorlaydi, faqat drayverni tanlaysiz
+                      {t('loads.aiDropHint')}
                     </span>
                   </div>
                 )}
@@ -395,17 +399,17 @@ export default function KanbanBoard({
                         {...pasteTargetProps}
                         tabIndex={0}
                         className="flex-none min-h-[210px] border-2 border-dashed border-zinc-300 dark:border-zinc-700 hover:border-blue-500 dark:hover:border-blue-500 rounded-2xl flex flex-col items-center justify-center p-4 text-center bg-white/50 dark:bg-zinc-900/40 hover:bg-blue-50/20 dark:hover:bg-blue-950/20 cursor-pointer transition-all group select-none shadow-2xs"
-                        title="Surat yoki PDF tashlang yoki rasmni Ctrl+V qiling"
+                        title={t('loads.dropHint')}
                       >
                         <div className="w-16 h-16 rounded-2xl bg-blue-50 dark:bg-blue-950/60 border border-blue-200 dark:border-blue-900/60 flex items-center justify-center text-blue-600 dark:text-blue-400 mb-4 group-hover:scale-110 transition-transform shadow-xs">
                           <UploadCloud className="w-8 h-8" />
                         </div>
                         <span className="text-base font-bold text-zinc-900 dark:text-zinc-100 mb-1.5">
-                          Surat yoki PDF tashlang
+                          {t('loads.drop')}
                         </span>
                         <span className="inline-flex items-center space-x-2 px-4 py-2 rounded-xl bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-950 text-sm font-bold shadow-xs group-hover:bg-blue-600 group-hover:text-white transition-colors">
                           <Sparkles className="w-4 h-4 text-amber-400" />
-                          <span>Fayl tanlash</span>
+                          <span>{t('loads.chooseFile')}</span>
                         </span>
                         <input
                           type="file"
@@ -420,7 +424,7 @@ export default function KanbanBoard({
                       </label>
                     ) : (
                       <div className="h-32 flex items-center justify-center border border-dashed border-zinc-200 dark:border-zinc-800/50 rounded-xl text-zinc-400 text-sm font-medium">
-                        Bo'sh
+                        {t('common.notAvailable')}
                       </div>
                     )
                   ) : (
@@ -431,10 +435,10 @@ export default function KanbanBoard({
                           {...pasteTargetProps}
                           tabIndex={0}
                           className="flex items-center justify-center space-x-2 py-3 px-3.5 rounded-xl border-2 border-dashed border-blue-400/60 dark:border-blue-600/50 hover:border-blue-500 text-blue-600 dark:text-blue-400 bg-blue-50/40 dark:bg-blue-950/20 cursor-pointer text-sm font-bold transition-all shadow-xs group"
-                          title="Yana surat/PDF tashlang yoki rasmni Ctrl+V qiling"
+                          title={t('loads.dropMore')}
                         >
                           <UploadCloud className="w-4 h-4 group-hover:scale-110 transition-transform" />
-                          <span>+ Surat/PDF yoki Ctrl+V (AI)</span>
+                          <span>{t('loads.dropMoreAi')}</span>
                           <input
                             type="file"
                             accept=".pdf,image/*"
@@ -463,15 +467,15 @@ export default function KanbanBoard({
                               </span>
                               <div className="flex items-center gap-1.5">
                                 <span className="font-mono font-extrabold text-base text-zinc-900 dark:text-zinc-100 whitespace-nowrap">
-                                  ${load.rate?.toLocaleString()}
+                                  {formatCurrency(load.rate)}
                                 </span>
                                 {canDeleteLoad(load) && (
                                   <button
                                     type="button"
                                     onClick={() => setLoadPendingDelete(load)}
                                     className="inline-flex h-7 w-7 items-center justify-center rounded-lg text-zinc-400 transition-colors hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-950/40 dark:hover:text-red-400"
-                                    aria-label={`${load.loadNumber} yukini o‘chirish`}
-                                    title="Yukni o‘chirish"
+                                    aria-label={t('loads.deleteNamed', { number: load.loadNumber })}
+                                    title={t('loads.deleteTitle')}
                                   >
                                     <Trash2 className="h-3.5 w-3.5" />
                                   </button>
@@ -481,41 +485,41 @@ export default function KanbanBoard({
 
                             {/* Route: Clear & Bold (No truncated dots!) */}
                             <div className="text-sm font-bold text-zinc-900 dark:text-zinc-100 leading-snug">
-                              {load.origin.city}, {load.origin.state} ➔ {load.destination.city}, {load.destination.state}
+                              {load.origin.city || t('common.notProvided')}, {load.origin.state} ➔ {load.destination.city || t('common.notProvided')}, {load.destination.state}
                             </div>
 
                             {/* Subtitle: Broker & Specs */}
                             <div className="text-xs text-zinc-500 dark:text-zinc-400 font-medium flex items-center justify-between">
-                              <span className="truncate mr-1">{load.broker}</span>
-                              <span className="whitespace-nowrap font-mono">{load.equipment} • {load.distanceMiles}mi</span>
+                              <span className="truncate mr-1">{load.broker || t('inbox.brokerMissing')}</span>
+                              <span className="whitespace-nowrap font-mono">{load.equipment || t('common.notProvided')} • {load.distanceMiles}mi</span>
                             </div>
 
                             {/* Bottom Row: Driver & Action */}
                             <div className="pt-2 border-t border-zinc-100 dark:border-zinc-800/80 flex items-center justify-between">
                               {load.targetDriverIds && load.targetDriverIds.length > 1 && load.status === 'OFFER' ? (
                                 <span className="text-xs text-blue-600 dark:text-blue-400 font-bold">
-                                  {load.targetDriverIds.length} drayverga taklif
+                                  {t('loads.offeredDrivers', { count: load.targetDriverIds.length })}
                                 </span>
                               ) : (
                                 <span className="text-xs font-bold text-zinc-800 dark:text-zinc-200 truncate mr-1">
-                                  {driver?.name || 'Tayinlanmagan'}
+                                  {driver?.name || t('loads.unassigned')}
                                 </span>
                               )}
 
                               {/* Single Action Button */}
                               {col.id === 'OFFER' && (
                                 <span className="text-xs text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/40 px-2.5 py-1 rounded-lg font-bold whitespace-nowrap">
-                                  Javob kutilmoqda
+                                  {t('loads.waitingResponse')}
                                 </span>
                               )}
                               {col.id === 'ASSIGNED' && (
                                 <span className="text-xs text-blue-700 dark:text-blue-300 bg-blue-50 dark:bg-blue-950/40 px-2.5 py-1 rounded-lg font-bold whitespace-nowrap">
-                                  Qabul qilindi
+                                  {t('loads.accepted')}
                                 </span>
                               )}
                               {col.id === 'IN_TRANSIT' && (
                                 <span className="text-xs text-purple-700 dark:text-purple-300 bg-purple-50 dark:bg-purple-950/40 px-2.5 py-1 rounded-lg font-bold whitespace-nowrap">
-                                  Driver yo‘lda
+                                  {t('loads.driverEnRoute')}
                                 </span>
                               )}
                               {col.id === 'DELIVERED' && (
@@ -523,7 +527,7 @@ export default function KanbanBoard({
                                   onClick={() => onOpenDocs(load)}
                                   className="text-xs text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40 hover:bg-emerald-100 px-2.5 py-1 rounded-lg font-bold transition-colors whitespace-nowrap"
                                 >
-                                  Hujjatlar
+                                  {t('nav.documents')}
                                 </button>
                               )}
                               {col.id === 'COMPLETED' && (
@@ -531,7 +535,7 @@ export default function KanbanBoard({
                                   onClick={() => onOpenDocs(load)}
                                   className="text-xs text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 font-mono font-bold transition-colors whitespace-nowrap"
                                 >
-                                  Invoys
+                                  {t('documents.invoice')}
                                 </button>
                               )}
                             </div>
@@ -585,21 +589,21 @@ export default function KanbanBoard({
               </div>
               <div>
                 <div className="font-bold text-sm text-zinc-900 dark:text-zinc-100 flex items-center space-x-2">
-                  <span>Hujjatdan yuk yaratish</span>
+                  <span>{t('loads.createFromDocument')}</span>
                   <span className="inline-flex items-center space-x-1 px-2 py-0.5 rounded-full bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400 text-[10px] font-mono font-bold">
                     <Sparkles className="w-3 h-3" />
                     <span>AI</span>
                   </span>
                 </div>
                 <p className="text-xs text-zinc-400">
-                  Surat yoki PDF tashlang yoki rasmni Ctrl+V qiling. AI taklifni tayyorlaydi.
+                  {t('loads.dropHint')}
                 </p>
               </div>
             </div>
 
             <label className="cursor-pointer inline-flex items-center space-x-1.5 px-4 py-2 rounded-xl bg-zinc-900 hover:bg-zinc-800 text-white dark:bg-zinc-100 dark:hover:bg-white dark:text-zinc-950 text-xs font-bold transition-colors shadow-2xs flex-shrink-0">
               <UploadCloud className="w-3.5 h-3.5" />
-              <span>Fayl tanlash</span>
+              <span>{t('loads.chooseFile')}</span>
               <input
                 type="file"
                 accept="image/*,application/pdf"
@@ -617,20 +621,20 @@ export default function KanbanBoard({
           <table className="w-full text-left border-collapse min-w-[800px]">
             <thead className="bg-zinc-50/80 dark:bg-zinc-900/80 border-b border-zinc-200 dark:border-zinc-800 text-zinc-500 dark:text-zinc-400 font-mono text-xs font-bold uppercase tracking-wider">
               <tr>
-                <th className="py-3.5 px-4">Yuk #</th>
-                <th className="py-3.5 px-4">Holat</th>
-                <th className="py-3.5 px-4">Broker</th>
-                <th className="py-3.5 px-4">Yo'nalish</th>
-                <th className="py-3.5 px-4">Texnika</th>
-                <th className="py-3.5 px-4">Haydovchi</th>
-                <th className="py-3.5 px-4 text-right">Stavka</th>
-                <th className="py-3.5 px-4 text-right">Harakat</th>
+                  <th className="py-3.5 px-4">{t('loads.loadNumber')}</th>
+                  <th className="py-3.5 px-4">{t('common.status')}</th>
+                  <th className="py-3.5 px-4">{t('loads.broker')}</th>
+                  <th className="py-3.5 px-4">{t('loads.route')}</th>
+                  <th className="py-3.5 px-4">{t('loads.equipment')}</th>
+                  <th className="py-3.5 px-4">{t('drivers.driver')}</th>
+                  <th className="py-3.5 px-4 text-right">{t('loads.rate')}</th>
+                  <th className="py-3.5 px-4 text-right">{t('common.actions')}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-zinc-200 dark:divide-zinc-800 text-sm">
               {visibleLoads.map((load) => {
                 const driver = getDriver(load.driverId);
-                const stage = STAGES.find(s => s.id === load.status);
+                const stage = stages.find(s => s.id === load.status);
 
                 return (
                   <tr key={load.id} className="hover:bg-zinc-50 dark:hover:bg-zinc-800/40 transition-colors">
@@ -644,25 +648,25 @@ export default function KanbanBoard({
                       </span>
                     </td>
                     <td className="py-3 px-3 text-zinc-700 dark:text-zinc-300 font-medium">
-                      {load.broker}
+                      {load.broker || t('inbox.brokerMissing')}
                     </td>
                     <td className="py-3 px-3 font-bold text-zinc-900 dark:text-zinc-100">
-                      {load.origin.city}, {load.origin.state} ➔ {load.destination.city}, {load.destination.state}
+                      {load.origin.city || t('common.notProvided')}, {load.origin.state} ➔ {load.destination.city || t('common.notProvided')}, {load.destination.state}
                     </td>
                     <td className="py-3 px-3 text-zinc-500 font-medium text-sm">
-                      {load.equipment}
+                      {load.equipment || t('common.notProvided')}
                     </td>
                     <td className="py-3 px-3 text-zinc-700 dark:text-zinc-300 font-bold">
                       {load.targetDriverIds && load.targetDriverIds.length > 1 && load.status === 'OFFER' ? (
                         <span className="text-blue-600 dark:text-blue-400">
-                          {load.targetDriverIds.length} drayverga taklif
+                          {t('loads.offeredDrivers', { count: load.targetDriverIds.length })}
                         </span>
                       ) : (
-                        driver?.name || 'Biriktirilmagan'
+                        driver?.name || t('loads.unassigned')
                       )}
                     </td>
                     <td className="py-3 px-3 text-right font-mono font-bold text-zinc-900 dark:text-zinc-100">
-                      ${load.rate?.toLocaleString()}
+                      {formatCurrency(load.rate)}
                     </td>
                     <td className="py-3 px-3 text-right">
                       <div className="flex items-center justify-end gap-2">
@@ -670,15 +674,15 @@ export default function KanbanBoard({
                           onClick={() => onOpenDocs(load)}
                           className="text-sm font-bold text-zinc-700 dark:text-zinc-300 hover:text-zinc-900 dark:hover:text-zinc-100 px-3.5 py-1.5 bg-zinc-100 dark:bg-zinc-800 rounded-lg hover:bg-zinc-200 transition-colors"
                         >
-                          Hujjatlar
+                          {t('nav.documents')}
                         </button>
                         {canDeleteLoad(load) && (
                           <button
                             type="button"
                             onClick={() => setLoadPendingDelete(load)}
                             className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-zinc-400 transition-colors hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-950/40 dark:hover:text-red-400"
-                            aria-label={`${load.loadNumber} yukini o‘chirish`}
-                            title="Yukni o‘chirish"
+                            aria-label={t('loads.deleteNamed', { number: load.loadNumber })}
+                            title={t('loads.deleteTitle')}
                           >
                             <Trash2 className="h-4 w-4" />
                           </button>
@@ -690,7 +694,7 @@ export default function KanbanBoard({
               })}
               {visibleLoads.length === 0 && (
                 <tr><td colSpan={8} className="empty-table-cell">
-                  <TruckEmptyState />
+                  <TruckEmptyState t={t} />
                 </td></tr>
               )}
             </tbody>
@@ -711,10 +715,10 @@ export default function KanbanBoard({
               <Trash2 className="h-5 w-5" />
             </div>
             <h2 id="delete-load-title" className="text-lg font-extrabold text-zinc-950 dark:text-white">
-              {loadPendingDelete.loadNumber} yukini o‘chirish
+              {t('loads.deleteNamed', { number: loadPendingDelete.loadNumber })}
             </h2>
             <p className="mt-2 text-sm leading-6 text-zinc-600 dark:text-zinc-300">
-              Yuk va unga yuborilgan takliflar o‘chadi. Original yuklangan fayl va audit tarixi saqlanadi.
+              {t('loads.deleteWarning')}
             </p>
             <div className="mt-6 flex items-center justify-end gap-2">
               <button
@@ -723,7 +727,7 @@ export default function KanbanBoard({
                 disabled={isDeleting}
                 className="rounded-xl px-4 py-2.5 text-sm font-bold text-zinc-700 transition-colors hover:bg-zinc-100 disabled:opacity-50 dark:text-zinc-200 dark:hover:bg-zinc-800"
               >
-                Bekor qilish
+                {t('common.cancel')}
               </button>
               <button
                 type="button"
@@ -732,7 +736,7 @@ export default function KanbanBoard({
                 className="inline-flex min-w-36 items-center justify-center gap-2 rounded-xl bg-red-600 px-4 py-2.5 text-sm font-bold text-white transition-colors hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {isDeleting && <LoaderCircle className="h-4 w-4 animate-spin" />}
-                <span>{isDeleting ? 'O‘chirilmoqda...' : 'Yukni o‘chirish'}</span>
+                <span>{isDeleting ? t('loads.deleting') : t('loads.deleteTitle')}</span>
               </button>
             </div>
           </div>
@@ -742,6 +746,6 @@ export default function KanbanBoard({
   );
 }
 
-function TruckEmptyState() {
-  return <div className="empty-table-state"><Columns3 size={24} aria-hidden="true" /><strong>Hozircha yuklar yo‘q</strong><span>Yangi yuk yarating yoki boshqa holatni tanlang.</span></div>;
+function TruckEmptyState({ t }) {
+  return <div className="empty-table-state"><Columns3 size={24} aria-hidden="true" /><strong>{t('loads.empty')}</strong><span>{t('loads.emptyHint')}</span></div>;
 }

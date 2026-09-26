@@ -1,17 +1,13 @@
 import React, { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   AlertTriangle, ArrowLeft, Bot, CheckCircle2, FileText, Inbox, LoaderCircle,
   Mail, Paperclip, Send, Star,
 } from 'lucide-react';
 import { fetchBrokerInbox, forwardGmailAttachmentToDriver, markBrokerMessageRead } from '../services/operationsService';
-
-const statusLabels = {
-  queued: 'Navbatda',
-  processing: 'AI tekshirmoqda',
-  extracted: 'Tayyor',
-  needs_review: 'Tekshirish kerak',
-  parse_failed: 'O‘qib bo‘lmadi',
-};
+import { formatDate, formatNumber, formatTime } from '../i18n/format';
+import { ingestionStatusLabel } from '../i18n/labels';
+import { localizedError } from '../i18n/errors';
 
 function StatusIcon({ status }) {
   if (status === 'extracted') return <CheckCircle2 className="w-4 h-4 text-emerald-500" />;
@@ -19,8 +15,8 @@ function StatusIcon({ status }) {
   return <LoaderCircle className={`w-4 h-4 text-blue-500 ${status === 'processing' ? 'animate-spin' : ''}`} />;
 }
 
-function senderLabel(email = '') {
-  const localPart = email.split('@')[0] || 'Noma’lum';
+function senderLabel(email = '', t) {
+  const localPart = email.split('@')[0] || t('common.unknown');
   return localPart
     .replace(/[._-]+/g, ' ')
     .replace(/\b\w/g, (letter) => letter.toUpperCase());
@@ -30,44 +26,43 @@ function formatInboxTime(value) {
   const date = new Date(value);
   const today = new Date();
   if (date.toDateString() === today.toDateString()) {
-    return date.toLocaleTimeString('uz-UZ', { hour: '2-digit', minute: '2-digit' });
+    return formatTime(date);
   }
-  const months = ['yan', 'fev', 'mar', 'apr', 'may', 'iyun', 'iyul', 'avg', 'sen', 'okt', 'noy', 'dek'];
-  return `${date.getDate()} ${months[date.getMonth()]}`;
+  return formatDate(date, { day: 'numeric', month: 'short' });
 }
 
-function messagePreview(item) {
+function messagePreview(item, t) {
   const proposal = item.extraction?.result;
   const origin = [proposal?.origin?.city, proposal?.origin?.state].filter(Boolean).join(', ');
   const destination = [proposal?.destination?.city, proposal?.destination?.state].filter(Boolean).join(', ');
-  if (origin || destination) return `${origin || 'Pickup'} → ${destination || 'Delivery'}`;
-  if (item.error_message) return item.error_message;
-  if (item.attachments?.length) return `${item.attachments.length} ta biriktirma`;
-  return statusLabels[item.status] || 'Gmail xabari';
+  if (origin || destination) return `${origin || t('inbox.pickup')} → ${destination || t('inbox.delivery')}`;
+  if (item.error_message) return t('inbox.processingFailed');
+  if (item.attachments?.length) return t('inbox.attachment', { count: item.attachments.length });
+  return ingestionStatusLabel(t, item.status) || t('inbox.gmailMessage');
 }
 
-function ProposalPreview({ proposal }) {
-  const origin = [proposal.origin?.city, proposal.origin?.state].filter(Boolean).join(', ') || 'Pickup aniqlanmadi';
-  const destination = [proposal.destination?.city, proposal.destination?.state].filter(Boolean).join(', ') || 'Delivery aniqlanmadi';
+function ProposalPreview({ proposal, t }) {
+  const origin = [proposal.origin?.city, proposal.origin?.state].filter(Boolean).join(', ') || t('inbox.pickupMissing');
+  const destination = [proposal.destination?.city, proposal.destination?.state].filter(Boolean).join(', ') || t('inbox.deliveryMissing');
   return (
     <div className="space-y-4 rounded-2xl border border-emerald-200 bg-emerald-50/60 p-5 dark:border-emerald-900 dark:bg-emerald-950/20">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <p className="text-[11px] font-bold uppercase tracking-wider text-emerald-700 dark:text-emerald-400">AI tayyorlagan taklif</p>
+          <p className="text-[11px] font-bold uppercase tracking-wider text-emerald-700 dark:text-emerald-400">{t('inbox.aiProposal')}</p>
           <h4 className="mt-1 text-lg font-black">{origin} → {destination}</h4>
-          <p className="mt-1 text-xs text-zinc-500">{proposal.loadNumber || 'Load raqami aniqlanmadi'} · {proposal.broker || 'Broker aniqlanmadi'}</p>
+          <p className="mt-1 text-xs text-zinc-500">{proposal.loadNumber || t('inbox.loadNumberMissing')} · {proposal.broker || t('inbox.brokerMissing')}</p>
         </div>
-        <p className="text-xl font-black">${Number(proposal.rate || 0).toLocaleString()}</p>
+        <p className="text-xl font-black">${formatNumber(proposal.rate || 0)}</p>
       </div>
       <div className="grid grid-cols-2 gap-3 text-sm md:grid-cols-4">
-        <div><p className="text-xs text-zinc-500">Texnika</p><p className="font-bold">{proposal.equipment || '—'}</p></div>
-        <div><p className="text-xs text-zinc-500">Masofa</p><p className="font-bold">{proposal.distanceMiles ? `${proposal.distanceMiles} mi` : '—'}</p></div>
-        <div><p className="text-xs text-zinc-500">Og‘irlik</p><p className="font-bold">{proposal.weightLbs ? `${Number(proposal.weightLbs).toLocaleString()} lbs` : '—'}</p></div>
-        <div><p className="text-xs text-zinc-500">Ishonchlilik</p><p className="font-bold">{proposal.confidence != null ? `${Math.round(Number(proposal.confidence) * 100)}%` : '—'}</p></div>
+        <div><p className="text-xs text-zinc-500">{t('loads.equipment')}</p><p className="font-bold">{proposal.equipment || '—'}</p></div>
+        <div><p className="text-xs text-zinc-500">{t('loads.distance')}</p><p className="font-bold">{proposal.distanceMiles ? `${formatNumber(proposal.distanceMiles)} mi` : '—'}</p></div>
+        <div><p className="text-xs text-zinc-500">{t('loads.weight')}</p><p className="font-bold">{proposal.weightLbs ? `${formatNumber(proposal.weightLbs)} lbs` : '—'}</p></div>
+        <div><p className="text-xs text-zinc-500">{t('inbox.confidence')}</p><p className="font-bold">{proposal.confidence != null ? `${Math.round(Number(proposal.confidence) * 100)}%` : '—'}</p></div>
       </div>
       {proposal.missingFields?.length > 0 && (
         <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-200">
-          Tekshirish kerak: {proposal.missingFields.join(', ')}
+          {t('inbox.needsReview')}: {proposal.missingFields.join(', ')}
         </div>
       )}
     </div>
@@ -75,6 +70,7 @@ function ProposalPreview({ proposal }) {
 }
 
 export default function BrokerInbox({ drivers, onCreateLoad, onUnreadChange }) {
+  const { t } = useTranslation();
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -96,7 +92,7 @@ export default function BrokerInbox({ drivers, onCreateLoad, onUnreadChange }) {
         setSelectedId((current) => data.some((item) => item.id === current) ? current : null);
         setError('');
       } catch (requestError) {
-        if (active) setError(requestError.message);
+        if (active) setError(localizedError(t, requestError, 'errors.inboxLoad'));
       } finally {
         inFlight = false;
         if (active && initial) setLoading(false);
@@ -108,7 +104,7 @@ export default function BrokerInbox({ drivers, onCreateLoad, onUnreadChange }) {
       active = false;
       window.clearInterval(intervalId);
     };
-  }, []);
+  }, [t]);
 
   const selected = items.find((item) => item.id === selectedId) || null;
   const availableDrivers = drivers.filter((driver) => driver.status !== 'SUSPENDED');
@@ -128,7 +124,7 @@ export default function BrokerInbox({ drivers, onCreateLoad, onUnreadChange }) {
 
   const forwardAttachment = async (attachment) => {
     if (!selectedDriverId) {
-      setForwardMessage('Avval driverni tanlang.');
+      setForwardMessage(t('inbox.selectDriverFirst'));
       return;
     }
     setForwardingAttachmentId(attachment.id);
@@ -136,9 +132,9 @@ export default function BrokerInbox({ drivers, onCreateLoad, onUnreadChange }) {
     try {
       await forwardGmailAttachmentToDriver({ attachmentId: attachment.id, driverId: selectedDriverId });
       const driver = availableDrivers.find((item) => item.id === selectedDriverId);
-      setForwardMessage(`${attachment.file_name} ${driver?.name || 'driver'} chatiga yuborildi.`);
+      setForwardMessage(t('inbox.forwarded', { file: attachment.file_name, driver: driver?.name || t('roles.driver') }));
     } catch (forwardError) {
-      setForwardMessage(forwardError.message || 'PDF faylni driverga yuborib bo‘lmadi.');
+      setForwardMessage(localizedError(t, forwardError, 'errors.forwardAttachment'));
     } finally {
       setForwardingAttachmentId(null);
     }
@@ -162,7 +158,7 @@ export default function BrokerInbox({ drivers, onCreateLoad, onUnreadChange }) {
             className="inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-bold text-zinc-600 transition-colors hover:bg-zinc-100 hover:text-zinc-950 dark:text-zinc-300 dark:hover:bg-zinc-800 dark:hover:text-white"
           >
             <ArrowLeft className="h-4 w-4" />
-            Inboxga qaytish
+            {t('inbox.back')}
           </button>
         </div>
 
@@ -171,25 +167,25 @@ export default function BrokerInbox({ drivers, onCreateLoad, onUnreadChange }) {
             <div className="flex flex-wrap items-start justify-between gap-4">
               <div className="min-w-0">
                 <h2 className="text-2xl font-black tracking-tight text-zinc-950 dark:text-white">
-                  {selected.subject || 'Mavzusiz xabar'}
+                  {selected.subject || t('inbox.noSubject')}
                 </h2>
                 <div className="mt-4 flex items-center gap-3">
                   <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-teal-700 text-sm font-black text-white">
-                    {senderLabel(selected.from_email).charAt(0)}
+                    {senderLabel(selected.from_email, t).charAt(0)}
                   </span>
                   <div className="min-w-0">
-                    <p className="truncate text-sm font-bold text-zinc-900 dark:text-zinc-100">{senderLabel(selected.from_email)}</p>
+                    <p className="truncate text-sm font-bold text-zinc-900 dark:text-zinc-100">{senderLabel(selected.from_email, t)}</p>
                     <p className="truncate text-xs text-zinc-500">{selected.from_email}</p>
                   </div>
                 </div>
               </div>
               <div className="text-right">
                 <time className="block text-xs font-medium text-zinc-500">
-                  {new Date(selected.received_at).toLocaleString('uz-UZ')}
+                  {formatDate(selected.received_at, { dateStyle: 'medium', timeStyle: 'short' })}
                 </time>
                 <span className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-zinc-100 px-3 py-1 text-xs font-bold text-zinc-700 dark:bg-zinc-800 dark:text-zinc-200">
                   <StatusIcon status={selected.status} />
-                  {statusLabels[selected.status] || selected.status}
+                  {ingestionStatusLabel(t, selected.status)}
                 </span>
               </div>
             </div>
@@ -209,14 +205,14 @@ export default function BrokerInbox({ drivers, onCreateLoad, onUnreadChange }) {
 
           <section className="rounded-2xl border border-zinc-200 bg-zinc-50/70 p-5 dark:border-zinc-800 dark:bg-zinc-950/50">
             <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wide text-zinc-500">
-              <Bot className="h-4 w-4" /> AI tahlili
+              <Bot className="h-4 w-4" /> {t('inbox.aiAnalysis')}
             </div>
             <div className="mt-4">
               {selected.extraction?.result && Object.keys(selected.extraction.result).length > 0 ? (
-                <ProposalPreview proposal={selected.extraction.result} />
+                <ProposalPreview proposal={selected.extraction.result} t={t} />
               ) : (
                 <div className="rounded-xl border border-dashed border-zinc-300 p-6 text-center text-sm text-zinc-500 dark:border-zinc-700">
-                  {selected.status === 'processing' ? 'AI xabarni tahlil qilmoqda…' : 'Bu xatda tayyor AI taklifi yo‘q.'}
+                  {selected.status === 'processing' ? t('inbox.aiProcessing') : t('inbox.noProposal')}
                 </div>
               )}
             </div>
@@ -225,22 +221,22 @@ export default function BrokerInbox({ drivers, onCreateLoad, onUnreadChange }) {
           {selected.error_message && (
             <div className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-200">
               <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-              <span>{selected.error_message}</span>
+              <span>{t('inbox.processingFailed')}</span>
             </div>
           )}
 
           <section className="space-y-3 rounded-2xl border border-zinc-200 p-5 dark:border-zinc-800">
             <div>
-              <h3 className="text-sm font-black">PDF’ni driverga yuborish</h3>
-              <p className="mt-1 text-xs text-zinc-500">Driverni dispecher tanlaydi. Fayl uning chatiga yuboriladi.</p>
+              <h3 className="text-sm font-black">{t('inbox.forwardPdf')}</h3>
+              <p className="mt-1 text-xs text-zinc-500">{t('inbox.forwardHint')}</p>
             </div>
             <select
               value={selectedDriverId}
               onChange={(event) => { setSelectedDriverId(event.target.value); setForwardMessage(''); }}
               className="w-full rounded-xl border border-zinc-200 bg-white px-3 py-2.5 text-sm font-medium outline-none focus:border-zinc-500 dark:border-zinc-700 dark:bg-zinc-900"
-              aria-label="PDF yuboriladigan driver"
+              aria-label={t('inbox.selectDriver')}
             >
-              <option value="">Driverni tanlang</option>
+              <option value="">{t('inbox.selectDriver')}</option>
               {availableDrivers.map((driver) => <option key={driver.id} value={driver.id}>{driver.name}</option>)}
             </select>
             {pdfAttachments.map((attachment) => (
@@ -249,7 +245,7 @@ export default function BrokerInbox({ drivers, onCreateLoad, onUnreadChange }) {
                   <FileText className="h-5 w-5 shrink-0 text-red-500" />
                   <div className="min-w-0">
                     <p className="truncate text-sm font-semibold">{attachment.file_name}</p>
-                    <p className="text-xs text-zinc-500">{attachment.size_bytes ? `${Math.ceil(attachment.size_bytes / 1024)} KB` : 'Hajmi noma’lum'}</p>
+                    <p className="text-xs text-zinc-500">{attachment.size_bytes ? `${Math.ceil(attachment.size_bytes / 1024)} KB` : t('inbox.unknownSize')}</p>
                   </div>
                 </div>
                 <button
@@ -259,11 +255,11 @@ export default function BrokerInbox({ drivers, onCreateLoad, onUnreadChange }) {
                   className="inline-flex items-center gap-2 rounded-lg bg-zinc-900 px-3 py-2 text-xs font-bold text-white disabled:cursor-not-allowed disabled:opacity-40 dark:bg-white dark:text-zinc-950"
                 >
                   {forwardingAttachmentId === attachment.id ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
-                  Driverga yuborish
+                  {t('inbox.forward')}
                 </button>
               </div>
             ))}
-            {pdfAttachments.length === 0 && <p className="text-sm text-zinc-500">Bu xatga PDF biriktirilmagan.</p>}
+            {pdfAttachments.length === 0 && <p className="text-sm text-zinc-500">{t('inbox.noPdf')}</p>}
             {forwardMessage && <p className="text-xs font-medium text-zinc-600 dark:text-zinc-300">{forwardMessage}</p>}
           </section>
 
@@ -273,7 +269,7 @@ export default function BrokerInbox({ drivers, onCreateLoad, onUnreadChange }) {
             disabled={!selected.extraction?.result || Object.keys(selected.extraction.result).length === 0}
             className="rounded-xl bg-zinc-900 px-5 py-2.5 text-sm font-bold text-white disabled:opacity-40 dark:bg-white dark:text-zinc-950"
           >
-            Taklifni ko‘rib chiqish
+            {t('inbox.reviewProposal')}
           </button>
         </article>
       </div>
@@ -285,22 +281,22 @@ export default function BrokerInbox({ drivers, onCreateLoad, onUnreadChange }) {
       <section>
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-zinc-200 px-5 py-4 dark:border-zinc-800 sm:px-6">
           <div>
-            <h2 className="flex items-center gap-2 text-lg font-black"><Inbox className="h-5 w-5" /> Broker Inbox</h2>
-            <p className="mt-1 text-xs text-zinc-500">Gmail xatlari, PDF hujjatlar va AI tayyorlagan takliflar</p>
+            <h2 className="flex items-center gap-2 text-lg font-black"><Inbox className="h-5 w-5" /> {t('inbox.title')}</h2>
+            <p className="mt-1 text-xs text-zinc-500">{t('inbox.subtitle')}</p>
           </div>
           <span className="rounded-full bg-zinc-100 px-3 py-1 text-xs font-bold text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300">
-            {items.length} ta xabar
+            {t('inbox.messageCount', { count: items.length })}
           </span>
         </div>
         {error && <div className="m-4 rounded-xl bg-red-50 p-3 text-sm text-red-700">{error}</div>}
         {items.length === 0 ? (
           <div className="p-10 text-center text-zinc-500">
             <Mail className="mx-auto mb-3 h-9 w-9 text-zinc-300" />
-            <p className="font-bold text-zinc-700 dark:text-zinc-200">Hozircha broker xabari yo‘q</p>
-            <p className="mt-1 text-xs">IMAP ulangach yangi Gmail xatlari shu yerga keladi.</p>
+            <p className="font-bold text-zinc-700 dark:text-zinc-200">{t('inbox.empty')}</p>
+            <p className="mt-1 text-xs">{t('inbox.emptyHint')}</p>
           </div>
         ) : (
-          <div aria-label="Broker xatlari">
+          <div aria-label={t('inbox.messages')}>
             {items.map((item) => (
               <button
                 key={item.id}
@@ -311,15 +307,15 @@ export default function BrokerInbox({ drivers, onCreateLoad, onUnreadChange }) {
                     ? 'bg-zinc-50/70 hover:bg-zinc-100 dark:bg-zinc-900 dark:hover:bg-zinc-800'
                     : 'bg-white font-bold hover:bg-zinc-50 dark:bg-zinc-950 dark:hover:bg-zinc-900'
                 }`}
-                aria-label={`${senderLabel(item.from_email)}: ${item.subject || 'Mavzusiz xabar'}`}
+                aria-label={`${senderLabel(item.from_email, t)}: ${item.subject || t('inbox.noSubject')}`}
               >
                 <span aria-hidden="true" className="h-3.5 w-3.5 rounded-sm border border-zinc-300 bg-white dark:border-zinc-600 dark:bg-zinc-900" />
                 <Star aria-hidden="true" className="h-4 w-4 text-zinc-300 dark:text-zinc-600" />
-                <span className="truncate text-sm text-zinc-800 dark:text-zinc-200">{senderLabel(item.from_email)}</span>
+                <span className="truncate text-sm text-zinc-800 dark:text-zinc-200">{senderLabel(item.from_email, t)}</span>
                 <span className="min-w-0">
                   <span className="flex min-w-0 items-baseline gap-1.5">
-                    <span className="truncate text-sm text-zinc-900 dark:text-zinc-100">{item.subject || 'Mavzusiz xabar'}</span>
-                    <span className="hidden truncate text-sm font-normal text-zinc-500 md:inline">– {messagePreview(item)}</span>
+                    <span className="truncate text-sm text-zinc-900 dark:text-zinc-100">{item.subject || t('inbox.noSubject')}</span>
+                    <span className="hidden truncate text-sm font-normal text-zinc-500 md:inline">– {messagePreview(item, t)}</span>
                   </span>
                   {item.attachments?.length > 0 && (
                     <span className="mt-1.5 flex min-w-0 flex-wrap gap-1.5">

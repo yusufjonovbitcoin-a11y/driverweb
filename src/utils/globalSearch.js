@@ -1,20 +1,39 @@
-const PAGE_TARGETS = [
-  { id: 'kanban', title: 'Yuklar', keywords: ['reyslar', 'yuklar', 'doska', 'kanban'] },
-  { id: 'drivers', title: 'Haydovchilar', keywords: ['haydovchilar', 'drayverlar', 'drivers'] },
-  { id: 'map', title: 'Xarita', keywords: ['xarita', 'joylashuv', 'lokatsiya', 'map'] },
-  { id: 'docs', title: 'Hujjatlar', keywords: ['hujjatlar', 'rate con', 'ratecon', 'bol', 'pod', 'documents'] },
-  { id: 'inbox', title: 'Broker Inbox', keywords: ['broker', 'inbox', 'xatlar', 'email', 'gmail'] },
-  { id: 'chat', title: 'Chat', keywords: ['chat', 'xabarlar', 'suhbat'] },
-  { id: 'profile', title: 'Profil', keywords: ['profil', 'sozlamalar', 'kompaniya', 'integratsiya'] },
-];
-
-const STATUS_LABELS = {
-  OFFER: 'taklif',
-  ASSIGNED: 'tayinlangan',
-  IN_TRANSIT: 'tranzitda',
-  DELIVERED: 'yetkazilgan',
-  COMPLETED: 'tugallangan',
+const FALLBACK_TRANSLATIONS = {
+  'nav.loads': 'Yuklar',
+  'nav.drivers': 'Haydovchilar',
+  'nav.map': 'Xarita',
+  'nav.documents': 'Hujjatlar',
+  'nav.inbox': 'Broker Inbox',
+  'nav.chat': 'Chat',
+  'nav.profile': 'Profil',
+  'search.driver': 'Haydovchi',
+  'search.trip': 'Reys',
+  'search.section': 'Bo‘lim',
+  'search.routeMissing': 'Marshrut kiritilmagan',
+  'search.keywords.loads': ['yuk', 'reys', 'stavka'],
+  'search.keywords.drivers': ['haydovchi', 'drayver'],
+  'search.keywords.map': ['xarita', 'joylashuv'],
+  'search.keywords.documents': ['hujjat', 'pdf', 'pod', 'bol'],
+  'search.keywords.inbox': ['broker', 'xat', 'inbox'],
+  'search.keywords.chat': ['chat', 'suhbat', 'xabar'],
+  'search.keywords.profile': ['profil', 'sozlama', 'til'],
+  'loadStatus.in_transit': 'Tranzitda',
 };
+
+function fallbackTranslate(key, options = {}) {
+  if (key === 'search.goTo') return `${options.title} bo‘limiga o‘tish`;
+  return FALLBACK_TRANSLATIONS[key] ?? options.defaultValue ?? key;
+}
+
+const PAGE_TARGETS = [
+  { id: 'kanban', titleKey: 'nav.loads', keywordsKey: 'search.keywords.loads' },
+  { id: 'drivers', titleKey: 'nav.drivers', keywordsKey: 'search.keywords.drivers' },
+  { id: 'map', titleKey: 'nav.map', keywordsKey: 'search.keywords.map' },
+  { id: 'docs', titleKey: 'nav.documents', keywordsKey: 'search.keywords.documents' },
+  { id: 'inbox', titleKey: 'nav.inbox', keywordsKey: 'search.keywords.inbox' },
+  { id: 'chat', titleKey: 'nav.chat', keywordsKey: 'search.keywords.chat' },
+  { id: 'profile', titleKey: 'nav.profile', keywordsKey: 'search.keywords.profile' },
+];
 
 export function normalizeSearchText(value) {
   return String(value ?? '')
@@ -41,13 +60,14 @@ function matchScore(query, values) {
   return 40;
 }
 
-function routeLabel(load) {
+function routeLabel(load, t) {
   const origin = [load.origin?.city, load.origin?.state].filter(Boolean).join(', ');
   const destination = [load.destination?.city, load.destination?.state].filter(Boolean).join(', ');
-  return [origin, destination].filter(Boolean).join(' → ') || 'Marshrut kiritilmagan';
+  return [origin, destination].filter(Boolean).join(' → ') || t('search.routeMissing');
 }
 
-export function buildGlobalSearchResults({ query, loads = [], drivers = [], limit = 8 }) {
+export function buildGlobalSearchResults({ query, loads = [], drivers = [], limit = 8, t, locale }) {
+  const translate = t || fallbackTranslate;
   if (!normalizeSearchText(query)) return [];
 
   const driverById = new Map(drivers.map((driver) => [driver.id, driver]));
@@ -58,7 +78,7 @@ export function buildGlobalSearchResults({ query, loads = [], drivers = [], limi
     entityId: driver.id,
     title: driver.name,
     subtitle: [driver.driverNumber, driver.phone, driver.currentLocation].filter(Boolean).join(' · '),
-    category: 'Haydovchi',
+    category: translate('search.driver'),
     score: matchScore(query, [
       driver.name,
       driver.driverNumber,
@@ -82,8 +102,8 @@ export function buildGlobalSearchResults({ query, loads = [], drivers = [], limi
       type: 'load',
       entityId: load.id,
       title: load.loadNumber,
-      subtitle: `${routeLabel(load)}${load.broker ? ` · ${load.broker}` : ''}`,
-      category: 'Reys',
+      subtitle: `${routeLabel(load, translate)}${load.broker ? ` · ${load.broker}` : ''}`,
+      category: translate('search.trip'),
       score: matchScore(query, [
         load.loadNumber,
         load.broker,
@@ -97,7 +117,7 @@ export function buildGlobalSearchResults({ query, loads = [], drivers = [], limi
         load.rate,
         load.distanceMiles,
         load.status,
-        STATUS_LABELS[load.status],
+        translate(`loadStatus.${String(load.status || '').toLowerCase()}`, { defaultValue: load.status }),
         driver?.name,
         driver?.driverNumber,
         ...availableDocuments,
@@ -105,17 +125,22 @@ export function buildGlobalSearchResults({ query, loads = [], drivers = [], limi
     };
   }).filter((result) => result.score > 0);
 
-  const pageResults = PAGE_TARGETS.map((page) => ({
-    id: `page:${page.id}`,
-    type: 'page',
-    tab: page.id,
-    title: page.title,
-    subtitle: `${page.title} bo‘limiga o‘tish`,
-    category: 'Bo‘lim',
-    score: matchScore(query, [page.title, ...page.keywords]) + (matchScore(query, [page.title]) ? 20 : 0),
-  })).filter((result) => result.score > 0);
+  const pageResults = PAGE_TARGETS.map((page) => {
+    const title = translate(page.titleKey);
+    const keywords = translate(page.keywordsKey, { returnObjects: true });
+    return {
+      id: `page:${page.id}`,
+      type: 'page',
+      tab: page.id,
+      title,
+      subtitle: translate('search.goTo', { title }),
+      category: translate('search.section'),
+      score: matchScore(query, [title, ...(Array.isArray(keywords) ? keywords : [])])
+        + (matchScore(query, [title]) ? 20 : 0),
+    };
+  }).filter((result) => result.score > 0);
 
   return [...driverResults, ...loadResults, ...pageResults]
-    .sort((left, right) => right.score - left.score || left.title.localeCompare(right.title, 'uz'))
+    .sort((left, right) => right.score - left.score || left.title.localeCompare(right.title, locale || 'uz'))
     .slice(0, limit);
 }
