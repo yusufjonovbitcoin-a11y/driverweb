@@ -158,13 +158,16 @@
     "accountImmediateNote": "* The account is active immediately. The user signs in with email and the initial password.",
     "driverStatusFilter": "Driver status filter",
     "removeDriver": "Remove driver {{name}}",
-    "removeDriverConfirm": "Remove driver {{name}}?",
+    "removeDriverConfirm": "Remove driver {{name}}? Account access will be disabled and operational history will be preserved.",
+    "removeDispatcher": "Remove dispatcher {{name}}",
+    "removeDispatcherConfirm": "Remove dispatcher {{name}}? Access will be disabled, open loads will be transferred to you, and history will be preserved.",
     "remove": "Remove",
     "driverTableCaption": "Drivers, equipment, location, and trip status",
     "equipmentAndTrailer": "Equipment and trailer",
     "onTrip": "On trip ({{number}})",
     "availableReady": "Available (ready)",
     "deleteDriver": "Delete driver",
+    "deleteDispatcher": "Delete dispatcher",
     "dispatcherTableCaption": "Company dispatchers",
     "gmailDescription": "Automatically receives broker messages and PDF documents in Broker Inbox.",
     "refreshStatus": "Refresh status",
@@ -555,7 +558,16 @@
     "microphone": "Could not access the microphone.",
     "oldMessages": "Could not load earlier messages.",
     "screenShare": "Could not share the screen.",
-    "supabaseConfig": "Supabase configuration is missing."
+    "supabaseConfig": "Supabase configuration is missing.",
+    "memberDelete": "Could not remove the user.",
+    "codes": {
+      "MEMBER_HAS_ACTIVE_LOAD": "The driver has an active load. Reassign it before removing the driver.",
+      "MEMBER_NOT_FOUND": "The user was not found or belongs to another company.",
+      "MEMBER_DELETE_FORBIDDEN": "Only a company administrator can remove a driver or dispatcher.",
+      "MEMBER_ID_INVALID": "The user identifier is invalid.",
+      "MEMBER_AUTH_DELETE_FAILED": "Access was disabled, but Auth cleanup must be retried.",
+      "MEMBER_DELETE_FAILED": "Could not remove the user."
+    }
   },
   "toasts": {
     "loadDeleted": "Load {{number}} deleted.",
@@ -571,7 +583,8 @@
     "offlineSkipped": ", skipped {{count}} offline drivers",
     "reassignmentSent": "Reassignment offer sent.",
     "statusFromMobile": "Status updated from the mobile app.",
-    "userSuspendedOnly": "User suspended. History was preserved."
+    "userSuspendedOnly": "User suspended. History was preserved.",
+    "memberDeleted": "{{name}} was removed. Operational history was preserved."
   },
   "missingFields": {
     "brokerContact": "Broker contact",

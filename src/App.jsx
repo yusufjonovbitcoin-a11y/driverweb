@@ -14,6 +14,7 @@ import {
   sendOffersForLoad,
   fetchWorkspace,
   createMember,
+  deleteCompanyMember,
   fetchBrokerInboxUnreadCount,
   subscribeWorkspace,
   updateMyLocale,
@@ -260,6 +261,21 @@ function Workspace({ auth }) {
       companyId: currentUser.companyId,
     });
     await refreshWorkspace({ quiet: true });
+  };
+
+  const handleDeleteMember = async (member) => {
+    setOperationLoading(true);
+    try {
+      await deleteCompanyMember(member.id);
+      await refreshWorkspace({ quiet: true });
+      showToast(t('toasts.memberDeleted', { name: member.name }));
+      return true;
+    } catch (error) {
+      showToast(localizedError(t, error, 'errors.memberDelete'));
+      return false;
+    } finally {
+      setOperationLoading(false);
+    }
   };
 
   const handleAiDocument = async (file) => {
@@ -530,7 +546,7 @@ function Workspace({ auth }) {
                 members={members}
                 loads={loads}
                 onAddDriver={handleCreateMember}
-                onDeleteDriver={() => showToast(t('toasts.userSuspendedOnly'))}
+                onDeleteMember={currentUser.roleCode === 'company_admin' ? handleDeleteMember : undefined}
                 currentUser={currentUser}
                 onNavigate={handleSelectTab}
                 theme={theme}

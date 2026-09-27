@@ -158,13 +158,16 @@
     "accountImmediateNote": "* Учетная запись сразу станет активной. Пользователь войдет с email и начальным паролем.",
     "driverStatusFilter": "Фильтр состояния водителя",
     "removeDriver": "Удалить водителя {{name}}",
-    "removeDriverConfirm": "Удалить водителя {{name}}?",
+    "removeDriverConfirm": "Удалить водителя {{name}}? Доступ к аккаунту будет закрыт, история сохранится.",
+    "removeDispatcher": "Удалить диспетчера {{name}}",
+    "removeDispatcherConfirm": "Удалить диспетчера {{name}}? Доступ будет закрыт, открытые грузы перейдут вам, а история сохранится.",
     "remove": "Удалить",
     "driverTableCaption": "Водители, техника, местоположение и статус рейса",
     "equipmentAndTrailer": "Техника и прицеп",
     "onTrip": "В рейсе ({{number}})",
     "availableReady": "Свободен (готов)",
     "deleteDriver": "Удалить водителя",
+    "deleteDispatcher": "Удалить диспетчера",
     "dispatcherTableCaption": "Диспетчеры компании",
     "gmailDescription": "Автоматически принимает письма брокеров и PDF-документы в Broker Inbox.",
     "refreshStatus": "Обновить статус",
@@ -555,7 +558,16 @@
     "microphone": "Не удалось получить доступ к микрофону.",
     "oldMessages": "Не удалось загрузить предыдущие сообщения.",
     "screenShare": "Не удалось начать демонстрацию экрана.",
-    "supabaseConfig": "Настройки Supabase не найдены."
+    "supabaseConfig": "Настройки Supabase не найдены.",
+    "memberDelete": "Не удалось удалить пользователя.",
+    "codes": {
+      "MEMBER_HAS_ACTIVE_LOAD": "У водителя есть активный груз. Сначала назначьте груз другому водителю.",
+      "MEMBER_NOT_FOUND": "Пользователь не найден или относится к другой компании.",
+      "MEMBER_DELETE_FORBIDDEN": "Только администратор компании может удалить водителя или диспетчера.",
+      "MEMBER_ID_INVALID": "Неверный идентификатор пользователя.",
+      "MEMBER_AUTH_DELETE_FAILED": "Доступ закрыт, но очистку Auth-аккаунта нужно повторить.",
+      "MEMBER_DELETE_FAILED": "Не удалось удалить пользователя."
+    }
   },
   "toasts": {
     "loadDeleted": "Груз {{number}} удалён.",
@@ -571,7 +583,8 @@
     "offlineSkipped": ", пропущено офлайн-водителей: {{count}}",
     "reassignmentSent": "Предложение переназначения отправлено.",
     "statusFromMobile": "Статус обновлен из мобильного приложения.",
-    "userSuspendedOnly": "Пользователь приостановлен. История сохранена."
+    "userSuspendedOnly": "Пользователь приостановлен. История сохранена.",
+    "memberDeleted": "{{name}} удалён. Операционная история сохранена."
   },
   "missingFields": {
     "brokerContact": "Контакт брокера",

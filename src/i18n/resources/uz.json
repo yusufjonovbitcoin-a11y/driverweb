@@ -158,13 +158,16 @@
     "accountImmediateNote": "* Hisob darhol faol bo‘ladi. Foydalanuvchi email va boshlang‘ich parol bilan kiradi.",
     "driverStatusFilter": "Haydovchi holati filtri",
     "removeDriver": "{{name}} haydovchisini olib tashlash",
-    "removeDriverConfirm": "{{name}} haydovchisini olib tashlamoqchimisiz?",
+    "removeDriverConfirm": "{{name}} haydovchisini olib tashlamoqchimisiz? Hisobga kirish yopiladi, tarix saqlanadi.",
+    "removeDispatcher": "{{name}} dispecherini olib tashlash",
+    "removeDispatcherConfirm": "{{name}} dispecherini olib tashlamoqchimisiz? Hisobga kirish yopiladi, ochiq yuklar sizga o‘tkaziladi va tarix saqlanadi.",
     "remove": "Olib tashlash",
     "driverTableCaption": "Haydovchilar, texnika, joylashuv va reys holati",
     "equipmentAndTrailer": "Texnika va treyler",
     "onTrip": "Reysda ({{number}})",
     "availableReady": "Bo‘sh (tayyor)",
     "deleteDriver": "Haydovchini o‘chirish",
+    "deleteDispatcher": "Dispecherni o‘chirish",
     "dispatcherTableCaption": "Kompaniya dispecherlari",
     "gmailDescription": "Broker xatlari va PDF hujjatlarni Broker Inbox’ga avtomatik qabul qiladi.",
     "refreshStatus": "Holatni yangilash",
@@ -557,7 +560,16 @@
     "microphone": "Mikrofondan foydalanib bo‘lmadi.",
     "oldMessages": "Eski xabarlarni yuklab bo‘lmadi.",
     "screenShare": "Ekranni ulashib bo‘lmadi.",
-    "supabaseConfig": "Supabase sozlamalari topilmadi."
+    "supabaseConfig": "Supabase sozlamalari topilmadi.",
+    "memberDelete": "Foydalanuvchini o‘chirib bo‘lmadi.",
+    "codes": {
+      "MEMBER_HAS_ACTIVE_LOAD": "Haydovchida faol yuk bor. Avval yukni boshqa haydovchiga tayinlang.",
+      "MEMBER_NOT_FOUND": "Foydalanuvchi topilmadi yoki boshqa kompaniyaga tegishli.",
+      "MEMBER_DELETE_FORBIDDEN": "Faqat kompaniya administratori haydovchi yoki dispecherni o‘chira oladi.",
+      "MEMBER_ID_INVALID": "Foydalanuvchi identifikatori noto‘g‘ri.",
+      "MEMBER_AUTH_DELETE_FAILED": "Kirish yopildi, lekin Auth hisobini tozalashni qayta urinish kerak.",
+      "MEMBER_DELETE_FAILED": "Foydalanuvchini o‘chirib bo‘lmadi."
+    }
   },
   "toasts": {
     "loadDeleted": "{{number}} yuk o‘chirildi.",
@@ -573,7 +585,8 @@
     "offlineSkipped": ", {{count}} ta oflayn haydovchi o‘tkazib yuborildi",
     "reassignmentSent": "Qayta tayinlash taklifi yuborildi.",
     "statusFromMobile": "Holat mobil ilovadan yangilandi.",
-    "userSuspendedOnly": "Foydalanuvchi to‘xtatildi. Tarix saqlandi."
+    "userSuspendedOnly": "Foydalanuvchi to‘xtatildi. Tarix saqlandi.",
+    "memberDeleted": "{{name}} o‘chirildi. Operatsion tarix saqlandi."
   },
   "missingFields": {
     "brokerContact": "Broker vakili",

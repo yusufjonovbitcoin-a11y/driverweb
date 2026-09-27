@@ -9,13 +9,20 @@ import {
 
 async function throwFunctionError(error, fallback) {
   let message = error?.message || fallback;
+  let code = null;
+  let params = null;
   try {
     const payload = await error?.context?.json();
     if (payload?.error) message = payload.error;
+    code = payload?.code || null;
+    params = payload?.params || null;
   } catch {
     // The function response may not contain JSON; keep the SDK message.
   }
-  throw new Error(message);
+  const normalized = new Error(message);
+  normalized.code = code;
+  normalized.params = params;
+  throw normalized;
 }
 
 async function getFunctionAccessToken(client, forceRefresh = false) {
@@ -265,7 +272,7 @@ export async function fetchWorkspace() {
     documentsResult.data || [],
     cloudinarySignedUrl,
   );
-  const members = membersResult.data || [];
+  const members = (membersResult.data || []).filter((member) => member.status === 'active');
   const avatarUrls = await resolveProfileAvatarUrls(client, members, cloudinarySignedUrl);
   const offersByLoad = new Map();
   for (const offer of offersResult.data || []) {
@@ -465,6 +472,20 @@ export async function createMember({ email, password, fullName, phone, role = 'd
   if (error) await throwFunctionError(error, 'Could not create account');
   if (data?.error) throw new Error(data.error);
   return data?.profile;
+}
+
+export async function deleteCompanyMember(memberId) {
+  const { data, error } = await invokeAuthenticatedFunction(
+    'delete-member',
+    { memberId },
+  );
+  if (error) await throwFunctionError(error, 'Could not remove company member');
+  if (data?.error) {
+    const failure = new Error(data.error);
+    failure.code = data.code || null;
+    throw failure;
+  }
+  return data?.profile || null;
 }
 
 export async function fetchCompanies() {

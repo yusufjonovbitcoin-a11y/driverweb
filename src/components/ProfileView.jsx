@@ -64,7 +64,7 @@ export default function ProfileView({
   members = [],
   loads, 
   onAddDriver, 
-  onDeleteDriver, 
+  onDeleteMember,
   currentUser,
   onNavigate,
   theme = 'light',
@@ -92,6 +92,7 @@ export default function ProfileView({
   const [gmailSaving, setGmailSaving] = useState(false);
   const [gmailError, setGmailError] = useState('');
   const [localeSaving, setLocaleSaving] = useState(false);
+  const [deletingMemberId, setDeletingMemberId] = useState(null);
   const addFormToggleRef = useRef(null);
 
   // Form State for Adding Driver
@@ -228,6 +229,20 @@ export default function ProfileView({
       setFormError(localizedError(t, error, 'errors.accountCreate'));
     } finally {
       setIsSubmitting(false);
+    }
+  };
+
+  const handleDeleteMember = async (member) => {
+    if (!onDeleteMember || deletingMemberId) return;
+    const confirmationKey = member.role === 'dispatcher'
+      ? 'profile.removeDispatcherConfirm'
+      : 'profile.removeDriverConfirm';
+    if (!window.confirm(t(confirmationKey, { name: member.name }))) return;
+    setDeletingMemberId(member.id);
+    try {
+      await onDeleteMember(member);
+    } finally {
+      setDeletingMemberId(null);
     }
   };
 
@@ -985,16 +1000,17 @@ export default function ProfileView({
                 ))}
               </dl>
 
-              {onDeleteDriver && (
+              {onDeleteMember && (
                 <div className="flex justify-end border-t border-zinc-200 px-3 py-2 dark:border-zinc-800">
                   <button
                     aria-label={t('profile.removeDriver', { name: driver.name })}
-                    onClick={() => {
-                      if (window.confirm(t('profile.removeDriverConfirm', { name: driver.name }))) onDeleteDriver(driver.id);
-                    }}
+                    onClick={() => handleDeleteMember({ ...driver, role: 'driver' })}
+                    disabled={deletingMemberId === driver.id}
                     className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-2 text-xs font-bold text-zinc-500 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-950/30 dark:hover:text-red-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-600 focus-visible:ring-offset-2"
                   >
-                    <Trash2 className="h-4 w-4" />
+                    {deletingMemberId === driver.id
+                      ? <LoaderCircle className="h-4 w-4 animate-spin" />
+                      : <Trash2 className="h-4 w-4" />}
                     {t('profile.remove')}
                   </button>
                 </div>
@@ -1078,18 +1094,17 @@ export default function ProfileView({
                     </td>
 
                     <td className="py-3.5 px-4 text-right whitespace-nowrap">
-                      {onDeleteDriver && (
+                      {onDeleteMember && (
                         <button
-                          onClick={() => {
-                            if (window.confirm(t('profile.removeDriverConfirm', { name: driver.name }))) {
-                              onDeleteDriver(driver.id);
-                            }
-                          }}
+                          onClick={() => handleDeleteMember({ ...driver, role: 'driver' })}
+                          disabled={deletingMemberId === driver.id}
                           aria-label={t('profile.removeDriver', { name: driver.name })}
                           className="p-2 rounded-lg text-zinc-400 hover:text-red-600 dark:hover:text-red-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-600 focus-visible:ring-offset-2"
                           title={t('profile.deleteDriver')}
                         >
-                          <Trash2 className="w-4 h-4" />
+                          {deletingMemberId === driver.id
+                            ? <LoaderCircle className="h-4 w-4 animate-spin" />
+                            : <Trash2 className="w-4 h-4" />}
                         </button>
                       )}
                     </td>
@@ -1137,6 +1152,22 @@ export default function ProfileView({
                   <div className="grid grid-cols-[90px_minmax(0,1fr)] gap-3 py-3 text-xs"><dt className="text-zinc-500">{t('common.phone')}</dt><dd className="break-words text-right font-semibold">{dispatcher.phone || t('common.notProvided')}</dd></div>
                   <div className="grid grid-cols-[90px_minmax(0,1fr)] gap-3 border-t border-zinc-100 py-3 text-xs dark:border-zinc-800"><dt className="text-zinc-500">{t('profile.position')}</dt><dd className="text-right font-semibold">{t('roles.dispatcher')}</dd></div>
                 </dl>
+                {onDeleteMember && (
+                  <div className="flex justify-end border-t border-zinc-200 px-3 py-2 dark:border-zinc-800">
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteMember(dispatcher)}
+                      disabled={deletingMemberId === dispatcher.id}
+                      aria-label={t('profile.removeDispatcher', { name: dispatcher.name })}
+                      className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-2 text-xs font-bold text-zinc-500 transition hover:bg-red-50 hover:text-red-600 disabled:cursor-not-allowed disabled:opacity-50 dark:hover:bg-red-950/30 dark:hover:text-red-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-600 focus-visible:ring-offset-2"
+                    >
+                      {deletingMemberId === dispatcher.id
+                        ? <LoaderCircle className="h-4 w-4 animate-spin" />
+                        : <Trash2 className="h-4 w-4" />}
+                      {t('profile.remove')}
+                    </button>
+                  </div>
+                )}
               </li>
             ))}
           </ul>
@@ -1145,11 +1176,11 @@ export default function ProfileView({
             <table className="w-full min-w-[680px] text-left">
               <caption className="sr-only">{t('profile.dispatcherTableCaption')}</caption>
               <thead className="border-b border-zinc-200 bg-zinc-50/80 text-xs font-bold uppercase tracking-wider text-zinc-500 dark:border-zinc-800 dark:bg-zinc-950/50 dark:text-zinc-400">
-                <tr><th scope="col" className="px-4 py-3.5">{t('roles.dispatcher')}</th><th scope="col" className="px-4 py-3.5">{t('common.email')}</th><th scope="col" className="px-4 py-3.5">{t('common.phone')}</th><th scope="col" className="px-4 py-3.5">{t('common.status')}</th></tr>
+                <tr><th scope="col" className="px-4 py-3.5">{t('roles.dispatcher')}</th><th scope="col" className="px-4 py-3.5">{t('common.email')}</th><th scope="col" className="px-4 py-3.5">{t('common.phone')}</th><th scope="col" className="px-4 py-3.5">{t('common.status')}</th><th scope="col" className="px-4 py-3.5 text-right">{t('common.actions')}</th></tr>
               </thead>
               <tbody className="divide-y divide-zinc-100 text-sm dark:divide-zinc-800">
                 {filteredDispatchers.length === 0 ? (
-                  <tr><td colSpan={4} className="px-4 py-12 text-center text-sm text-zinc-400">{t('profile.noDispatchers')}</td></tr>
+                  <tr><td colSpan={5} className="px-4 py-12 text-center text-sm text-zinc-400">{t('profile.noDispatchers')}</td></tr>
                 ) : filteredDispatchers.map((dispatcher) => (
                   <tr key={dispatcher.id} className="transition hover:bg-zinc-50/80 dark:hover:bg-zinc-800/40">
                     <td className="px-4 py-3.5">
@@ -1163,6 +1194,22 @@ export default function ProfileView({
                     <td className="px-4 py-3.5 font-medium text-zinc-600 dark:text-zinc-300">{dispatcher.email || t('common.notProvided')}</td>
                     <td className="px-4 py-3.5 font-medium text-zinc-600 dark:text-zinc-300">{dispatcher.phone || t('common.notProvided')}</td>
                     <td className="px-4 py-3.5"><span className={`inline-flex rounded-lg px-2.5 py-1 text-xs font-bold ${dispatcher.status === 'active' ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300' : 'bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300'}`}>{dispatcher.status === 'active' ? t('common.active') : t('common.suspended')}</span></td>
+                    <td className="px-4 py-3.5 text-right">
+                      {onDeleteMember && (
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteMember(dispatcher)}
+                          disabled={deletingMemberId === dispatcher.id}
+                          aria-label={t('profile.removeDispatcher', { name: dispatcher.name })}
+                          title={t('profile.deleteDispatcher')}
+                          className="rounded-lg p-2 text-zinc-400 transition hover:bg-zinc-100 hover:text-red-600 disabled:cursor-not-allowed disabled:opacity-50 dark:hover:bg-zinc-800 dark:hover:text-red-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-600 focus-visible:ring-offset-2"
+                        >
+                          {deletingMemberId === dispatcher.id
+                            ? <LoaderCircle className="h-4 w-4 animate-spin" />
+                            : <Trash2 className="h-4 w-4" />}
+                        </button>
+                      )}
+                    </td>
                   </tr>
                 ))}
               </tbody>
