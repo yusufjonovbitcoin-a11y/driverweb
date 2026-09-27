@@ -1,7 +1,11 @@
 import { requireSupabase } from '../lib/supabase';
-import { cloudinarySignedUrl, isCloudinaryReference } from './cloudinaryMediaService';
+import { cloudinarySignedUrl } from './cloudinaryMediaService';
 import { createCoalescedAsyncTrigger } from './realtimeRefresh';
 import { normalizeLocale } from '../i18n/locales';
+import {
+  resolveDocumentMediaUrls,
+  resolveProfileAvatarUrls,
+} from './workspaceMediaResolver';
 
 async function throwFunctionError(error, fallback) {
   let message = error?.message || fallback;
@@ -226,45 +230,6 @@ function toUiMember(member, avatar = null) {
   };
 }
 
-async function signedDocumentUrls(client, documents) {
-  return Promise.all(documents.map(async (document) => {
-    if (!document.current_version_id) return document;
-    const { data: version } = await client
-      .from('document_versions')
-      .select('storage_path,mime_type,file_name')
-      .eq('id', document.current_version_id)
-      .maybeSingle();
-    if (!version?.storage_path) return document;
-    if (isCloudinaryReference(version.storage_path)) {
-      return {
-        ...document,
-        signedUrl: await cloudinarySignedUrl(version.storage_path),
-        mimeType: version.mime_type || null,
-        fileName: version.file_name || null,
-      };
-    }
-    const { data } = await client.storage.from('load-documents').createSignedUrl(version.storage_path, 3600);
-    return {
-      ...document,
-      signedUrl: data?.signedUrl || null,
-      mimeType: version.mime_type || null,
-      fileName: version.file_name || null,
-    };
-  }));
-}
-
-async function signedProfileAvatarUrls(client, members) {
-  const entries = await Promise.all(members.map(async (member) => {
-    if (!member.avatar_path) return [member.id, null];
-    if (isCloudinaryReference(member.avatar_path)) {
-      return [member.id, await cloudinarySignedUrl(member.avatar_path)];
-    }
-    const { data } = await client.storage.from('profile-media').createSignedUrl(member.avatar_path, 3600);
-    return [member.id, data?.signedUrl || null];
-  }));
-  return new Map(entries);
-}
-
 export async function fetchWorkspace() {
   const client = requireSupabase();
   const [
@@ -295,9 +260,13 @@ export async function fetchWorkspace() {
   ]) {
     if (result.error) throw result.error;
   }
-  const documents = await signedDocumentUrls(client, documentsResult.data || []);
+  const documents = await resolveDocumentMediaUrls(
+    client,
+    documentsResult.data || [],
+    cloudinarySignedUrl,
+  );
   const members = membersResult.data || [];
-  const avatarUrls = await signedProfileAvatarUrls(client, members);
+  const avatarUrls = await resolveProfileAvatarUrls(client, members, cloudinarySignedUrl);
   const offersByLoad = new Map();
   for (const offer of offersResult.data || []) {
     const current = offersByLoad.get(offer.load_id) || [];

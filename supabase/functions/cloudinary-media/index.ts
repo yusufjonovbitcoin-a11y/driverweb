@@ -295,7 +295,8 @@ Deno.serve((request) => withCors(request, async () => {
       });
     const query = mediaReader.from("media_assets").select("*").eq("id", assetId).is("deleted_at", null);
     const { data: asset, error: assetError } = await query.maybeSingle();
-    if (assetError || !asset) return json({ error: "Media not found" }, 404);
+    if (assetError) return json({ error: "Media lookup failed", code: "MEDIA_LOOKUP_FAILED" }, 500);
+    if (!asset) return json({ error: "Media not found", code: "MEDIA_NOT_FOUND" }, 404);
     if (action === "signedUrl") {
       const url = await signedDeliveryUrl(asset);
       return json({

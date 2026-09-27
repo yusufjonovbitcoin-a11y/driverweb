@@ -1,10 +1,14 @@
 import { requireSupabase, supabaseAnonKey, supabaseUrl } from '../lib/supabase';
+import {
+  CloudinaryMediaError,
+  isCloudinaryReference,
+} from './cloudinaryMediaErrors';
 
-const CLOUDINARY_PREFIX = 'cloudinary:';
-
-export function isCloudinaryReference(value) {
-  return typeof value === 'string' && value.startsWith(CLOUDINARY_PREFIX);
-}
+export {
+  CloudinaryMediaError,
+  isCloudinaryReference,
+  isMissingCloudinaryMediaError,
+} from './cloudinaryMediaErrors';
 
 async function accessToken() {
   const client = requireSupabase();
@@ -30,7 +34,13 @@ async function request(body, { multipart = false } = {}) {
     body: multipart ? body : JSON.stringify(body),
   });
   const payload = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(payload.error || `Media xatosi (${response.status})`);
+  if (!response.ok) {
+    throw new CloudinaryMediaError(
+      payload.error || `Media xatosi (${response.status})`,
+      response.status,
+      payload.code || null,
+    );
+  }
   return payload;
 }
 
