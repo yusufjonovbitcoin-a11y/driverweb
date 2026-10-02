@@ -4,7 +4,7 @@ import {
   AlertTriangle, ArrowLeft, Bot, CheckCircle2, FileText, Inbox, LoaderCircle,
   Mail, Paperclip, Send, Star,
 } from 'lucide-react';
-import { fetchBrokerInbox, forwardGmailAttachmentToDriver, markBrokerMessageRead } from '../services/operationsService';
+import { fetchBrokerInbox, fetchBrokerMessageBody, forwardGmailAttachmentToDriver, markBrokerMessageRead } from '../services/operationsService';
 import { formatDate, formatNumber, formatTime } from '../i18n/format';
 import { ingestionStatusLabel } from '../i18n/labels';
 import { localizedError } from '../i18n/errors';
@@ -67,6 +67,33 @@ function ProposalPreview({ proposal, t }) {
         </div>
       )}
     </div>
+  );
+}
+
+function MessageBody({ messageId, t }) {
+  const { data, error, isLoading } = useWorkspaceQuery(
+    ['broker-message-body', messageId],
+    () => fetchBrokerMessageBody(messageId),
+    { refreshInterval: (latest) => latest?.body_text == null ? 15_000 : 0 },
+  );
+  return (
+    <section className="rounded-2xl border border-zinc-200 p-5 dark:border-zinc-800">
+      <h3 className="text-sm font-black">{t('inbox.emailBody')}</h3>
+      {isLoading ? (
+        <LoaderCircle className="mt-4 h-5 w-5 animate-spin text-zinc-500" aria-label={t('common.loading')} />
+      ) : error ? (
+        <p className="mt-3 text-sm text-red-600">{t('inbox.emailBodyError')}</p>
+      ) : data?.body_text == null ? (
+        <p className="mt-3 text-sm text-zinc-500">{t('inbox.emailBodyPending')}</p>
+      ) : data.body_text ? (
+        <div className="mt-3">
+          <p className="whitespace-pre-wrap break-words text-sm leading-6 text-zinc-800 dark:text-zinc-200">{data.body_text}</p>
+          {data.body_truncated && <p className="mt-3 text-xs text-amber-700">{t('inbox.emailBodyTruncated')}</p>}
+        </div>
+      ) : (
+        <p className="mt-3 text-sm text-zinc-500">{t('inbox.emailBodyEmpty')}</p>
+      )}
+    </section>
   );
 }
 
@@ -177,6 +204,8 @@ export default function BrokerInbox({ drivers, onCreateLoad, onUnreadChange }) {
               </div>
             )}
           </header>
+
+          <MessageBody messageId={selected.id} t={t} />
 
           <section className="rounded-2xl border border-zinc-200 bg-zinc-50/70 p-5 dark:border-zinc-800 dark:bg-zinc-950/50">
             <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wide text-zinc-500">

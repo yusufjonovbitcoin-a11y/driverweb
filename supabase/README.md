@@ -107,6 +107,10 @@ Ochiq Auth signup o‘chirilgan: foydalanuvchi Auth Admin API orqali yaratiladi 
 
 Gmail credential brauzerga yoki `gmail_connections` jadvaliga ochiq matn sifatida yozilmaydi. Profil → Integratsiyalar oqimi App Password’ni `gmail-integration` Edge Function’iga yuboradi, funksiya uni Vault’da saqlaydi. Node IMAP worker `get_gmail_worker_credentials` service-role RPC orqali credential’ni faqat ish jarayonida oladi. Worker muvaffaqiyatli IMAP login qilgach ulanish `active` bo‘ladi; ungacha UI `Tekshirilmoqda` holatini ko‘rsatadi.
 
+## Gmail avtomatik sinxronlash
+
+`.github/workflows/gmail-sync.yml` har besh daqiqada `npm run gmail:sync`ni ishga tushiradi. Workflow faqat GitHub default branchida mavjud bo‘lsa ishlaydi. Repository Actions secrets ichida `GMAIL_COMPANY_ID`, `GMAIL_WORKER_TOKEN`, `SUPABASE_URL` va `SUPABASE_SERVICE_ROLE_KEY` bo‘lishi kerak. Gmail App Password GitHub’ga berilmaydi: worker uni Supabase Vault’dan oladi. Birinchi ishga tushishdan so‘ng avvalgi xatlarning matni private `.eml` originalidan har ishga tushishda 20 tadan tiklanadi. Yangi xat matni import bilan birga saqlanadi; web xatni ochganda plain-text matnni ko‘rsatadi. Workflow xatosi yoki `last_synced_at` eskirib qolishi monitoring signalidir.
+
 ## Lokal tekshiruv
 
 ```bash

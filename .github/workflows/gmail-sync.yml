@@ -1,0 +1,40 @@
+name: Gmail inbox sync
+
+on:
+  schedule:
+    - cron: '3/5 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: gmail-inbox-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      GMAIL_COMPANY_ID: ${{ secrets.GMAIL_COMPANY_ID }}
+      GMAIL_WORKER_TOKEN: ${{ secrets.GMAIL_WORKER_TOKEN }}
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      GMAIL_MAX_MESSAGES: 25
+      CLOUDINARY_REQUIRED: 'true'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Check worker configuration
+        run: |
+          test -n "$GMAIL_COMPANY_ID"
+          test -n "$GMAIL_WORKER_TOKEN"
+          test -n "$SUPABASE_URL"
+          test -n "$SUPABASE_SERVICE_ROLE_KEY"
+      - name: Import new Gmail messages and recover old bodies
+        run: npm run gmail:sync

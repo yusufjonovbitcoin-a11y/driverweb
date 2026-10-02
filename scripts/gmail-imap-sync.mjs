@@ -1,5 +1,6 @@
 import dotenv from 'dotenv';
 import { normalizeMessageLimit, selectPendingUids } from './gmail-sync-cursor.mjs';
+import { extractMessageBody } from './gmail-message-body.mjs';
 import { createHash } from 'node:crypto';
 import { ImapFlow } from 'imapflow';
 import { simpleParser } from 'mailparser';
@@ -119,6 +120,64 @@ async function uploadWorkerMedia({ content, fileName, mimeType, scope, contextId
     return fallbackPath;
   }
   return payload.reference;
+}
+
+async function downloadRawMessage(reference) {
+  if (reference.startsWith('cloudinary:')) {
+    const response = await fetch(`${process.env.SUPABASE_URL.trim()}/functions/v1/cloudinary-media`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY.trim()}`,
+        apikey: process.env.SUPABASE_SERVICE_ROLE_KEY.trim(),
+        'X-Worker-Token': process.env.GMAIL_WORKER_TOKEN.trim(),
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ action: 'signedUrl', reference }),
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || !payload.url) throw new Error('Raw email delivery URL is unavailable');
+    const fileResponse = await fetch(payload.url);
+    if (!fileResponse.ok) throw new Error('Raw email download failed');
+    return Buffer.from(await fileResponse.arrayBuffer());
+  }
+  const { data, error } = await admin.storage.from('broker-originals').download(reference);
+  if (error || !data) throw error || new Error('Raw email is unavailable');
+  return Buffer.from(await data.arrayBuffer());
+}
+
+async function saveMessageBody(messageId, parsed) {
+  const { data, error } = await admin.from('broker_messages')
+    .update(extractMessageBody(parsed))
+    .eq('id', messageId)
+    .eq('company_id', companyId)
+    .select('id')
+    .maybeSingle();
+  if (error || !data) throw error || new Error('Broker email body could not be saved');
+}
+
+async function backfillMessageBodies(connectionId, limit = 20) {
+  const { data: messages, error } = await admin.from('broker_messages')
+    .select('id,raw_storage_path')
+    .eq('company_id', companyId)
+    .eq('gmail_connection_id', connectionId)
+    .is('body_text', null)
+    .not('raw_storage_path', 'is', null)
+    .order('received_at', { ascending: false })
+    .limit(limit);
+  if (error) throw error;
+  let backfilled = 0;
+  let failed = 0;
+  for (const message of messages || []) {
+    try {
+      const source = await downloadRawMessage(message.raw_storage_path);
+      await saveMessageBody(message.id, await simpleParser(source));
+      backfilled += 1;
+    } catch (backfillError) {
+      failed += 1;
+      console.error('Broker email body backfill failed:', message.id, backfillError?.name || 'Error');
+    }
+  }
+  return { backfilled, failed };
 }
 
 function supportedMimeType(attachment) {
@@ -242,6 +301,7 @@ async function ingestMessage(connectionId, message) {
     raw_storage_path: rawPath,
   });
   if (messageError || !messageId) throw messageError || new Error('Broker message was not created');
+  await saveMessageBody(messageId, parsed);
 
   let documentCount = 0;
   let processedCount = 0;
@@ -353,15 +413,18 @@ try {
   const backlog = await processPendingBrokerAttachments();
   processed += backlog.processed;
   failed += backlog.failed;
-  console.log(JSON.stringify({ synced, documents, processed, failed }));
+  const bodyBackfill = await backfillMessageBodies(connection.id);
+  console.log(JSON.stringify({ synced, documents, processed, failed, ...bodyBackfill }));
 } catch (error) {
-  if (activeConnection && !imapConnected) {
-    const safeMessage = /auth|credential|password|login/i.test(error?.message || '')
-      ? 'Gmail App Password qabul qilinmadi.'
-      : 'Gmail IMAP serveriga ulanib bo‘lmadi.';
+  if (activeConnection) {
+    const safeMessage = !imapConnected
+      ? (/auth|credential|password|login/i.test(error?.message || '')
+        ? 'Gmail App Password qabul qilinmadi.'
+        : 'Gmail IMAP serveriga ulanib bo‘lmadi.')
+      : 'Gmail xatlarini sinxronlashda xatolik yuz berdi.';
     try {
       await admin.from('gmail_connections').update({
-        status: 'needs_reconnect',
+        status: imapConnected ? 'active' : 'needs_reconnect',
         last_error: safeMessage,
       }).eq('id', activeConnection.id)
         .eq('configuration_version', activeConnection.configuration_version)
@@ -370,7 +433,7 @@ try {
       // Preserve the original IMAP failure as the worker exit reason.
     }
   }
-  console.error(error);
+  console.error('Gmail sync failed:', error?.code || error?.name || 'Error');
   process.exitCode = 1;
 } finally {
   await client?.logout().catch(() => {});

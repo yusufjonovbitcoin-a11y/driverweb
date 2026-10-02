@@ -332,7 +332,9 @@ export async function fetchWorkspace() {
 export async function fetchBrokerInbox() {
   const client = requireSupabase();
   const [messagesResult, extractionsResult, attachmentsResult, readsResult] = await Promise.all([
-    client.from('broker_messages').select('*').order('received_at', { ascending: false }).limit(100),
+    client.from('broker_messages')
+      .select('id,company_id,gmail_connection_id,provider_message_id,provider_thread_id,from_email,subject,received_at,raw_storage_path,status,error_message,created_at')
+      .order('received_at', { ascending: false }).limit(100),
     client.from('ai_extractions').select('*').order('processed_at', { ascending: false }).limit(100),
     client.from('broker_attachments').select('id,message_id,file_name,mime_type,size_bytes,created_at').order('created_at'),
     client.from('broker_message_reads').select('message_id'),
@@ -348,6 +350,16 @@ export async function fetchBrokerInbox() {
     extraction: (extractionsResult.data || []).find((item) => item.message_id === message.id) || null,
     attachments: (attachmentsResult.data || []).filter((attachment) => attachment.message_id === message.id),
   }));
+}
+
+export async function fetchBrokerMessageBody(messageId) {
+  const client = requireSupabase();
+  const { data, error } = await client.from('broker_messages')
+    .select('body_text,body_truncated')
+    .eq('id', messageId)
+    .single();
+  if (error) throw error;
+  return data;
 }
 
 export async function fetchBrokerInboxUnreadCount() {
