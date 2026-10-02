@@ -55,6 +55,9 @@ verify_jwt = true
 [functions.calculate-load-route]
 verify_jwt = true
 
+[functions.decode-vin]
+verify_jwt = true
+
 [functions.ask-load-ai]
 verify_jwt = true
 

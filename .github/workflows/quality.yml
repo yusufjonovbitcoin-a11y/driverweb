@@ -22,3 +22,7 @@ jobs:
       - run: npm test
       - run: npm run lint
       - run: npm run build
+      - name: Isolated chat database regression tests
+        run: PG_BIN="$(pg_config --bindir)" npm run test:chat-db
+      - name: Driver sheet review and assignment checks
+        run: PG_BIN="$(pg_config --bindir)" npm run test:driver-brief-db

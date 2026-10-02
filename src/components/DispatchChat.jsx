@@ -4,17 +4,20 @@ import { OperationScope, acquireCallMedia, stopMediaStream } from '../services/c
 import React, { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   CheckCheck, Download, FileText, Image as ImageIcon, Link2, LoaderCircle,
-  Maximize2, Mic, MicOff, MonitorUp, Music2, PanelRight, Paperclip, Phone, PhoneOff,
+  Mail, Maximize2, Mic, MicOff, MonitorUp, Music2, PanelRight, Paperclip, Pencil, Phone, PhoneOff,
   Search, Send, ShieldCheck, Smile, Square, Trash2, UserRound, Video, VideoOff, X,
 } from 'lucide-react';
 import {
-  deleteChatMessage, fetchCallSignals, fetchChatMessages, fetchChatPreviews, fetchRingingCalls, fetchRtcIceServers, heartbeatCall, markChatRead, openChat, refreshChatMessageMedia,
+  deleteChatMessage, editChatMessage, fetchCallSignals, fetchChatMessages, fetchChatPreviews, fetchRingingCalls, fetchRtcIceServers, fetchUnreadChatCountsByDriver, heartbeatCall, markChatUnread, openChat, refreshChatMessageMedia, syncChatHistory, searchChatMessages, fetchChatMediaCounts,
   publishSignal, respondCall, sendMediaMessage, sendTextMessage, startCall, subscribeCalls, subscribeChat, subscribeChatPreviews,
 } from '../services/chatService';
 import { buildChatCursor, mergeChatMessages } from '../services/chatReliability';
 import { RtcSignalQueue } from '../services/rtcSignalQueue';
-import { formatDate, formatTime } from '../i18n/format';
+import { formatDate, formatDateTime, formatTime } from '../i18n/format';
 import { localizedError } from '../i18n/errors';
+import { positionChatContextMenu } from './chatContextMenu';
+import ChatTimeline, { ChatReadBoundary } from './ChatTimeline';
+import { useChatReadReceipts } from '../hooks/useChatReadReceipts';
 
 const terminalCallStates = new Set(['declined', 'missed', 'ended']);
 
@@ -34,10 +37,6 @@ function messageDayLabel(value, t) {
   if (date.toDateString() === today.toDateString()) return t('common.today');
   if (date.toDateString() === yesterday.toDateString()) return t('common.yesterday');
   return formatDate(date, { day: 'numeric', month: 'long' });
-}
-
-function containsLink(message) {
-  return message.kind === 'text' && /https?:\/\/\S+/i.test(message.body || '');
 }
 
 function messagePreview(message, t) {
@@ -173,11 +172,18 @@ export default function DispatchChat({
   const [recording, setRecording] = useState(false);
   const [driverSearch, setDriverSearch] = useState('');
   const [driverPreviews, setDriverPreviews] = useState({});
+  const [driverConversationIds, setDriverConversationIds] = useState({});
+  const [driverUnreadCounts, setDriverUnreadCounts] = useState({});
+  const [chatContextMenu, setChatContextMenu] = useState(null);
+  const [markingUnreadDriverId, setMarkingUnreadDriverId] = useState(null);
+  const [readPaused, setReadPaused] = useState(false);
   const [messageSearch, setMessageSearch] = useState('');
   const [showMessageSearch, setShowMessageSearch] = useState(false);
-  const [showProfile, setShowProfile] = useState(() => (
-    typeof window !== 'undefined' && window.matchMedia('(min-width: 1024px)').matches
-  ));
+  const [showProfile, setShowProfile] = useState(false);
+  const [messageContextMenu, setMessageContextMenu] = useState(null);
+  const [editingMessageId, setEditingMessageId] = useState(null);
+  const [editDraft, setEditDraft] = useState('');
+  const [savingEdit, setSavingEdit] = useState(false);
   const [mediaFilter, setMediaFilter] = useState('all');
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [incomingCall, setIncomingCall] = useState(null);
@@ -192,7 +198,11 @@ export default function DispatchChat({
   const [callSeconds, setCallSeconds] = useState(0);
   const fileInputRef = useRef(null);
   const composerRef = useRef(null);
-  const messagesEndRef = useRef(null);
+  const messagesRef = useRef([]);
+  const syncRef = useRef(null);
+  const [searchPage, setSearchPage] = useState({ messages: [], hasMore: false });
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [mediaStats, setMediaStats] = useState({ image: 0, video: 0, audio: 0, file: 0, links: 0 });
   const recorderRef = useRef(null);
   const recorderChunksRef = useRef([]);
   const recordingStartedRef = useRef(0);
@@ -215,6 +225,7 @@ export default function DispatchChat({
   const visibilityRef = useRef(isVisible);
   const unreadChangeRef = useRef(onUnreadChange);
   const callStartingRef = useRef(false);
+  const contextMenuButtonRef = useRef(null);
   const [playbackBlocked, setPlaybackBlocked] = useState(false);
   const [connectedAt, setConnectedAt] = useState(null);
   const recordingScopeRef = useRef(0);
@@ -222,6 +233,34 @@ export default function DispatchChat({
     visibilityRef.current = isVisible;
     unreadChangeRef.current = onUnreadChange;
   }, [isVisible, onUnreadChange]);
+
+  useLayoutEffect(() => { messagesRef.current = messages; }, [messages]);
+  const onMessagesRead = useCallback((ids) => {
+    const read = new Set(ids);
+    setMessages((rows) => rows.map((row) => read.has(row.id) ? { ...row, read_at: new Date().toISOString() } : row));
+    setSearchPage((page) => ({ ...page, messages: page.messages.map((row) => read.has(row.id) ? { ...row, read_at: new Date().toISOString() } : row) }));
+    unreadChangeRef.current?.();
+  }, []);
+  const readVisibleMessage = useChatReadReceipts(conversationId, isVisible && !readPaused, onMessagesRead);
+
+  useEffect(() => {
+    if (!chatContextMenu) return undefined;
+    window.requestAnimationFrame(() => contextMenuButtonRef.current?.focus());
+    const closeOnEscape = (event) => {
+      if (event.key === 'Escape') setChatContextMenu(null);
+    };
+    window.addEventListener('keydown', closeOnEscape);
+    return () => window.removeEventListener('keydown', closeOnEscape);
+  }, [chatContextMenu]);
+
+  useEffect(() => {
+    if (!messageContextMenu) return undefined;
+    const closeOnEscape = (event) => {
+      if (event.key === 'Escape') setMessageContextMenu(null);
+    };
+    window.addEventListener('keydown', closeOnEscape);
+    return () => window.removeEventListener('keydown', closeOnEscape);
+  }, [messageContextMenu]);
 
 
   const selectedDriver = drivers.find((driver) => driver.id === selectedDriverId)
@@ -249,6 +288,7 @@ export default function DispatchChat({
   }, [driverSearch, drivers]);
 
   useEffect(() => {
+    if (!isVisible) return undefined;
     let active = true;
     let refreshing = false;
     let refreshQueued = false;
@@ -262,16 +302,23 @@ export default function DispatchChat({
       do {
         refreshQueued = false;
         try {
-          const conversations = await fetchChatPreviews();
+          const [conversations, unreadCounts] = await Promise.all([
+            fetchChatPreviews(),
+            fetchUnreadChatCountsByDriver(currentUser.id),
+          ]);
           if (!active) return;
           const next = {};
+          const conversationIds = {};
           conversations.forEach((conversation) => {
             const peerId = conversation.driver_id === currentUser.id
               ? conversation.dispatcher_id
               : conversation.driver_id;
             next[peerId] = conversation.chat_messages?.[0] || null;
+            conversationIds[peerId] = conversation.id;
           });
           setDriverPreviews(next);
+          setDriverConversationIds(conversationIds);
+          setDriverUnreadCounts(unreadCounts);
         } catch {
           // Message history still works if the lightweight preview query fails.
         }
@@ -284,33 +331,31 @@ export default function DispatchChat({
       active = false;
       unsubscribe();
     };
-  }, [currentUser.id]);
+  }, [currentUser.id, isVisible]);
 
-  const mediaStats = useMemo(() => ({
-    image: messages.filter((message) => message.kind === 'image').length,
-    video: messages.filter((message) => message.kind === 'video').length,
-    file: messages.filter((message) => message.kind === 'file').length,
-    audio: messages.filter((message) => message.kind === 'audio').length,
-    links: messages.filter(containsLink).length,
-  }), [messages]);
-
-  const visibleMessages = useMemo(() => {
-    const query = messageSearch.trim().toLowerCase();
-    return messages.filter((message) => {
-      const matchesType = mediaFilter === 'all'
-        || (mediaFilter === 'links' ? containsLink(message) : message.kind === mediaFilter);
-      const matchesSearch = !query
-        || message.body?.toLowerCase().includes(query)
-        || message.file_name?.toLowerCase().includes(query);
-      return matchesType && matchesSearch;
-    });
-  }, [mediaFilter, messageSearch, messages]);
-
-  const latestMessageId = messages[messages.length - 1]?.id;
+  const searching = Boolean(messageSearch.trim()) || mediaFilter !== 'all';
+  const visibleMessages = searching ? searchPage.messages : messages;
+  useEffect(() => {
+    if (!isVisible || !conversationId || !searching) return;
+    let active = true;
+    const timer = setTimeout(() => {
+      setSearchLoading(true);
+      searchChatMessages(conversationId, messageSearch, mediaFilter)
+        .then((page) => { if (active) setSearchPage(page); })
+        .catch((cause) => { if (active) setError(localizedError(t, cause, 'errors.chatOpen')); })
+        .finally(() => { if (active) setSearchLoading(false); });
+    }, 300);
+    return () => { active = false; clearTimeout(timer); };
+  }, [conversationId, messageSearch, mediaFilter, searching, isVisible, t]);
 
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [latestMessageId]);
+    if (!conversationId || !isVisible || !showProfile) return;
+    let active = true;
+    const refresh = () => fetchChatMediaCounts(conversationId).then((counts) => { if (active) setMediaStats(counts); }).catch(() => {});
+    void refresh();
+    const off = subscribeChatPreviews(refresh);
+    return () => { active = false; off(); };
+  }, [conversationId, isVisible, showProfile]);
 
   const attachLocalVideo = useCallback((video) => {
     localVideoRef.current = video;
@@ -398,15 +443,21 @@ export default function DispatchChat({
 
   const waitForRemoteDescription = useCallback(async (callId, timeoutMs = 60_000) => {
     const deadline = Date.now() + timeoutMs;
+    let nextPoll = 0;
+    let pollDelay = 1000;
     while (
       peerRef.current
       && activeCallRef.current?.id === callId
       && !peerRef.current.remoteDescription
       && Date.now() < deadline
     ) {
-      const signals = await fetchCallSignals(callId);
-      if (activeCallRef.current?.id !== callId) throw new DOMException('Call cancelled', 'AbortError');
-      for (const signal of signals) await handleSignal(signal);
+      if (Date.now() >= nextPoll) {
+        const signals = await fetchCallSignals(callId);
+        if (activeCallRef.current?.id !== callId) throw new DOMException('Call cancelled', 'AbortError');
+        for (const signal of signals) await handleSignal(signal);
+        nextPoll = Date.now() + pollDelay;
+        pollDelay = Math.min(pollDelay * 2, 5000);
+      }
       if (peerRef.current?.remoteDescription) return;
       await new Promise((resolve) => window.setTimeout(resolve, 250));
     }
@@ -549,6 +600,7 @@ export default function DispatchChat({
   }, []);
 
   useEffect(() => {
+    if (!isVisible) return undefined;
     let cancelled = false;
     let subscription = null;
     const isCurrent = conversationScope.begin();
@@ -570,6 +622,11 @@ export default function DispatchChat({
     setLoading(true);
     setError('');
     setMessages([]);
+    setReadPaused(false);
+    messagesRef.current = [];
+    setMessageSearch('');
+    setMediaFilter('all');
+    setSearchPage({ messages: [], hasMore: false });
     setHasOlderMessages(false);
     setConversationId(null);
     setConnectionStatus('connecting');
@@ -578,12 +635,21 @@ export default function DispatchChat({
         const id = await openChat(selectedDriver.id);
         if (cancelled) return;
         setConversationId(id);
-        const reconcileLatest = async () => {
-          const page = await fetchChatMessages(id);
+        let syncRequest = null;
+        let syncEvents = [];
+        const reconcileLatest = () => {
+          if (syncRequest) return syncRequest;
+          syncEvents = [];
+          syncRequest = (async () => {
+          const page = await syncChatHistory(id, buildChatCursor(messagesRef.current), isCurrent);
           if (cancelled || !isCurrent()) return;
-          setMessages((previous) => mergeChatMessages(previous, page.messages));
+          const buffered = syncEvents;
+          setMessages((previous) => mergeChatMessages(mergeChatMessages(previous, page.messages), buffered));
           setHasOlderMessages(page.hasMore);
+          })().finally(() => { syncRequest = null; });
+          return syncRequest;
         };
+        syncRef.current = reconcileLatest;
         subscription = subscribeChat({
           conversationId: id,
           onStatus: (status) => {
@@ -595,26 +661,19 @@ export default function DispatchChat({
           onReconnect: () => reconcileLatest().catch(() => { if (isCurrent()) setConnectionStatus('offline'); }),
           onMessage: (message) => {
             if (!isCurrent()) return;
+            if (syncRequest) syncEvents.push(message);
             setMessages((previous) => mergeChatMessages(previous, [message]));
-            if (visibilityRef.current && message.sender_id !== currentUser.id) {
-              markChatRead(id).then(() => unreadChangeRef.current?.()).catch(() => {});
-            } else {
-              unreadChangeRef.current?.();
-            }
           },
           onMessageUpdated: (message) => {
             if (!isCurrent()) return;
+            if (syncRequest) syncEvents.push(message);
             setMessages((previous) => mergeChatMessages(previous, [message]));
-            unreadChangeRef.current?.();
+            setSearchPage((page) => ({ ...page, messages: page.messages.filter((row) => row.id !== message.id || !message.deleted_at).map((row) => row.id === message.id ? { ...row, ...message } : row) }));
           },
         });
-        await subscription.ready;
+        // REST history works even when the WebSocket cannot connect.
+        subscription.ready.then(reconcileLatest).catch(() => { if (isCurrent()) setConnectionStatus('offline'); });
         await reconcileLatest();
-        if (!isCurrent()) return;
-        if (visibilityRef.current) {
-          await markChatRead(id);
-          unreadChangeRef.current?.();
-        }
       } catch (loadError) {
         if (!cancelled) {
           setConnectionStatus('offline');
@@ -624,8 +683,11 @@ export default function DispatchChat({
         if (!cancelled) setLoading(false);
       }
     })();
-    return () => { cancelled = true; conversationScope.cancel(); subscription?.unsubscribe(); };
-  }, [selectedDriver?.id, currentUser.id, conversationScope, t]);
+    const refresh = () => { if (document.visibilityState === 'visible') syncRef.current?.().catch(() => { if (isCurrent()) setConnectionStatus('offline'); }); };
+    window.addEventListener('online', refresh);
+    document.addEventListener('visibilitychange', refresh);
+    return () => { cancelled = true; syncRef.current = null; conversationScope.cancel(); subscription?.unsubscribe(); window.removeEventListener('online', refresh); document.removeEventListener('visibilitychange', refresh); };
+  }, [selectedDriver?.id, currentUser.id, conversationScope, t, isVisible]);
 
   useEffect(() => {
     if (isVisible) return;
@@ -638,22 +700,22 @@ export default function DispatchChat({
     recordingStreamRef.current = null;
     // oxlint-disable-next-line react/set-state-in-effect -- hide discards an owned microphone recording.
     setRecording(false);
+    setShowProfile(false);
+    setMessageContextMenu(null);
+    setEditingMessageId(null);
+    setSavingEdit(false);
   }, [isVisible]);
 
-  useEffect(() => {
-    if (!isVisible || !conversationId) return;
-    const isCurrent = conversationCurrentRef.current;
-    fetchChatMessages(conversationId).then(async (page) => {
-      if (!isCurrent() || !visibilityRef.current) return;
-      setMessages((previous) => mergeChatMessages(previous, page.messages));
-      await markChatRead(conversationId);
-      unreadChangeRef.current?.();
-    }).catch((cause) => { if (isCurrent()) setError(localizedError(t, cause, 'errors.chatOpen')); });
-  }, [isVisible, conversationId, t]);
 
   useEffect(() => {
-    // oxlint-disable-next-line react/set-state-in-effect -- synchronize externally requested driver navigation.
-    if (activeChatDriver?.id) setSelectedDriverId(activeChatDriver.id);
+    if (activeChatDriver?.id) {
+      // oxlint-disable-next-line react/set-state-in-effect -- synchronize externally requested driver navigation.
+      setSelectedDriverId(activeChatDriver.id);
+      setShowProfile(false);
+      setMessageContextMenu(null);
+      setEditingMessageId(null);
+      setSavingEdit(false);
+    }
   }, [activeChatDriver?.id, selectionRequestKey]);
 
   useEffect(() => {
@@ -731,12 +793,15 @@ export default function DispatchChat({
   };
 
   const loadOlderMessages = async () => {
-    if (!conversationId || loadingOlder || !hasOlderMessages) return;
+    if (!conversationId || loadingOlder || !(searching ? searchPage.hasMore : hasOlderMessages)) return;
     const isCurrent = conversationCurrentRef.current;
     setLoadingOlder(true);
     try {
-      const page = await fetchChatMessages(conversationId, { before: buildChatCursor(messages) });
+      const page = searching
+        ? await searchChatMessages(conversationId, messageSearch, mediaFilter, searchPage.cursor)
+        : await fetchChatMessages(conversationId, { before: buildChatCursor(messages) });
       if (!isCurrent()) return;
+      if (searching) { setSearchPage((previous) => ({ ...page, messages: mergeChatMessages(previous.messages, page.messages) })); return; }
       setMessages((previous) => mergeChatMessages(previous, page.messages));
       setHasOlderMessages(page.hasMore);
     } catch (loadError) {
@@ -751,7 +816,10 @@ export default function DispatchChat({
     const isCurrent = conversationCurrentRef.current;
     try {
       const refreshed = await refreshChatMessageMedia(message);
-      if (isCurrent()) setMessages((current) => mergeChatMessages(current, [refreshed]));
+      if (isCurrent()) {
+        setMessages((current) => mergeChatMessages(current, [refreshed]));
+        setSearchPage((page) => ({ ...page, messages: page.messages.map((row) => row.id === refreshed.id ? refreshed : row) }));
+      }
     } catch (refreshError) {
       if (isCurrent()) setError(localizedError(t, refreshError, 'errors.mediaReload'));
       throw refreshError;
@@ -765,11 +833,48 @@ export default function DispatchChat({
     setError('');
     try {
       await deleteChatMessage(message);
-      if (isCurrent()) setMessages((previous) => previous.filter((item) => item.id !== message.id));
+      if (isCurrent()) {
+        setMessages((previous) => previous.filter((item) => item.id !== message.id));
+        setSearchPage((page) => ({ ...page, messages: page.messages.filter((row) => row.id !== message.id) }));
+      }
       unreadChangeRef.current?.();
     } catch (deleteError) {
       if (isCurrent()) setError(localizedError(t, deleteError, 'errors.messageDelete'));
     }
+  };
+
+  const saveEditedMessage = async (event) => {
+    event?.preventDefault();
+    const body = editDraft.trim();
+    if (!editingMessageId || !body || savingEdit) return;
+    const isCurrent = conversationCurrentRef.current;
+    setSavingEdit(true);
+    setError('');
+    try {
+      const updated = await editChatMessage(editingMessageId, body);
+      if (isCurrent()) {
+        setMessages((previous) => mergeChatMessages(previous, [updated]));
+        setSearchPage((page) => ({ ...page, messages: page.messages.map((row) => row.id === updated.id ? updated : row) }));
+        setEditingMessageId(null);
+        setEditDraft('');
+      }
+    } catch (cause) {
+      if (isCurrent()) setError(localizedError(t, cause, 'chat.editError'));
+    } finally {
+      if (isCurrent()) setSavingEdit(false);
+    }
+  };
+
+  const openMessageContextMenu = (event, message) => {
+    if (message.sender_id !== currentUser.id || message.kind !== 'text') return;
+    event.preventDefault();
+    setChatContextMenu(null);
+    setMessageContextMenu({ message, ...positionChatContextMenu({
+      x: event.clientX,
+      y: event.clientY,
+      viewportWidth: window.innerWidth,
+      viewportHeight: window.innerHeight,
+    }) });
   };
 
   const toggleRecording = async () => {
@@ -937,6 +1042,43 @@ export default function DispatchChat({
     } catch (cause) { setError(localizedError(t, cause, 'errors.fullscreen')); }
   };
 
+  const openChatContextMenu = (event, driverId) => {
+    event.preventDefault();
+    const position = positionChatContextMenu({
+      x: event.clientX,
+      y: event.clientY,
+      viewportWidth: window.innerWidth,
+      viewportHeight: window.innerHeight,
+    });
+    setChatContextMenu({ driverId, ...position });
+  };
+
+  const markDriverChatUnread = async () => {
+    const driverId = chatContextMenu?.driverId;
+    if (!driverId || markingUnreadDriverId) return;
+    setMarkingUnreadDriverId(driverId);
+    try {
+      const targetConversationId = (
+        driverId === selectedDriver?.id ? conversationId : null
+      ) || driverConversationIds[driverId] || await openChat(driverId);
+      if (driverId === selectedDriver?.id) setReadPaused(true);
+      const messageId = await markChatUnread(targetConversationId);
+      if (messageId) {
+        setDriverUnreadCounts((current) => ({
+          ...current,
+          [driverId]: Math.max(1, current[driverId] || 0),
+        }));
+        unreadChangeRef.current?.();
+      }
+    } catch {
+      setReadPaused(false);
+      setError(t('chat.markUnreadError'));
+    } finally {
+      setMarkingUnreadDriverId(null);
+      setChatContextMenu(null);
+    }
+  };
+
   if (!selectedDriver) {
     return <div className="dispatch-chat-workspace h-full grid place-items-center text-zinc-500">{t('chat.noDriver')}</div>;
   }
@@ -964,11 +1106,19 @@ export default function DispatchChat({
         <div className="flex-1 overflow-y-auto">
           {filteredDrivers.map((driver) => {
             const selected = driver.id === selectedDriver.id;
+            const unreadCount = driverUnreadCounts[driver.id] || 0;
             return (
               <button
                 key={driver.id}
+                type="button"
+                onContextMenu={(event) => openChatContextMenu(event, driver.id)}
                 onClick={() => {
+                  setChatContextMenu(null);
+                  setMessageContextMenu(null);
+                  setEditingMessageId(null);
+                  setSavingEdit(false);
                   setSelectedDriverId(driver.id);
+                  setShowProfile(false);
                   setMessageSearch('');
                   setMediaFilter('all');
                 }}
@@ -976,12 +1126,17 @@ export default function DispatchChat({
               >
                 <DriverAvatar driver={driver} />
                 <div className="min-w-0 flex-1">
-                  <p className="font-bold truncate">{driver.name}</p>
-                  <p className="mt-1 truncate text-xs text-zinc-400">{messagePreview(
+                  <p className={`truncate ${unreadCount ? 'font-black' : 'font-bold'}`}>{driver.name}</p>
+                  <p className={`mt-1 truncate text-xs ${unreadCount ? 'font-bold text-zinc-800 dark:text-zinc-200' : 'text-zinc-400'}`}>{messagePreview(
                     selected ? messages[messages.length - 1] || driverPreviews[driver.id] : driverPreviews[driver.id],
                     t,
                   )}</p>
                 </div>
+                {unreadCount > 0 && (
+                  <span className="grid min-h-5 min-w-5 place-items-center self-center rounded-full bg-red-500 px-1 text-[10px] font-black text-white">
+                    {unreadCount > 99 ? '99+' : unreadCount}
+                  </span>
+                )}
               </button>
             );
           })}
@@ -1007,15 +1162,15 @@ export default function DispatchChat({
               <button type="button" onClick={() => { setShowMessageSearch(false); setMessageSearch(''); }} title={t('header.closeSearch')} className="rounded-full p-1 hover:bg-zinc-200 dark:hover:bg-zinc-700"><X className="h-4 w-4" /></button>
             </div>
           ) : (
-            <button type="button" onClick={() => setShowProfile(true)} className="flex min-w-0 items-center gap-3 text-left">
+            <div className="flex min-w-0 items-center gap-3 text-left">
               <DriverAvatar driver={selectedDriver} sizeClass="w-10 h-10" />
               <span className="min-w-0">
                 <span className="block truncate font-black">{selectedDriver.name}</span>
                 <span className={`block text-xs font-semibold ${connectionStatus === 'connected' ? (selectedDriver.isOnline ? 'text-emerald-500' : 'text-zinc-400') : 'text-amber-600'}`}>
-                  {connectionStatus === 'connected' ? (selectedDriver.isOnline ? t('common.online') : t('common.offline')) : connectionStatus === 'connecting' ? t('chat.connecting') : t('chat.reconnecting')}
+                  {connectionStatus === 'connected' ? (selectedDriver.isOnline ? t('common.online') : selectedDriver.lastSeenAt ? t('chat.lastSeenAt', { date: formatDateTime(selectedDriver.lastSeenAt) }) : t('common.offline')) : connectionStatus === 'connecting' ? t('chat.connecting') : t('chat.reconnecting')}
                 </span>
               </span>
-            </button>
+            </div>
           )}
           <div className="flex items-center gap-1">
             {!showMessageSearch && <button type="button" onClick={() => setShowMessageSearch(true)} title={t('chat.search')} className="p-2.5 rounded-full hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-500"><Search className="w-5 h-5" /></button>}
@@ -1040,9 +1195,9 @@ export default function DispatchChat({
           </div>
         )}
 
-        <div className="flex-1 overflow-y-auto px-4 py-5 space-y-2">
+        <div className="flex min-h-0 flex-1 flex-col py-3">
           {loading && <div className="h-full grid place-items-center"><LoaderCircle className="animate-spin text-blue-600" /></div>}
-          {!loading && hasOlderMessages && (
+          {!loading && (searching ? searchPage.hasMore : hasOlderMessages) && (
             <div className="flex justify-center pb-2">
               <button type="button" disabled={loadingOlder} onClick={loadOlderMessages} className="rounded-full border border-zinc-200 bg-white px-3 py-1.5 text-xs font-bold text-zinc-600 shadow-sm hover:bg-zinc-50 disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300">
                 {loadingOlder ? t('common.loading') : t('chat.loadOlder')}
@@ -1059,30 +1214,34 @@ export default function DispatchChat({
               <div><Search className="mx-auto mb-3 h-8 w-8" /><p className="font-bold">{t('chat.noMatches')}</p></div>
             </div>
           )}
-          {visibleMessages.map((message, index) => {
+          {searchLoading && <div className="text-center text-xs text-zinc-500">{t('common.loading')}</div>}
+          {!loading && visibleMessages.length > 0 && <ChatTimeline key={`${conversationId}:${searching ? `${messageSearch}:${mediaFilter}` : 'history'}`} messages={visibleMessages}>{(message, index) => {
             const mine = message.sender_id === currentUser.id;
             const showDate = index === 0 || messageDayKey(message.created_at) !== messageDayKey(visibleMessages[index - 1].created_at);
             return (
-              <Fragment key={message.id}>
+              <ChatReadBoundary message={message} enabled={isVisible && !readPaused && !mine} onRead={readVisibleMessage}>
                 {showDate && (
                   <div className="sticky top-1 z-10 flex justify-center py-2">
                     <span className="rounded-full bg-zinc-800/75 px-3 py-1 text-[11px] font-bold text-white shadow-sm backdrop-blur dark:bg-zinc-700/85">{messageDayLabel(message.created_at, t)}</span>
                   </div>
                 )}
-                <div className={`group flex items-center gap-1 ${mine ? 'justify-end' : 'justify-start'}`}>
+                <div className={`group flex items-center gap-1 ${mine ? 'justify-end' : 'justify-start'}`} onContextMenu={(event) => openMessageContextMenu(event, message)}>
                   {mine && <button type="button" onClick={() => removeMessage(message)} title={t('chat.deleteMessage')} className="p-1.5 rounded-full text-zinc-400 opacity-0 group-hover:opacity-100 focus:opacity-100 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30 transition"><Trash2 className="w-4 h-4" /></button>}
                   <div className={`max-w-[82%] rounded-2xl px-3.5 py-2 shadow-sm ${mine ? 'bg-blue-600 text-white rounded-br-md' : 'bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-bl-md'}`}>
-                    {message.kind === 'text' ? <p className="text-sm whitespace-pre-wrap break-words">{message.body}</p> : <MediaMessage message={message} onRefresh={refreshMedia} />}
+                    {editingMessageId === message.id ? <form onSubmit={saveEditedMessage} className="min-w-48 space-y-2">
+                      <textarea autoFocus value={editDraft} onChange={(event) => setEditDraft(event.target.value)} onKeyDown={(event) => { if (event.key === 'Escape') { setEditingMessageId(null); setEditDraft(''); } else if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); saveEditedMessage(); } }} rows={2} maxLength={4000} aria-label={t('chat.editMessage')} className="w-full resize-y rounded-lg bg-white px-2 py-1 text-sm text-zinc-900 outline-none" />
+                      <div className="flex justify-end gap-2 text-xs font-bold"><button type="button" onClick={() => { setEditingMessageId(null); setEditDraft(''); }} disabled={savingEdit}>{t('common.cancel')}</button><button type="submit" disabled={savingEdit || !editDraft.trim()}>{savingEdit ? t('common.loading') : t('common.save')}</button></div>
+                    </form> : message.kind === 'text' ? <p className="text-sm whitespace-pre-wrap break-words">{message.body}</p> : <MediaMessage message={message} onRefresh={refreshMedia} />}
                     <div className={`mt-1 text-[10px] flex items-center justify-end gap-1 ${mine ? 'text-blue-100' : 'text-zinc-400'}`}>
+                      {message.edited_at && <span>{t('chat.edited')}</span>}
                       <span>{messageTime(message.created_at)}</span>
                       {mine && <CheckCheck className={`w-3.5 h-3.5 ${message.read_at ? 'text-cyan-200' : ''}`} />}
                     </div>
                   </div>
                 </div>
-              </Fragment>
+              </ChatReadBoundary>
             );
-          })}
-          <div ref={messagesEndRef} />
+          }}</ChatTimeline>}
         </div>
 
         {uploadProgress !== null && (
@@ -1095,7 +1254,7 @@ export default function DispatchChat({
           <input ref={fileInputRef} type="file" className="hidden" accept="image/*,video/*,audio/*,.pdf" onChange={(event) => { uploadFile(event.target.files?.[0]); event.target.value = ''; }} />
           <button type="button" onClick={() => fileInputRef.current?.click()} title={t('chat.sendMedia')} className="p-2.5 rounded-full text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800"><Paperclip className="w-5 h-5" /></button>
           <div className="flex-1 rounded-2xl border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-900 px-3">
-            <textarea ref={composerRef} rows="1" value={inputMessage} onChange={(event) => setInputMessage(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); sendMessage(); } }} placeholder={t('chat.typeMessage')} className="w-full max-h-28 resize-none bg-transparent py-2.5 text-sm outline-none" />
+            <textarea ref={composerRef} rows="1" maxLength={4000} value={inputMessage} onChange={(event) => setInputMessage(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); sendMessage(); } }} placeholder={t('chat.typeMessage')} className="w-full max-h-28 resize-none bg-transparent py-2.5 text-sm outline-none" />
           </div>
           <button type="button" onClick={() => setShowEmojiPicker((current) => !current)} title={t('chat.emoji')} className="p-2.5 rounded-full text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800"><Smile className="w-5 h-5" /></button>
           {inputMessage.trim() ? (
@@ -1163,6 +1322,44 @@ export default function DispatchChat({
       )}
 
     </div>
+
+      {chatContextMenu && createPortal(
+        <div
+          className="fixed inset-0 z-[90]"
+          onPointerDown={() => setChatContextMenu(null)}
+          onContextMenu={(event) => { event.preventDefault(); setChatContextMenu(null); }}
+        >
+          <div
+            role="menu"
+            aria-label={t('chat.chatActions')}
+            className="fixed w-[230px] rounded-xl border border-zinc-200 bg-white p-1.5 shadow-2xl dark:border-zinc-700 dark:bg-zinc-900"
+            style={{ left: chatContextMenu.left, top: chatContextMenu.top }}
+            onPointerDown={(event) => event.stopPropagation()}
+          >
+            <button
+              ref={contextMenuButtonRef}
+              type="button"
+              role="menuitem"
+              disabled={Boolean(markingUnreadDriverId)}
+              onClick={markDriverChatUnread}
+              className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm font-semibold text-zinc-700 hover:bg-zinc-100 disabled:opacity-60 dark:text-zinc-200 dark:hover:bg-zinc-800"
+            >
+              {markingUnreadDriverId ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Mail className="h-4 w-4" />}
+              <span>{t('chat.markUnread')}</span>
+            </button>
+          </div>
+        </div>,
+        document.body,
+      )}
+
+      {messageContextMenu && createPortal(
+        <div className="fixed inset-0 z-[90]" onPointerDown={() => setMessageContextMenu(null)} onContextMenu={(event) => { event.preventDefault(); setMessageContextMenu(null); }}>
+          <div role="menu" aria-label={t('chat.messageActions')} className="fixed w-[190px] rounded-xl border border-zinc-200 bg-white p-1.5 shadow-2xl dark:border-zinc-700 dark:bg-zinc-900" style={{ left: messageContextMenu.left, top: messageContextMenu.top }} onPointerDown={(event) => event.stopPropagation()}>
+            <button type="button" role="menuitem" autoFocus onClick={() => { setEditingMessageId(messageContextMenu.message.id); setEditDraft(messageContextMenu.message.body || ''); setMessageContextMenu(null); }} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm font-semibold hover:bg-zinc-100 dark:hover:bg-zinc-800"><Pencil className="h-4 w-4" />{t('chat.editMessage')}</button>
+          </div>
+        </div>,
+        document.body,
+      )}
 
       {incomingCall && createPortal(
         <CallDialog label={t('chat.incomingCall')}><div className="fixed inset-0 z-[100] bg-zinc-950/80 backdrop-blur flex items-center justify-center p-6">

@@ -1,8 +1,9 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ArrowLeft, FileText, LayoutGrid, Search, Plus, Sun, Moon, UserRound, X } from 'lucide-react';
+import { ArrowLeft, FileText, LayoutGrid, MessageSquare, Search, Plus, Sun, Moon, UserRound, X } from 'lucide-react';
 
 const titleKeys = {
+  analytics: 'analytics.title',
   kanban: 'nav.loads', drivers: 'nav.drivers', map: 'nav.map',
   docs: 'nav.documents', inbox: 'nav.inbox', chat: 'nav.chat', profile: 'nav.profile',
 };
@@ -17,6 +18,9 @@ export default function TopHeader({
   theme,
   toggleTheme,
   onExitDriver,
+  selectedDriver,
+  onOpenDriverChat,
+  selectedDriverUnreadCount = 0,
 }) {
   const { t } = useTranslation();
   const searchRef = useRef(null);
@@ -111,7 +115,23 @@ export default function TopHeader({
             <ArrowLeft size={18} aria-hidden="true" />
           </button>
         )}
-        <h1>{t(titleKeys[activeTab] || 'nav.management')}</h1>
+        {selectedDriver ? (
+          <div className="header-driver-identity">
+            <span className="header-driver-avatar">
+              {selectedDriver.name.charAt(0)}{selectedDriver.name.split(' ')[1]?.charAt(0) || ''}
+              {selectedDriver.avatar && (
+                <img
+                  src={selectedDriver.avatar}
+                  alt=""
+                  onError={(event) => { event.currentTarget.style.display = 'none'; }}
+                />
+              )}
+            </span>
+            <h1>{selectedDriver.name}</h1>
+          </div>
+        ) : (
+          <h1>{t(titleKeys[activeTab] || 'nav.management')}</h1>
+        )}
       </div>
       <div className="header-actions">
         <div
@@ -207,7 +227,21 @@ export default function TopHeader({
         >
           {theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
         </button>
-        {onOpenCreateModal && (
+        {selectedDriver && onOpenDriverChat ? (
+          <button type="button" onClick={onOpenDriverChat} className="primary-button relative">
+            <MessageSquare size={17} aria-hidden="true" />
+            <span>{t('nav.chat')}</span>
+            {selectedDriverUnreadCount > 0 && (
+              <span
+                className="sidebar-alert-badge absolute -right-2 -top-2 grid min-h-5 min-w-5 place-items-center rounded-full border-2 border-white bg-red-500 px-1 text-[10px] font-black leading-none text-white shadow-sm dark:border-zinc-950"
+                title={t('chat.unreadMessages', { count: selectedDriverUnreadCount })}
+                aria-label={t('chat.unreadMessages', { count: selectedDriverUnreadCount })}
+              >
+                {selectedDriverUnreadCount > 99 ? '99+' : selectedDriverUnreadCount}
+              </span>
+            )}
+          </button>
+        ) : onOpenCreateModal && (
           <button type="button" onClick={onOpenCreateModal} className="primary-button">
             <Plus size={17} aria-hidden="true" />
             <span>{t('header.createLoad')}</span>

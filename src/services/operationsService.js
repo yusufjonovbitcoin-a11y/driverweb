@@ -2,6 +2,9 @@ import { requireSupabase } from '../lib/supabase';
 import { cloudinarySignedUrl } from './cloudinaryMediaService';
 import { createCoalescedAsyncTrigger } from './realtimeRefresh';
 import { normalizeLocale } from '../i18n/locales';
+import { vehicleRowToModel } from './fleetVehicleModel';
+import { loadBoardStatus } from './loadBoardStatus';
+import { isCompleteVin, normalizeVin, parseNhtsaVinResult, retryVinLookup } from './nhtsaVin';
 import {
   resolveDocumentMediaUrls,
   resolveProfileAvatarUrls,
@@ -50,18 +53,20 @@ async function getFunctionAccessToken(client, forceRefresh = false) {
   return session.access_token;
 }
 
-async function invokeAuthenticatedFunction(name, body) {
+async function invokeAuthenticatedFunction(name, body, options = {}) {
   const client = requireSupabase();
   let accessToken = await getFunctionAccessToken(client);
   let result = await client.functions.invoke(name, {
     body,
     headers: { Authorization: `Bearer ${accessToken}` },
+    ...options,
   });
   if (result.error?.context?.status === 401) {
     accessToken = await getFunctionAccessToken(client, true);
     result = await client.functions.invoke(name, {
       body,
       headers: { Authorization: `Bearer ${accessToken}` },
+      ...options,
     });
   }
   return result;
@@ -77,19 +82,6 @@ export async function updateMyLocale(locale) {
   return normalizeLocale(data);
 }
 
-const STATUS_TO_UI = {
-  draft: 'OFFER',
-  review: 'OFFER',
-  ready_for_offer: 'OFFER',
-  offered: 'OFFER',
-  assigned: 'ASSIGNED',
-  in_progress: 'IN_TRANSIT',
-  delivered: 'DELIVERED',
-  completed: 'COMPLETED',
-  cancelled: 'COMPLETED',
-  dispute: 'DELIVERED',
-};
-
 function splitAppointment(value) {
   if (!value) return { appointmentAt: null, date: null, time: null };
   return {
@@ -99,7 +91,7 @@ function splitAppointment(value) {
   };
 }
 
-function toUiLoad(row, offersByLoad, documentsByLoad, warningsByLoad, reviewsByDocument) {
+function toUiLoad(row, offersByLoad, documentsByLoad, warningsByLoad, reviewsByDocument, stagesByAssignment) {
   const pickup = splitAppointment(row.pickup_from);
   const delivery = splitAppointment(row.delivery_from);
   const offers = offersByLoad.get(row.id) || [];
@@ -120,7 +112,7 @@ function toUiLoad(row, offersByLoad, documentsByLoad, warningsByLoad, reviewsByD
   return {
     id: row.id,
     loadNumber: row.load_number?.startsWith('#') ? row.load_number : `#${row.load_number}`,
-    status: STATUS_TO_UI[row.status] || 'OFFER',
+    status: loadBoardStatus(row, stagesByAssignment.get(row.current_assignment_id)),
     databaseStatus: row.status,
     broker: row.broker_name || null,
     brokerContact: row.broker_contact_name || '',
@@ -128,9 +120,9 @@ function toUiLoad(row, offersByLoad, documentsByLoad, warningsByLoad, reviewsByD
     brokerEmail: row.broker_email || '',
     brokerFax: row.broker_fax || '',
     rate: Number(row.broker_rate || 0),
-    rateKnown: row.broker_rate != null,
+    rateKnown: row.broker_rate != null && !row.driver_brief?.unknownFields?.includes('brokerRate'),
     distanceMiles: Number(row.loaded_miles || 0),
-    distanceKnown: row.loaded_miles != null,
+    distanceKnown: row.loaded_miles != null && !row.driver_brief?.unknownFields?.includes('loadedMiles'),
     ratePerMile: Number(row.loaded_rpm || 0),
     origin: {
       city: row.pickup_city || null,
@@ -167,25 +159,34 @@ function toUiLoad(row, offersByLoad, documentsByLoad, warningsByLoad, reviewsByD
     cases: row.case_count,
     isHazmat: row.is_hazmat,
     specialInstructions: row.special_instructions || '',
+    driverBrief: row.driver_brief || null,
+    review: row.driver_brief ? {
+      required: !row.driver_brief.reviewedAt,
+      checksum: row.driver_brief.checksum,
+      blockingFields: row.driver_brief.blockingFields || [],
+    } : null,
     requirements: Array.isArray(row.load_requirements) ? row.load_requirements : [],
     warnings: activeWarnings,
     driverId: row.driver_id,
-    targetDriverIds: offers.map((offer) => offer.driver_id),
+    targetDriverIds: row.driver_id ? [row.driver_id] : [],
     dispatchedAt: row.updated_at || null,
     documents: {
       rateCon: docUrl('rate_confirmation'),
       shipperBol: docUrl('bol'),
       receiverPod: docUrl('pod'),
+      receipt: docUrl('receipt'),
     },
     documentMeta: {
       rateCon: docOfType('rate_confirmation') || null,
       shipperBol: docOfType('bol') || null,
       receiverPod: docOfType('pod') || null,
+      receipt: docOfType('receipt') || null,
     },
     documentChecks: {
       rateCon: docReview('rate_confirmation'),
       shipperBol: docReview('bol'),
       receiverPod: docReview('pod'),
+      receipt: docReview('receipt'),
     },
     version: row.version,
     requiresReconfirmation: Boolean(row.requires_reconfirmation),
@@ -197,6 +198,7 @@ function toUiDriver(member, presence, avatar = null) {
   return {
     id: member.id,
     name: member.full_name,
+    email: member.email || null,
     driverNumber: `#${member.id.slice(0, 4).toUpperCase()}`,
     phone: member.phone || null,
     status: online ? 'AVAILABLE' : 'RESTING',
@@ -213,7 +215,20 @@ function toUiDriver(member, presence, avatar = null) {
       shiftLeft: '—',
       cycleLeft: '—',
     },
-    truck: member.vehicle_type || null,
+    truck: member.vehicle_number || member.vehicle_type || null,
+    vehicle: member.assigned_vehicle_id ? {
+      id: member.assigned_vehicle_id,
+      number: member.vehicle_number,
+      make: member.vehicle_make,
+      model: member.vehicle_model,
+      year: member.vehicle_year,
+      vin: member.vehicle_vin,
+      fuelType: member.vehicle_fuel_type,
+      plateState: member.vehicle_plate_state,
+      plateNumber: member.vehicle_plate_number,
+      sleeperBerthEnabled: member.sleeper_berth_enabled,
+      notes: member.vehicle_notes,
+    } : null,
     trailer: member.trailer_type || null,
     equipment: member.equipment || [],
     rating: null,
@@ -242,6 +257,7 @@ export async function fetchWorkspace() {
   const [
     loadsResult,
     offersResult,
+    assignmentsResult,
     documentsResult,
     membersResult,
     presenceResult,
@@ -250,6 +266,7 @@ export async function fetchWorkspace() {
   ] = await Promise.all([
     client.from('load_overview').select('*').order('updated_at', { ascending: false }),
     client.from('offers').select('id,load_id,driver_id,status,compatibility_warnings').order('created_at', { ascending: false }),
+    client.from('assignments').select('id,driver_stage').eq('status', 'active'),
     client.from('documents').select('id,load_id,document_type,current_version_id'),
     client.from('member_directory').select('*').order('full_name'),
     client.from('driver_presence').select('*'),
@@ -259,6 +276,7 @@ export async function fetchWorkspace() {
   for (const result of [
     loadsResult,
     offersResult,
+    assignmentsResult,
     documentsResult,
     membersResult,
     presenceResult,
@@ -267,13 +285,11 @@ export async function fetchWorkspace() {
   ]) {
     if (result.error) throw result.error;
   }
-  const documents = await resolveDocumentMediaUrls(
-    client,
-    documentsResult.data || [],
-    cloudinarySignedUrl,
-  );
   const members = (membersResult.data || []).filter((member) => member.status === 'active');
-  const avatarUrls = await resolveProfileAvatarUrls(client, members, cloudinarySignedUrl);
+  const [documents, avatarUrls] = await Promise.all([
+    resolveDocumentMediaUrls(client, documentsResult.data || [], cloudinarySignedUrl),
+    resolveProfileAvatarUrls(client, members, cloudinarySignedUrl),
+  ]);
   const offersByLoad = new Map();
   for (const offer of offersResult.data || []) {
     const current = offersByLoad.get(offer.load_id) || [];
@@ -295,9 +311,12 @@ export async function fetchWorkspace() {
   const reviewsByDocument = new Map(
     (reviewsResult.data || []).map((review) => [review.document_id, review]),
   );
+  const stagesByAssignment = new Map(
+    (assignmentsResult.data || []).map((assignment) => [assignment.id, assignment.driver_stage]),
+  );
   return {
     loads: (loadsResult.data || []).map((row) => (
-      toUiLoad(row, offersByLoad, documentsByLoad, warningsByLoad, reviewsByDocument)
+      toUiLoad(row, offersByLoad, documentsByLoad, warningsByLoad, reviewsByDocument, stagesByAssignment)
     )),
     drivers: members.filter((member) => member.role === 'driver').map((member) => (
       toUiDriver(
@@ -520,7 +539,7 @@ function stopPayload(stop, requiresDocument) {
   };
 }
 
-export async function createAndOfferLoad(newLoad) {
+export async function createManualLoad(newLoad) {
   const client = requireSupabase();
   const { data: loadId, error: createError } = await client.rpc('create_load_draft', {
     load_number: newLoad.loadNumber.replace(/^#/, ''),
@@ -536,10 +555,13 @@ export async function createAndOfferLoad(newLoad) {
   });
   if (createError) throw createError;
   const { error: approveError } = await client.rpc('approve_load_draft', { load_id: loadId });
-  if (approveError) throw approveError;
-  const targetDriverIds = (newLoad.targetDriverIds || []).filter(Boolean);
-  const dispatch = await sendOffersForLoad(loadId, targetDriverIds);
-  return { loadId, ...dispatch };
+  if (approveError) {
+    const failure = new Error(approveError.message);
+    failure.code = 'LOAD_SAVED_APPROVAL_FAILED';
+    failure.loadId = loadId;
+    throw failure;
+  }
+  return loadId;
 }
 
 export async function prepareLoadFromDocument(file) {
@@ -570,64 +592,47 @@ export async function prepareLoadFromDocument(file) {
   };
 }
 
-export async function sendOffersForLoad(loadId, driverIds, missingFields = []) {
-  const targets = [...new Set((driverIds || []).filter(Boolean))];
-  if (!loadId || targets.length === 0) {
-    throw new Error('Kamida bitta haydovchini tanlang.');
-  }
-  const client = requireSupabase();
-  const { data: route, error: routeError } = await invokeAuthenticatedFunction(
-    'calculate-load-route',
-    { loadId, driverIds: targets },
-  );
-  if (routeError) await throwFunctionError(routeError, 'Marshrut masofasini hisoblay olmadi.');
-  if (route?.error) throw new Error(route.error);
-  if (!route?.loadedMiles || !Array.isArray(route?.targets)) {
-    throw new Error('Marshrut xizmati masofani qaytarmadi. Manzillarni tekshiring.');
-  }
-  const compatibilityWarnings = [...new Set(missingFields)]
-    .filter((field) => typeof field === 'string')
-    .map((field) => ({
-      code: 'ai_missing_field',
-      field,
-      params: { field },
-    }));
-  const { data, error } = await client.rpc('send_routed_offers', {
-    load_id: loadId,
-    offer_targets: route.targets,
-    compatibility_warnings: compatibilityWarnings,
-  });
-  if (error) {
-    if (error.message?.includes('Load is not available for offers')) {
-      throw new Error('Bu yuk allaqachon tayinlangan yoki yakunlangan. Qayta tayinlash rejimidan foydalaning.');
-    }
-    if (error.message?.includes('Driver is not eligible')) {
-      throw new Error('Tanlangan haydovchilardan biri faol emas yoki sizga biriktirilmagan.');
-    }
-    throw error;
-  }
-  return { offers: data || [], route };
+export async function fetchImportRoadRoute(loadId, driverId, signal) {
+  const { data, error } = await invokeAuthenticatedFunction('calculate-load-route', {
+    loadId, driverIds: driverId ? [driverId] : [], preview: true,
+  }, { signal });
+  if (error) await throwFunctionError(error, 'Route unavailable');
+  if (data?.error) throw new Error(data.error);
+  return data;
 }
 
-export async function reassignLoad(loadId, driverId) {
-  if (!loadId || !driverId) throw new Error('Qayta tayinlash uchun haydovchini tanlang.');
+export async function fetchImportContacts(loadId, signal) {
+  const { data, error } = await invokeAuthenticatedFunction('lookup-load-contacts', { loadId }, { signal });
+  if (error) await throwFunctionError(error, 'Contacts unavailable');
+  if (data?.error) throw new Error(data.error);
+  return data;
+}
+
+export async function assignLoadDirectly(loadId, driverId) {
+  if (!loadId || !driverId) throw new Error('Tayinlash uchun bitta haydovchini tanlang.');
   const client = requireSupabase();
-  const { data, error } = await client.rpc('reassign_load', {
+  const { data, error } = await client.rpc('assign_load_directly', {
     load_id: loadId,
-    new_driver_id: driverId,
-    origin_latitude: null,
-    origin_longitude: null,
-    estimated_deadhead_miles: 0,
+    driver_id: driverId,
   });
   if (error) {
-    if (error.message?.includes('Load cannot be reassigned')) {
-      throw new Error('Bu yukni qayta tayinlab bo‘lmaydi. Yuk yakunlangan yoki bekor qilingan.');
+    if (error.message?.includes('not available for direct assignment')) {
+      throw new Error('Bu yukni tayinlab bo‘lmaydi. Yuk tayyor emas yoki yakunlangan.');
     }
     if (error.message?.includes('Driver is not eligible')) {
       throw new Error('Tanlangan haydovchi faol emas.');
     }
     throw error;
   }
+  return data;
+}
+
+export async function reviewAndAssignDocumentLoad(loadId, driverId, checksum) {
+  const client = requireSupabase();
+  const { data, error } = await client.rpc('review_and_assign_document_load', {
+    target_load_id: loadId, target_driver_id: driverId, source_checksum: checksum,
+  });
+  if (error) throw error;
   return data;
 }
 
@@ -652,6 +657,104 @@ export async function deleteUnassignedLoad(loadId) {
   return data;
 }
 
+export async function fetchFleetVehicles() {
+  const client = requireSupabase();
+  const { data, error } = await client
+    .from('fleet_vehicle_overview')
+    .select('*')
+    .order('vehicle_number');
+  if (error) throw error;
+  return (data || []).map(vehicleRowToModel);
+}
+
+export async function updateCompanyDriverContact(driverId, { name, phone }) {
+  const client = requireSupabase();
+  const { data, error } = await client.rpc('update_company_driver_contact', {
+    p_driver_id: driverId,
+    p_full_name: name.trim(),
+    p_phone: phone.trim() || null,
+  });
+  if (error) throw error;
+  return data;
+}
+
+export async function decodeVehicleVin(value, { signal } = {}) {
+  const vin = normalizeVin(value);
+  if (!isCompleteVin(vin)) throw new Error('Invalid VIN');
+
+  const payload = await retryVinLookup(async () => {
+    if (import.meta.env.DEV) {
+      const response = await fetch(`/api/vin-decode/${vin}?format=json`, { signal });
+      if (!response.ok) throw new Error('VIN decoder is unavailable');
+      return response.json();
+    }
+    const result = await invokeAuthenticatedFunction('decode-vin', { vin }, {
+      signal,
+      timeout: 10000,
+    });
+    if (result.error) throw result.error;
+    return result.data;
+  }, { signal });
+  return parseNhtsaVinResult(payload, vin);
+}
+
+export async function createFleetVehicle(vehicle) {
+  const client = requireSupabase();
+  const { data, error } = await client.rpc('create_fleet_vehicle', {
+    p_vehicle_number: vehicle.vehicleNumber,
+    p_vin: vehicle.vin,
+    p_make: vehicle.make,
+    p_model: vehicle.model,
+    p_model_year: vehicle.modelYear,
+    p_fuel_type: vehicle.fuelType,
+    p_plate_issued_state: vehicle.plateIssuedState || null,
+    p_plate_number: vehicle.plateNumber || null,
+    p_sleeper_berth_enabled: vehicle.sleeperBerthEnabled,
+    p_notes: vehicle.notes || null,
+    p_driver_id: null,
+  });
+  if (error) throw error;
+  return Array.isArray(data) ? data[0] : data;
+}
+
+export async function updateFleetVehicle(vehicleId, vehicle, status = 'active') {
+  const client = requireSupabase();
+  const { data, error } = await client.rpc('update_fleet_vehicle', {
+    p_vehicle_id: vehicleId,
+    p_vehicle_number: vehicle.vehicleNumber,
+    p_make: vehicle.make,
+    p_model: vehicle.model,
+    p_model_year: vehicle.modelYear,
+    p_fuel_type: vehicle.fuelType,
+    p_plate_issued_state: vehicle.plateIssuedState || null,
+    p_plate_number: vehicle.plateNumber || null,
+    p_sleeper_berth_enabled: vehicle.sleeperBerthEnabled,
+    p_notes: vehicle.notes || null,
+    p_status: status,
+  });
+  if (error) throw error;
+  return Array.isArray(data) ? data[0] : data;
+}
+
+export async function assignFleetVehicleDriver(vehicleId, driverId) {
+  const client = requireSupabase();
+  const { data, error } = await client.rpc('assign_vehicle_driver', {
+    p_vehicle_id: vehicleId,
+    p_driver_id: driverId,
+  });
+  if (error) throw error;
+  return data;
+}
+
+export async function unassignFleetVehicleDriver(vehicleId) {
+  const client = requireSupabase();
+  const { data, error } = await client.rpc('unassign_vehicle_driver', {
+    p_vehicle_id: vehicleId,
+  });
+  if (error) throw error;
+  return data;
+}
+
 export function subscribeWorkspace(onChange) {
   const client = requireSupabase();
   const refresh = createCoalescedAsyncTrigger(onChange);
@@ -665,6 +768,8 @@ export function subscribeWorkspace(onChange) {
     .on('postgres_changes', { event: '*', schema: 'public', table: 'driver_presence' }, refresh)
     .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, refresh)
     .on('postgres_changes', { event: '*', schema: 'public', table: 'driver_profiles' }, refresh)
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'vehicles' }, refresh)
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'vehicle_driver_assignments' }, refresh)
     .subscribe();
   return () => {
     refresh.dispose();

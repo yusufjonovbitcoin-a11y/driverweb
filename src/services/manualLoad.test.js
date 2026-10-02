@@ -35,7 +35,7 @@ test('load identifier is stable across validation attempts and target ids are va
   assert.equal(normalize().loadNumber, normalize().loadNumber);
   assert.deepEqual(normalize({}, ['driver-a', 'driver-a', 'unknown']).targetDriverIds, ['driver-a']);
   assert.throws(() => normalize({}, ['unknown']));
-  assert.throws(() => normalize({}, []));
+  assert.deepEqual(normalize({}, []).targetDriverIds, []);
 });
 
 test('optional weight matches positive-integer database constraint', () => {

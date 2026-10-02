@@ -1,13 +1,21 @@
 import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { 
+import {
+  Check,
+  Clock3,
   MapPin, 
-  MessageSquare,
   Plus, 
   Search,
 } from 'lucide-react';
 import KanbanBoard from './KanbanBoard';
-import { formatCurrency } from '../i18n/format';
+import { formatDate, formatTime } from '../i18n/format';
+import {
+  activeLoadsForDriver,
+  lastSeenKind,
+  partitionDriverLoads,
+  rosterAppointment,
+  rosterStopAddress,
+} from './driverRosterModel';
 
 export default function DriverRoster({
   drivers,
@@ -15,29 +23,41 @@ export default function DriverRoster({
   onAssignLoad,
   onOpenDocs,
   onDeleteLoad,
-  onDropOnOffer,
-  isAiProcessing,
+  onImportDriverDocument,
+  isAiProcessing = false,
   selectedDriverId,
   onSelectDriver,
-  onOpenChat,
+  unreadChatsByDriver = {},
 }) {
   const { t } = useTranslation();
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('ALL');
+  const [copiedLoadId, setCopiedLoadId] = useState(null);
+
+  const copyLoadNumber = async (event, load) => {
+    event.stopPropagation();
+    try {
+      await navigator.clipboard.writeText(load.loadNumber);
+      setCopiedLoadId(load.id);
+      window.setTimeout(() => setCopiedLoadId((current) => current === load.id ? null : current), 1500);
+    } catch {
+      // Clipboard permission can be denied by the browser; keep row navigation unaffected.
+    }
+  };
 
   const openDriver = (driverId) => {
     onSelectDriver(driverId);
   };
 
-  const availableDriversCount = drivers.filter(d => !loads.some(l => l.driverId === d.id && l.status !== 'COMPLETED')).length;
+  const availableDriversCount = drivers.filter((driver) => activeLoadsForDriver(loads, driver.id).length === 0).length;
   const onDutyDriversCount = drivers.length - availableDriversCount;
 
   const filteredDrivers = drivers.filter(driver => {
-    const activeLoad = loads.find(l => l.driverId === driver.id && l.status !== 'COMPLETED');
+    const activeLoads = activeLoadsForDriver(loads, driver.id);
     
     // Status filter
-    if (statusFilter === 'AVAILABLE' && activeLoad) return false;
-    if (statusFilter === 'ON_LOAD' && !activeLoad) return false;
+    if (statusFilter === 'AVAILABLE' && activeLoads.length) return false;
+    if (statusFilter === 'ON_LOAD' && !activeLoads.length) return false;
 
     // Search query
     if (!searchQuery.trim()) return true;
@@ -48,29 +68,44 @@ export default function DriverRoster({
       (driver.trailer && driver.trailer.toLowerCase().includes(q)) ||
       (driver.currentLocation && driver.currentLocation.toLowerCase().includes(q)) ||
       (driver.driverNumber && driver.driverNumber.toLowerCase().includes(q)) ||
-      (activeLoad && activeLoad.loadNumber.toLowerCase().includes(q))
+      activeLoads.some((load) => load.loadNumber.toLowerCase().includes(q))
     );
   });
 
   const selectedDriver = drivers.find((driver) => driver.id === selectedDriverId);
 
   if (selectedDriver) {
-    const driverLoads = loads.filter((load) => (
-      load.driverId === selectedDriver.id
-      || load.targetDriverIds?.includes(selectedDriver.id)
-    ));
+    const driverLoads = loads.filter((load) => load.driverId === selectedDriver.id);
+    const { workflow, exceptions } = partitionDriverLoads(driverLoads);
 
     return (
-      <DriverLoadWorkspace
-        driver={selectedDriver}
-        loads={driverLoads}
-        drivers={drivers}
-        onOpenChat={onOpenChat}
-        onOpenDocs={onOpenDocs}
-        onDeleteLoad={onDeleteLoad}
-        onDropOnOffer={onDropOnOffer}
-        isAiProcessing={isAiProcessing}
-      />
+      <div className="driver-trips-view space-y-5">
+        <section aria-label={t('drivers.tripHistory')}>
+          <DriverLoadWorkspace
+            loads={workflow}
+            drivers={drivers}
+            onOpenDocs={onOpenDocs}
+            onDeleteLoad={onDeleteLoad}
+            onImportDocument={(file) => onImportDriverDocument?.(file, selectedDriver.id)}
+            isAiProcessing={isAiProcessing}
+          />
+          {exceptions.length > 0 && (
+            <details className="mt-4 rounded-xl border border-amber-200 bg-amber-50/60 p-3 dark:border-amber-900/60 dark:bg-amber-950/20">
+              <summary className="cursor-pointer text-sm font-semibold text-amber-900 dark:text-amber-200">
+                {t('drivers.exceptionTrips', { count: exceptions.length })}
+              </summary>
+              <div className="mt-3 space-y-2">
+                {exceptions.map((load) => (
+                  <button key={load.id} type="button" onClick={() => onOpenDocs(load)} className="flex w-full items-center justify-between gap-3 rounded-lg border border-zinc-200 bg-white px-3 py-2 text-left text-sm hover:border-teal-500 dark:border-zinc-700 dark:bg-zinc-900">
+                    <span className="font-semibold">{load.loadNumber}</span>
+                    <span className="text-xs text-zinc-600 dark:text-zinc-300">{t(`loadStatus.${load.databaseStatus}`)}</span>
+                  </button>
+                ))}
+              </div>
+            </details>
+          )}
+        </section>
+      </div>
     );
   }
 
@@ -131,9 +166,9 @@ export default function DriverRoster({
           <thead className="bg-zinc-50/80 dark:bg-zinc-900/80 text-zinc-500 dark:text-zinc-400 font-mono text-xs font-bold uppercase tracking-wider border-b border-zinc-200 dark:border-zinc-800">
             <tr>
               <th className="py-3.5 px-4">{t('drivers.driver')}</th>
-              <th className="py-3.5 px-4">{t('drivers.location')}</th>
-              <th className="py-3.5 px-4">{t('drivers.hosRemaining')}</th>
-              <th className="py-3.5 px-4">{t('drivers.activeTrip')}</th>
+              <th className="py-3.5 px-4">{t('drivers.pickupLocation')}</th>
+              <th className="py-3.5 px-4">{t('drivers.deliveryLocation')}</th>
+              <th className="py-3.5 px-4">{t('drivers.lastSeen')}</th>
               <th className="py-3.5 px-4 text-right">{t('common.actions')}</th>
             </tr>
           </thead>
@@ -146,7 +181,9 @@ export default function DriverRoster({
               </tr>
             ) : (
               filteredDrivers.map((driver) => {
-                const activeLoad = loads.find(l => l.driverId === driver.id && l.status !== 'COMPLETED');
+                const activeLoads = activeLoadsForDriver(loads, driver.id);
+                const hasActiveLoads = activeLoads.length > 0;
+                const unreadChatCount = unreadChatsByDriver[driver.id] || 0;
 
                 return (
                   <tr 
@@ -166,63 +203,78 @@ export default function DriverRoster({
                     {/* Driver Info */}
                     <td className="py-3.5 px-4 whitespace-nowrap">
                       <div className="flex items-center space-x-3">
-                        <div className="relative w-11 h-11 overflow-hidden rounded-xl bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 flex items-center justify-center font-mono font-bold text-sm text-zinc-800 dark:text-zinc-200 flex-shrink-0">
-                          {driver.name.charAt(0)}{driver.name.split(' ')[1]?.charAt(0) || ''}
-                          {driver.avatar && (
-                            <img
-                              src={driver.avatar}
-                              alt=""
-                              className="absolute inset-0 h-full w-full object-cover"
-                              onError={(event) => { event.currentTarget.style.display = 'none'; }}
-                            />
+                        <div className="relative flex-shrink-0">
+                          <div className="relative w-11 h-11 overflow-hidden rounded-xl bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 flex items-center justify-center font-mono font-bold text-sm text-zinc-800 dark:text-zinc-200">
+                            {driver.name.charAt(0)}{driver.name.split(' ')[1]?.charAt(0) || ''}
+                            {driver.avatar && (
+                              <img
+                                src={driver.avatar}
+                                alt=""
+                                className="absolute inset-0 h-full w-full object-cover"
+                                onError={(event) => { event.currentTarget.style.display = 'none'; }}
+                              />
+                            )}
+                          </div>
+                          {unreadChatCount > 0 && (
+                            <span
+                              className="absolute -right-2 -top-2 z-10 grid min-h-5 min-w-5 place-items-center rounded-full border-2 border-white bg-red-500 px-1 text-[10px] font-black leading-none text-white shadow-sm dark:border-zinc-950"
+                              title={t('chat.unreadMessages', { count: unreadChatCount })}
+                              aria-label={t('chat.unreadMessages', { count: unreadChatCount })}
+                            >
+                              {unreadChatCount > 99 ? '99+' : unreadChatCount}
+                            </span>
                           )}
                         </div>
                         <div>
                           <div className="flex items-center space-x-1.5 whitespace-nowrap">
                             <span className="font-bold text-sm text-zinc-900 dark:text-zinc-100">{driver.name}</span>
                           </div>
-                          <div className="text-xs text-zinc-400 font-mono whitespace-nowrap mt-0.5">
-                            <span className="font-bold text-zinc-600 dark:text-zinc-300">{driver.driverNumber}</span> • <span>{driver.phone || t('common.notProvided')}</span>
+                          <div className="mt-1 space-y-0.5 font-mono text-xs font-bold text-blue-700 dark:text-blue-300">
+                            {hasActiveLoads
+                              ? activeLoads.map((load) => (
+                                <button
+                                  key={load.id}
+                                  type="button"
+                                  onClick={(event) => copyLoadNumber(event, load)}
+                                  className="flex items-center gap-1 rounded text-left transition hover:text-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/40"
+                                  title={copiedLoadId === load.id ? t('drivers.copied') : t('drivers.copyLoadNumber')}
+                                >
+                                  {copiedLoadId === load.id && <Check className="h-3 w-3" aria-hidden="true" />}
+                                  <span>{load.loadNumber}</span>
+                                </button>
+                              ))
+                              : <span className="font-normal text-zinc-400">{t('drivers.noCurrentLoad')}</span>}
                           </div>
                         </div>
                       </div>
                     </td>
 
-                    {/* Location */}
-                    <td className="py-3.5 px-4 font-medium text-zinc-800 dark:text-zinc-200 whitespace-nowrap">
-                      <div className="flex items-center space-x-1.5 text-sm">
-                        <MapPin className="w-4 h-4 text-zinc-400 flex-shrink-0" />
-                        <span>{driver.currentLocation || t('common.offline')}</span>
-                      </div>
+                    {/* Pickup address and appointment */}
+                    <td className="py-3.5 px-4 align-top">
+                      <LoadStops
+                        loads={activeLoads}
+                        stopKey="origin"
+                        emptyLabel={t('drivers.noCurrentLoad')}
+                        timeLabel={t('drivers.pickupTime')}
+                      />
                     </td>
 
-                    {/* HOS */}
-                    <td className="py-3.5 px-4 font-mono whitespace-nowrap">
-                      <div className="text-sm font-bold text-emerald-600 dark:text-emerald-400">
-                        {driver.hos.driveLeft} <span className="text-xs text-zinc-400 font-normal">{t('drivers.drive')}</span>
-                      </div>
-                      <div className="text-xs text-zinc-400 font-normal mt-0.5">
-                        {driver.hos.shiftLeft} {t('drivers.shiftAbbr')} • {driver.hos.cycleLeft} {t('drivers.cycleAbbr')}
-                      </div>
+                    {/* Delivery address and appointment */}
+                    <td className="py-3.5 px-4 align-top">
+                      <LoadStops
+                        loads={activeLoads}
+                        stopKey="destination"
+                        emptyLabel={t('drivers.noCurrentLoad')}
+                        timeLabel={t('drivers.deliveryTime')}
+                      />
                     </td>
 
-                    {/* Active Load */}
-                    <td className="py-3.5 px-4 whitespace-nowrap">
-                      {activeLoad ? (
-                        <div className="font-mono">
-                          <div className="text-sm font-bold text-zinc-900 dark:text-zinc-100">
-                            {activeLoad.loadNumber}
-                            {Number(activeLoad.rate) > 0 && ` • ${formatCurrency(activeLoad.rate)}`}
-                          </div>
-                          <div className="text-xs text-zinc-500 truncate max-w-[170px] mt-0.5">
-                            {activeLoad.origin.city || t('common.notProvided')} ➔ {activeLoad.destination.city || t('common.notProvided')}
-                          </div>
-                        </div>
-                      ) : (
-                        <span className="inline-flex items-center text-xs font-semibold px-2.5 py-1 rounded-lg bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800/40">
-                          ✓ {t('drivers.available')}
-                        </span>
-                      )}
+                    {/* Last app activity */}
+                    <td className="py-3.5 px-4 whitespace-nowrap align-top">
+                      <div className="flex items-center gap-1.5 text-sm font-medium text-zinc-700 dark:text-zinc-200">
+                        <Clock3 className="h-4 w-4 shrink-0 text-zinc-400" />
+                        <span>{formatLastSeen(t, driver.lastSeenAt)}</span>
+                      </div>
                     </td>
 
                     {/* Actions */}
@@ -234,10 +286,10 @@ export default function DriverRoster({
                             onAssignLoad(driver);
                           }}
                           className="inline-flex items-center space-x-1.5 bg-zinc-900 hover:bg-zinc-800 text-white dark:bg-zinc-100 dark:hover:bg-white dark:text-zinc-950 px-3.5 py-1.5 rounded-xl font-bold text-xs transition-colors shadow-2xs cursor-pointer"
-                          title={activeLoad ? t('drivers.assignAdditional') : t('drivers.assignLoad')}
+                          title={hasActiveLoads ? t('drivers.assignAdditional') : t('drivers.assignLoad')}
                         >
                           <Plus className="w-3.5 h-3.5" />
-                          <span>{activeLoad ? t('drivers.additionalLoad') : t('header.createLoad')}</span>
+                          <span>{hasActiveLoads ? t('drivers.additionalLoad') : t('header.createLoad')}</span>
                         </button>
                       </div>
                     </td>
@@ -254,60 +306,62 @@ export default function DriverRoster({
   );
 }
 
-function DriverLoadWorkspace({
-  driver,
-  loads,
-  drivers,
-  onOpenChat,
-  onOpenDocs,
-  onDeleteLoad,
-  onDropOnOffer,
-  isAiProcessing,
-}) {
-  const { t } = useTranslation();
-  const activeLoads = loads.filter((load) => load.status !== 'COMPLETED').length;
+function LoadStops({ loads, stopKey, emptyLabel, timeLabel }) {
+  if (!loads.length) return <span className="text-sm text-zinc-400">{emptyLabel}</span>;
 
   return (
-    <div className="driver-workspace space-y-5 pb-12">
-      <div className="driver-detail-header">
-        <div className="driver-detail-identity">
-          <span className="driver-detail-avatar relative overflow-hidden">
-            {driver.name.charAt(0)}{driver.name.split(' ')[1]?.charAt(0) || ''}
-            {driver.avatar && (
-              <img
-                src={driver.avatar}
-                alt=""
-                className="absolute inset-0 h-full w-full object-cover"
-                onError={(event) => { event.currentTarget.style.display = 'none'; }}
-              />
-            )}
-          </span>
-          <div>
-            <div className="flex items-center gap-2">
-              <h2>{driver.name}</h2>
+    <div className="space-y-2.5">
+      {loads.map((load, index) => {
+        const stop = load[stopKey];
+        const address = rosterStopAddress(stop);
+        const appointment = rosterAppointment(stop);
+        return (
+          <div key={load.id} className={index ? 'border-t border-zinc-200 pt-2.5 dark:border-zinc-800' : ''}>
+            <div className="flex max-w-[240px] items-start gap-1.5 text-sm font-semibold text-zinc-800 dark:text-zinc-100">
+              <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-zinc-400" />
+              <span className="line-clamp-2" title={address || undefined}>{address || '—'}</span>
             </div>
-            <p>{driver.driverNumber} <span>•</span> {driver.phone || t('common.notProvided')}</p>
+            <div className="mt-1 flex items-center gap-1.5 pl-5 text-xs text-zinc-500 dark:text-zinc-400">
+              <Clock3 className="h-3.5 w-3.5 shrink-0" />
+              <span aria-label={timeLabel}>{appointment ? formatTime(appointment) : '—'}</span>
+            </div>
           </div>
-        </div>
+        );
+      })}
+    </div>
+  );
+}
 
-        <div className="driver-detail-meta">
-          <div><span>{t('drivers.activeTrips')}</span><strong>{activeLoads}</strong></div>
-        </div>
+function formatLastSeen(t, value) {
+  const kind = lastSeenKind(value);
+  if (kind === 'never') return t('drivers.neverSeen');
+  if (kind === 'yesterday') return t('common.yesterday');
+  if (kind === 'time') return t('drivers.lastSeenTime', { time: formatTime(value) });
+  return formatDate(value, { dateStyle: 'medium' });
+}
 
-        <button type="button" onClick={() => onOpenChat(driver)} className="primary-button">
-          <MessageSquare size={16} aria-hidden="true" />
-          <span>{t('nav.chat')}</span>
-        </button>
-      </div>
-
-        <KanbanBoard
-          loads={loads}
-          drivers={drivers}
-          onOpenDocs={onOpenDocs}
-          onDeleteLoad={onDeleteLoad}
-          onDropOnOffer={onDropOnOffer}
-          isAiProcessing={isAiProcessing}
-        />
+function DriverLoadWorkspace({
+  loads,
+  drivers,
+  onOpenDocs,
+  onDeleteLoad,
+  onImportDocument,
+  isAiProcessing,
+}) {
+  return (
+    <div className="driver-workspace">
+      <KanbanBoard
+        loads={loads}
+        drivers={drivers}
+        onOpenDocs={onOpenDocs}
+        onDeleteLoad={onDeleteLoad}
+        onAssignedDocumentUpload={onImportDocument}
+        isAiProcessing={isAiProcessing}
+        includeUnassigned={false}
+        hideStageFilters
+        groupDeliveredWithOnRoad
+        hideCompletedCardFooter
+      />
     </div>
   );
 }

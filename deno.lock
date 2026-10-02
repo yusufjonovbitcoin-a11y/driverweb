@@ -67,9 +67,12 @@
         "npm:imapflow@^2.0.6",
         "npm:lucide-react@^1.47.0",
         "npm:mailparser@^3.9.28",
+        "npm:mapbox-gl@^3.32.0",
         "npm:oxlint@^1.81.0",
+        "npm:pdf-lib@^1.17.1",
         "npm:react-dom@^19.2.8",
         "npm:react-i18next@^17.0.15",
+        "npm:react-virtuoso@4.18.3",
         "npm:react@^19.2.8",
         "npm:tailwindcss@^4.3.3",
         "npm:vite@^8.3.0"

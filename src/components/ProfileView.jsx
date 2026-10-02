@@ -25,7 +25,6 @@ import {
   Users,
   PackageCheck,
   Route,
-  Pencil,
   ChevronRight,
   MessageSquare,
   Link2,
@@ -41,11 +40,16 @@ import {
   Unplug,
   CircleAlert,
   ExternalLink,
+  Pencil,
 } from 'lucide-react';
 import { LOCALE_META, SUPPORTED_LOCALES } from '../i18n/locales';
 import { formatDateTime } from '../i18n/format';
 import { roleLabel } from '../i18n/labels';
 import { localizedError } from '../i18n/errors';
+import FleetVehiclesPanel from './FleetVehiclesPanel';
+import DriverVehicleAssignmentModal from './DriverVehicleAssignmentModal';
+import DriverContactEditModal from './DriverContactEditModal';
+import DriverProfilePanel from './DriverProfilePanel';
 
 function GmailIcon({ className = '' }) {
   return (
@@ -67,12 +71,20 @@ export default function ProfileView({
   onDeleteMember,
   currentUser,
   onNavigate,
+  onOpenDriver,
+  selectedDriverId = null,
+  onAssignDriverLoad,
+  onOpenDriverChat,
+  onOpenDriverLoad,
   theme = 'light',
   toggleTheme,
   unreadChatCount = 0,
   unreadInboxCount = 0,
   locale = 'uz',
   onLocaleChange,
+  onWorkspaceRefresh,
+  initialDriverToEditId = null,
+  onEditDriverClosed,
 }) {
   const { t } = useTranslation();
   // Inline Form State (NO POPUP MODAL - 100% INLINE FULL-WIDTH FORM)
@@ -83,7 +95,9 @@ export default function ProfileView({
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [companyMemberView, setCompanyMemberView] = useState('drivers');
-  const [activeSection, setActiveSection] = useState('settings');
+  const [activeSection, setActiveSection] = useState(
+    initialDriverToEditId || selectedDriverId ? 'company' : 'settings',
+  );
   const [gmailConnection, setGmailConnection] = useState(null);
   const [gmailEmail, setGmailEmail] = useState('');
   const [gmailAppPassword, setGmailAppPassword] = useState('');
@@ -93,6 +107,14 @@ export default function ProfileView({
   const [gmailError, setGmailError] = useState('');
   const [localeSaving, setLocaleSaving] = useState(false);
   const [deletingMemberId, setDeletingMemberId] = useState(null);
+  const [vehicleAssignmentDriver, setVehicleAssignmentDriver] = useState(null);
+  const [editingDriverId, setEditingDriverId] = useState(initialDriverToEditId);
+  const editingDriver = drivers.find((driver) => driver.id === editingDriverId);
+  const selectedProfileDriver = drivers.find((driver) => driver.id === selectedDriverId) || null;
+  const closeDriverEditor = () => {
+    setEditingDriverId(null);
+    onEditDriverClosed?.();
+  };
   const addFormToggleRef = useRef(null);
 
   // Form State for Adding Driver
@@ -233,14 +255,16 @@ export default function ProfileView({
   };
 
   const handleDeleteMember = async (member) => {
-    if (!onDeleteMember || deletingMemberId) return;
+    if (!onDeleteMember || deletingMemberId) return false;
     const confirmationKey = member.role === 'dispatcher'
       ? 'profile.removeDispatcherConfirm'
       : 'profile.removeDriverConfirm';
-    if (!window.confirm(t(confirmationKey, { name: member.name }))) return;
+    if (!window.confirm(t(confirmationKey, { name: member.name }))) return false;
     setDeletingMemberId(member.id);
     try {
       await onDeleteMember(member);
+      if (member.id === selectedDriverId) onOpenDriver?.(null);
+      return true;
     } finally {
       setDeletingMemberId(null);
     }
@@ -425,7 +449,7 @@ export default function ProfileView({
         <img src="/images/profile-logistics-banner.webp" alt="" className="pointer-events-none absolute inset-0 h-full w-full object-cover object-center" />
         <div className="pointer-events-none absolute inset-0 bg-gradient-to-r from-white/95 via-white/80 to-cyan-50/30 dark:from-zinc-950/95 dark:via-zinc-950/80 dark:to-cyan-950/35" aria-hidden="true" />
 
-        <div className="relative z-10 grid items-center gap-5 xl:grid-cols-[minmax(260px,1fr)_auto_auto]">
+        <div className="relative z-10 grid items-center gap-5 xl:grid-cols-[minmax(260px,1fr)_auto]">
           <div className="flex min-w-0 items-center gap-4">
             <div className="grid h-16 w-16 flex-none place-items-center rounded-2xl bg-emerald-800 text-2xl font-black text-white shadow-sm dark:bg-emerald-200 dark:text-emerald-950 sm:h-20 sm:w-20 sm:text-3xl">
               {currentUser?.avatarInitial || currentUser?.name?.charAt(0) || 'D'}
@@ -464,11 +488,6 @@ export default function ProfileView({
             })}
           </div>
 
-          <div className="flex flex-wrap gap-2 xl:flex-col xl:items-stretch">
-            <button type="button" onClick={() => changeSection('overview', { focusPanel: true })} className="inline-flex items-center justify-center gap-2 rounded-lg border border-emerald-300 bg-white/90 px-3 py-2 text-xs font-bold text-emerald-800 shadow-xs transition hover:bg-white dark:border-emerald-800 dark:bg-zinc-900/90 dark:text-emerald-300 dark:hover:bg-zinc-900">
-              <Pencil className="h-3.5 w-3.5" aria-hidden="true" /> {t('profile.overview')}
-            </button>
-          </div>
         </div>
       </section>
 
@@ -687,6 +706,21 @@ export default function ProfileView({
       )}
 
       {activeSection === 'company' && (
+        selectedProfileDriver && companyMemberView === 'drivers' ? (
+          <DriverProfilePanel
+            driver={selectedProfileDriver}
+            loads={loads}
+            canManage={currentUser?.roleCode === 'company_admin'}
+            deleting={deletingMemberId === selectedProfileDriver.id}
+            onBack={() => onOpenDriver?.(null)}
+            onEdit={(driver) => setEditingDriverId(driver.id)}
+            onAssignVehicle={setVehicleAssignmentDriver}
+            onAssignLoad={onAssignDriverLoad}
+            onOpenChat={onOpenDriverChat}
+            onOpenLoad={onOpenDriverLoad}
+            onDelete={(driver) => handleDeleteMember({ ...driver, role: 'driver' })}
+          />
+        ) : (
         <>
           {formError && <p id="member-form-error" role="alert" className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-600 dark:border-red-900 dark:bg-red-950/30 dark:text-red-400">{formError}</p>}
 
@@ -696,13 +730,10 @@ export default function ProfileView({
           <h3 className="text-xl font-black text-zinc-900 dark:text-zinc-100 tracking-tight">
             {t('profile.companyTeam')}
           </h3>
-          <p className="text-sm text-zinc-500 dark:text-zinc-400 mt-0.5">
-            {t('profile.companyTeamHint')}
-          </p>
         </div>
 
         {/* Toggle Form Button (Modal emas, sahifadagi formani ochish/yopish) */}
-        <button
+        {companyMemberView !== 'vehicles' && <button
           ref={addFormToggleRef}
           onClick={handleToggleAddForm}
           aria-expanded={isAddFormOpen}
@@ -724,10 +755,10 @@ export default function ProfileView({
               <span>{t('profile.addUser')}</span>
             </>
           )}
-        </button>
+        </button>}
       </div>
 
-          <div role="group" aria-label={t('profile.members')} className="inline-grid w-full grid-cols-2 rounded-xl border border-zinc-200 bg-zinc-100 p-1 dark:border-zinc-800 dark:bg-zinc-900 sm:w-auto">
+          <div role="group" aria-label={t('profile.members')} className="inline-grid w-full grid-cols-3 rounded-xl border border-zinc-200 bg-zinc-100 p-1 dark:border-zinc-800 dark:bg-zinc-900 sm:w-auto">
         <button
           type="button"
           aria-pressed={companyMemberView === 'drivers'}
@@ -753,15 +784,30 @@ export default function ProfileView({
         >
           <UserCog className="h-4 w-4" aria-hidden="true" /> {t('profile.dispatchers')} <span className="rounded-md bg-zinc-100 px-1.5 py-0.5 text-[10px] dark:bg-zinc-700">{dispatchers.length}</span>
         </button>
+        <button
+          type="button"
+          aria-pressed={companyMemberView === 'vehicles'}
+          aria-controls="company-members-panel"
+          onClick={() => {
+            setCompanyMemberView('vehicles');
+            setIsAddFormOpen(false);
+            setSearchQuery('');
+          }}
+          className={`inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-xs font-bold transition ${companyMemberView === 'vehicles' ? 'bg-white text-zinc-900 shadow-xs dark:bg-zinc-800 dark:text-zinc-100' : 'text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100'}`}
+        >
+          <Truck className="h-4 w-4" aria-hidden="true" /> {t('fleet.title')}
+        </button>
       </div>
       <p className="sr-only" role="status" aria-live="polite">
         {companyMemberView === 'drivers'
           ? t('profile.driverShown', { count: filteredDrivers.length })
-          : t('profile.dispatcherShown', { count: filteredDispatchers.length })}
+          : companyMemberView === 'dispatchers'
+            ? t('profile.dispatcherShown', { count: filteredDispatchers.length })
+            : t('fleet.title')}
       </p>
 
       {/* 3. YANGI HAYDOVCHI QO'SHISH FORMASI — TO'LIQ SAHIFADA (MODAL EMAS, INLINE FULL-WIDTH FORM) */}
-      {isAddFormOpen && (
+      {isAddFormOpen && companyMemberView !== 'vehicles' && (
         <div id="new-member-form" className="w-full bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl p-5 lg:p-6 space-y-5 animate-in fade-in slide-in-from-top-3 duration-200 shadow-xs">
           <div className="flex items-center justify-between pb-3 border-b border-zinc-200 dark:border-zinc-800">
             <div className="flex items-center space-x-2.5">
@@ -906,7 +952,12 @@ export default function ProfileView({
         </div>
       )}
 
-      {companyMemberView === 'drivers' ? (
+      {companyMemberView === 'vehicles' ? (
+        <FleetVehiclesPanel
+          canManage={currentUser?.roleCode === 'company_admin'}
+          onWorkspaceRefresh={onWorkspaceRefresh}
+        />
+      ) : companyMemberView === 'drivers' ? (
       <div id="company-members-panel" role="region" aria-label={t('nav.drivers')} className="space-y-4">
       {/* Search & Filters */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -975,15 +1026,15 @@ export default function ProfileView({
           const cardTitleId = `driver-card-${driver.id}`;
 
           return (
-            <li key={driver.id} aria-labelledby={cardTitleId} className="overflow-hidden rounded-2xl border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
+            <li key={driver.id} aria-labelledby={cardTitleId} onClick={() => onOpenDriver?.(driver)} className="cursor-pointer overflow-hidden rounded-2xl border border-zinc-200 bg-white transition hover:border-teal-300 dark:border-zinc-800 dark:bg-zinc-900">
               <div className="flex items-center gap-3 px-4 py-3.5">
-                <div className="grid h-11 w-11 flex-none place-items-center overflow-hidden rounded-full bg-zinc-100 text-xs font-bold text-zinc-800 dark:bg-zinc-800 dark:text-zinc-200">
+                <button type="button" onClick={(event) => { event.stopPropagation(); setVehicleAssignmentDriver(driver); }} disabled={currentUser?.roleCode !== 'company_admin'} aria-label={t('fleet.assignToDriver', { name: driver.name })} title={t('fleet.assignToDriver', { name: driver.name })} className="grid h-11 w-11 flex-none place-items-center overflow-hidden rounded-full bg-zinc-100 text-xs font-bold text-zinc-800 transition hover:ring-2 hover:ring-teal-500 disabled:cursor-default disabled:hover:ring-0 dark:bg-zinc-800 dark:text-zinc-200">
                   {driver.avatar
                     ? <img src={driver.avatar} alt="" className="h-full w-full object-cover" />
                     : <span aria-hidden="true">{driver.name.charAt(0)}{driver.name.split(' ')[1]?.charAt(0) || ''}</span>}
-                </div>
+                </button>
                 <div className="min-w-0 flex-1">
-                  <h4 id={cardTitleId} className="truncate font-bold text-zinc-900 dark:text-zinc-100">{driver.name}</h4>
+                  <h4 id={cardTitleId} className="truncate font-bold text-zinc-900 dark:text-zinc-100"><button type="button" onClick={(event) => { event.stopPropagation(); onOpenDriver?.(driver); }} className="text-left hover:text-teal-700 focus-visible:rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-teal-600 dark:hover:text-teal-300">{driver.name}</button></h4>
                   <p className="mt-0.5 break-words text-xs text-zinc-500">
                     {driver.driverNumber || t('common.notProvided')} · {driver.phone || t('common.notProvided')}
                   </p>
@@ -1000,11 +1051,14 @@ export default function ProfileView({
                 ))}
               </dl>
 
-              {onDeleteMember && (
+              {(onDeleteMember || currentUser?.roleCode === 'company_admin') && (
                 <div className="flex justify-end border-t border-zinc-200 px-3 py-2 dark:border-zinc-800">
+                  {currentUser?.roleCode === 'company_admin' && <button type="button" onClick={(event) => { event.stopPropagation(); setVehicleAssignmentDriver(driver); }} className="mr-auto inline-flex items-center gap-1.5 rounded-lg px-2.5 py-2 text-xs font-bold text-teal-700 transition hover:bg-teal-50 dark:text-teal-300 dark:hover:bg-teal-950/30"><Truck className="h-4 w-4" />{t('fleet.openAssignment')}</button>}
+                  {currentUser?.roleCode === 'company_admin' && <button type="button" onClick={(event) => { event.stopPropagation(); setEditingDriverId(driver.id); }} className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-2 text-xs font-bold text-teal-700 transition hover:bg-teal-50 dark:text-teal-300 dark:hover:bg-teal-950/30"><Pencil className="h-4 w-4" />{t('common.edit')}</button>}
+                  {onDeleteMember && (
                   <button
                     aria-label={t('profile.removeDriver', { name: driver.name })}
-                    onClick={() => handleDeleteMember({ ...driver, role: 'driver' })}
+                    onClick={(event) => { event.stopPropagation(); handleDeleteMember({ ...driver, role: 'driver' }); }}
                     disabled={deletingMemberId === driver.id}
                     className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-2 text-xs font-bold text-zinc-500 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-950/30 dark:hover:text-red-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-600 focus-visible:ring-offset-2"
                   >
@@ -1013,6 +1067,7 @@ export default function ProfileView({
                       : <Trash2 className="h-4 w-4" />}
                     {t('profile.remove')}
                   </button>
+                  )}
                 </div>
               )}
             </li>
@@ -1045,17 +1100,17 @@ export default function ProfileView({
                 const activeLoad = loads.find(l => l.driverId === driver.id && l.status !== 'COMPLETED');
 
                 return (
-                  <tr key={driver.id} className="hover:bg-zinc-50/80 dark:hover:bg-zinc-800/40 transition-colors">
+                  <tr key={driver.id} onClick={() => onOpenDriver?.(driver)} className="cursor-pointer transition-colors hover:bg-zinc-50/80 dark:hover:bg-zinc-800/40">
                     <td className="py-3.5 px-4 whitespace-nowrap">
                       <div className="flex items-center space-x-3">
-                        <div className="w-9 h-9 overflow-hidden rounded-xl bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 flex items-center justify-center font-mono font-bold text-xs text-zinc-800 dark:text-zinc-200 flex-shrink-0">
+                        <button type="button" onClick={(event) => { event.stopPropagation(); setVehicleAssignmentDriver(driver); }} disabled={currentUser?.roleCode !== 'company_admin'} aria-label={t('fleet.assignToDriver', { name: driver.name })} title={t('fleet.assignToDriver', { name: driver.name })} className="flex h-9 w-9 flex-shrink-0 items-center justify-center overflow-hidden rounded-xl border border-zinc-200 bg-zinc-100 font-mono text-xs font-bold text-zinc-800 transition hover:border-teal-500 hover:ring-2 hover:ring-teal-500/30 disabled:cursor-default disabled:hover:border-zinc-200 disabled:hover:ring-0 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200">
                           {driver.avatar
                             ? <img src={driver.avatar} alt="" className="h-full w-full object-cover" />
                             : <span aria-hidden="true">{driver.name.charAt(0)}{driver.name.split(' ')[1]?.charAt(0) || ''}</span>}
-                        </div>
+                        </button>
                         <div>
                           <div className="flex items-center space-x-2 whitespace-nowrap">
-                            <span className="font-bold text-sm text-zinc-900 dark:text-zinc-100">{driver.name}</span>
+                            <button type="button" onClick={(event) => { event.stopPropagation(); onOpenDriver?.(driver); }} className="text-left text-sm font-bold text-zinc-900 hover:text-teal-700 focus-visible:rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-teal-600 dark:text-zinc-100 dark:hover:text-teal-300">{driver.name}</button>
                           </div>
                           <div className="text-xs text-zinc-400 font-mono whitespace-nowrap mt-0.5">
                             <span className="font-bold text-zinc-600 dark:text-zinc-300">{driver.driverNumber || t('common.notProvided')}</span> • <span>{driver.phone || t('common.notProvided')}</span>
@@ -1094,9 +1149,11 @@ export default function ProfileView({
                     </td>
 
                     <td className="py-3.5 px-4 text-right whitespace-nowrap">
+                      {currentUser?.roleCode === 'company_admin' && <button type="button" onClick={(event) => { event.stopPropagation(); setEditingDriverId(driver.id); }} aria-label={t('profile.editDriverFor', { name: driver.name })} title={t('common.edit')} className="rounded-lg p-2 text-teal-700 transition hover:bg-teal-50 dark:text-teal-300 dark:hover:bg-teal-950/30"><Pencil className="h-4 w-4" /></button>}
+                      {currentUser?.roleCode === 'company_admin' && <button type="button" onClick={(event) => { event.stopPropagation(); setVehicleAssignmentDriver(driver); }} aria-label={t('fleet.assignToDriver', { name: driver.name })} title={t('fleet.assignToDriver', { name: driver.name })} className="rounded-lg p-2 text-teal-700 transition hover:bg-teal-50 dark:text-teal-300 dark:hover:bg-teal-950/30"><Truck className="h-4 w-4" /></button>}
                       {onDeleteMember && (
                         <button
-                          onClick={() => handleDeleteMember({ ...driver, role: 'driver' })}
+                          onClick={(event) => { event.stopPropagation(); handleDeleteMember({ ...driver, role: 'driver' }); }}
                           disabled={deletingMemberId === driver.id}
                           aria-label={t('profile.removeDriver', { name: driver.name })}
                           className="p-2 rounded-lg text-zinc-400 hover:text-red-600 dark:hover:text-red-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-600 focus-visible:ring-offset-2"
@@ -1218,7 +1275,10 @@ export default function ProfileView({
         </div>
       )}
         </>
+        )
       )}
+      {vehicleAssignmentDriver && <DriverVehicleAssignmentModal driver={vehicleAssignmentDriver} onClose={() => setVehicleAssignmentDriver(null)} onWorkspaceRefresh={onWorkspaceRefresh} />}
+      {currentUser?.roleCode === 'company_admin' && editingDriver && <DriverContactEditModal key={editingDriver.id} driver={editingDriver} onClose={closeDriverEditor} onWorkspaceRefresh={onWorkspaceRefresh} />}
       </div>
 
     </div>

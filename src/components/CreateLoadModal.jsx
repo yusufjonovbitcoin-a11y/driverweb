@@ -22,7 +22,6 @@ export default function CreateLoadModal({ isOpen, onClose, drivers = [], onCreat
   const busyRef = useRef(false);
   const availableIds = drivers.map((driver) => driver.id);
   const selectedIds = selectedDriverIds.filter((id) => availableIds.includes(id));
-  const allSelected = drivers.length > 0 && selectedIds.length === drivers.length;
   const filteredDrivers = drivers.filter((driver) => [driver.name, driver.driverNumber, driver.truck].some((value) => value?.toLowerCase().includes(driverSearch.trim().toLowerCase())));
 
   useEffect(() => {
@@ -74,7 +73,7 @@ export default function CreateLoadModal({ isOpen, onClose, drivers = [], onCreat
     busyRef.current = true;
     setSubmitting(true);
     setError('');
-    try { await onDocument(file); }
+    try { await onDocument(file, selectedIds[0] || null); }
     catch (cause) { setError(localizedError(t, cause, 'errors.documentAnalysis')); }
     finally { busyRef.current = false; setSubmitting(false); }
   };
@@ -104,16 +103,16 @@ export default function CreateLoadModal({ isOpen, onClose, drivers = [], onCreat
             <div className="grid grid-cols-2 gap-3">{field('equipment', t('loads.equipment'), { required: true })}{field('rate', t('loads.rate'), { required: true, type: 'number' })}{field('distanceMiles', t('loads.distance'), { required: true, type: 'number' })}</div>
           <details className="rounded-xl border border-zinc-200 p-3 dark:border-zinc-800"><summary className="cursor-pointer text-sm font-semibold text-zinc-700 dark:text-zinc-300">{t('loads.additionalDetails')}</summary><div className="mt-3 grid grid-cols-2 gap-3">{field('weightLbs', t('loads.weightLbs'), { type: 'number' })}{field('commodity', t('loads.commodity'))}{field('originFacility', t('loads.originFacility'))}{field('destinationFacility', t('loads.destinationFacility'))}</div></details>
             <div className="space-y-2">
-              <div className="flex items-center justify-between gap-2"><h3 className="text-sm font-bold text-zinc-900 dark:text-white">{t('loads.selectedDrivers', { count: selectedIds.length })}</h3><button type="button" onClick={() => setSelectedDriverIds(allSelected ? [] : availableIds)} className="text-xs font-semibold text-blue-600">{allSelected ? t('loads.clearSelection') : t('loads.selectAll')}</button></div>
+              <div className="flex items-center justify-between gap-2"><h3 className="text-sm font-bold text-zinc-900 dark:text-white">{t('loads.selectDriver')}</h3>{selectedIds.length > 0 && <button type="button" onClick={() => setSelectedDriverIds([])} className="text-xs font-semibold text-blue-600">{t('loads.clearSelection')}</button>}</div>
           <label className="relative block"><Search className="absolute left-3 top-3 h-4 w-4 text-zinc-400" /><input aria-label={t('drivers.search')} value={driverSearch} onChange={(event) => setDriverSearch(event.target.value)} placeholder={t('drivers.searchPlaceholder')} className={`${inputClass} mt-0 pl-9`} /></label>
               <div className="max-h-36 space-y-1 overflow-y-auto">
-                {filteredDrivers.map((driver) => <label key={driver.id} className="flex cursor-pointer items-center gap-3 rounded-lg px-3 py-2 text-sm text-zinc-800 hover:bg-zinc-50 dark:text-zinc-200 dark:hover:bg-zinc-900"><input type="checkbox" checked={selectedIds.includes(driver.id)} onChange={(event) => setSelectedDriverIds((current) => event.target.checked ? [...current, driver.id] : current.filter((id) => id !== driver.id))} className="h-4 w-4 accent-blue-600" /><span className="font-semibold">{driver.name}</span><span className="text-xs text-zinc-500">{driver.driverNumber}</span></label>)}
+                {filteredDrivers.map((driver) => <label key={driver.id} className="flex cursor-pointer items-center gap-3 rounded-lg px-3 py-2 text-sm text-zinc-800 hover:bg-zinc-50 dark:text-zinc-200 dark:hover:bg-zinc-900"><input type="radio" name="assigned-driver" checked={selectedIds.includes(driver.id)} onChange={() => setSelectedDriverIds([driver.id])} className="h-4 w-4 accent-blue-600" /><span className="font-semibold">{driver.name}</span><span className="text-xs text-zinc-500">{driver.driverNumber}</span></label>)}
                 {!filteredDrivers.length && <p className="py-3 text-center text-sm text-zinc-500">{t('drivers.noDrivers')}</p>}
               </div>
             </div>
           </fieldset>
           {error && <p role="alert" className="mt-3 rounded-lg bg-red-50 p-3 text-sm text-red-700 dark:bg-red-950/30 dark:text-red-300">{error}</p>}
-          <footer className="mt-4 flex justify-end gap-3 border-t border-zinc-200 pt-4 dark:border-zinc-800"><button type="button" onClick={onClose} disabled={submitting} className="rounded-lg px-3 py-2 text-sm text-zinc-500 disabled:opacity-50">{t('common.cancel')}</button><button type="submit" disabled={submitting || selectedIds.length === 0} className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-50">{submitting ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}{submitting ? t('loads.preparing') : t('loads.sendOffer')}</button></footer>
+          <footer className="mt-4 flex justify-end gap-3 border-t border-zinc-200 pt-4 dark:border-zinc-800"><button type="button" onClick={onClose} disabled={submitting} className="rounded-lg px-3 py-2 text-sm text-zinc-500 disabled:opacity-50">{t('common.cancel')}</button><button type="submit" disabled={submitting} className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-50">{submitting ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}{submitting ? t('loads.preparing') : selectedIds.length ? t('loads.createAndAssign') : t('loads.createOnly')}</button></footer>
         </form>
       </section>
     </div>

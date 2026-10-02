@@ -4,13 +4,24 @@ import {
 } from './cloudinaryMediaErrors.js';
 
 export async function resolveDocumentMediaUrls(client, documents, signMedia) {
+  const versionIds = [...new Set(documents.map((document) => document.current_version_id).filter(Boolean))];
+  const versionBatches = [];
+  for (let index = 0; index < versionIds.length; index += 100) {
+    versionBatches.push(versionIds.slice(index, index + 100));
+  }
+  const versions = await Promise.all(versionBatches.map(async (ids) => {
+    const { data, error } = await client
+      .from('document_versions')
+      .select('id,storage_path,mime_type,file_name')
+      .in('id', ids);
+    if (error) throw error;
+    return data || [];
+  }));
+  const versionsById = new Map(versions.flat().map((version) => [version.id, version]));
+
   return Promise.all(documents.map(async (document) => {
     if (!document.current_version_id) return document;
-    const { data: version } = await client
-      .from('document_versions')
-      .select('storage_path,mime_type,file_name')
-      .eq('id', document.current_version_id)
-      .maybeSingle();
+    const version = versionsById.get(document.current_version_id);
     if (!version?.storage_path) return document;
     if (isCloudinaryReference(version.storage_path)) {
       let signedUrl = null;

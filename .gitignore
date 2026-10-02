@@ -25,3 +25,6 @@ dist-ssr
 *.sln
 *.sw?
 .vercel
+
+# Local evaluations can contain customer document data.
+output/evaluations/

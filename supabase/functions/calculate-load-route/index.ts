@@ -1,157 +1,17 @@
 import { withCors } from "../_shared/cors.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { checkDistributedRateLimit, rateLimitResponse } from "../_shared/rate-limit.ts";
+import { previewLoadRoute } from '../_shared/google-load-route.ts';
 
 const corsHeaders = {
   "Access-Control-Allow-Headers":
     "authorization, x-client-info, apikey, content-type",
 };
-const metersPerMile = 1609.344;
-
-type Stop = {
-  id: string;
-  type: "pickup" | "delivery";
-  address_line: string;
-  city: string;
-  region: string;
-  postal_code: string | null;
-  latitude: number | null;
-  longitude: number | null;
-  contact_place_id: string | null;
-};
-
-type RouteResult = {
-  distanceMiles: number;
-  durationSeconds: number;
-};
-
-type Coordinates = {
-  latitude: number;
-  longitude: number;
-};
-
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
     headers: { ...corsHeaders, "Content-Type": "application/json" },
   });
-}
-
-function stopWaypoint(stop: Stop) {
-  if (stop.contact_place_id) return { placeId: stop.contact_place_id };
-  if (stop.latitude != null && stop.longitude != null) {
-    return {
-      location: {
-        latLng: { latitude: stop.latitude, longitude: stop.longitude },
-      },
-    };
-  }
-  return {
-    address: [stop.address_line, stop.city, stop.region, stop.postal_code, "USA"]
-      .filter(Boolean)
-      .join(", "),
-  };
-}
-
-function durationSeconds(value: unknown) {
-  const match = String(value ?? "").match(/^(\d+(?:\.\d+)?)s$/);
-  return match ? Math.max(0, Math.round(Number(match[1]))) : 0;
-}
-
-async function computeRoute(
-  apiKey: string,
-  origin: Record<string, unknown>,
-  destination: Record<string, unknown>,
-): Promise<RouteResult> {
-  const response = await fetch(
-    "https://routes.googleapis.com/directions/v2:computeRoutes",
-    {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-Goog-Api-Key": apiKey,
-        "X-Goog-FieldMask": "routes.distanceMeters,routes.duration",
-      },
-      body: JSON.stringify({
-        origin,
-        destination,
-        travelMode: "DRIVE",
-        routingPreference: "TRAFFIC_UNAWARE",
-        computeAlternativeRoutes: false,
-        routeModifiers: {
-          avoidTolls: false,
-          avoidHighways: false,
-          avoidFerries: false,
-        },
-        languageCode: "en-US",
-        units: "IMPERIAL",
-      }),
-    },
-  );
-  const payload = await response.json().catch(() => ({}));
-  if (!response.ok) {
-    throw new Error(
-      payload?.error?.message ?? `Google Routes returned HTTP ${response.status}`,
-    );
-  }
-  const route = payload?.routes?.[0];
-  if (!route?.distanceMeters) throw new Error("Google marshrut topa olmadi");
-  return {
-    distanceMiles: Math.round((route.distanceMeters / metersPerMile) * 100) / 100,
-    durationSeconds: durationSeconds(route.duration),
-  };
-}
-
-function stopAddress(stop: Stop) {
-  return [stop.address_line, stop.city, stop.region, stop.postal_code, "USA"]
-    .filter(Boolean)
-    .join(", ");
-}
-
-async function geocodeWithCensus(stop: Stop): Promise<Coordinates> {
-  if (stop.latitude != null && stop.longitude != null) {
-    return { latitude: Number(stop.latitude), longitude: Number(stop.longitude) };
-  }
-  const url = new URL(
-    "https://geocoding.geo.census.gov/geocoder/locations/onelineaddress",
-  );
-  url.searchParams.set("address", stopAddress(stop));
-  url.searchParams.set("benchmark", "Public_AR_Current");
-  url.searchParams.set("format", "json");
-  const response = await fetch(url, {
-    signal: AbortSignal.timeout(10_000),
-  });
-  const payload = await response.json().catch(() => ({}));
-  const coordinates = payload?.result?.addressMatches?.[0]?.coordinates;
-  const latitude = Number(coordinates?.y);
-  const longitude = Number(coordinates?.x);
-  if (!response.ok || !Number.isFinite(latitude) || !Number.isFinite(longitude)) {
-    throw new Error(`${stop.type} manzilining koordinatasi topilmadi`);
-  }
-  return { latitude, longitude };
-}
-
-async function computeOsrmRoute(
-  origin: Coordinates,
-  destination: Coordinates,
-): Promise<RouteResult> {
-  const coordinates = `${origin.longitude},${origin.latitude};${destination.longitude},${destination.latitude}`;
-  const response = await fetch(
-    `https://router.project-osrm.org/route/v1/driving/${coordinates}?overview=false&steps=false`,
-    {
-      headers: { "User-Agent": "ApexHaul-DriverPlatform/1.0" },
-      signal: AbortSignal.timeout(10_000),
-    },
-  );
-  const payload = await response.json().catch(() => ({}));
-  const route = payload?.routes?.[0];
-  if (!response.ok || payload?.code !== "Ok" || !route?.distance) {
-    throw new Error("Zaxira marshrut xizmati yo‘lni topa olmadi");
-  }
-  return {
-    distanceMiles: Math.round((route.distance / metersPerMile) * 100) / 100,
-    durationSeconds: Math.max(0, Math.round(Number(route.duration) || 0)),
-  };
 }
 
 Deno.serve((request) => withCors(request, async () => {
@@ -166,7 +26,7 @@ Deno.serve((request) => withCors(request, async () => {
   const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
   const googleKey = Deno.env.get("GOOGLE_PLACES_API_KEY");
   if (!authorization) return json({ error: "Authentication required" }, 401);
-  if (!supabaseUrl || !publicKey || !serviceRoleKey || !googleKey) {
+  if (!supabaseUrl || !publicKey || !serviceRoleKey) {
     return json({ error: "Route service environment is incomplete" }, 500);
   }
 
@@ -199,20 +59,21 @@ Deno.serve((request) => withCors(request, async () => {
     return json({ error: "Invalid JSON body" }, 400);
   }
   const loadId = String(payload.loadId ?? "").trim();
+  const preview = payload.preview === true;
   const driverIds = Array.isArray(payload.driverIds)
     ? [...new Set(payload.driverIds.map((value) => String(value)).filter(Boolean))]
     : [];
   if (!loadId) return json({ error: "loadId is required" }, 400);
-  if (!driverIds.length || driverIds.length > 25) {
+  if ((!preview && !driverIds.length) || driverIds.length > 25) {
     return json({ error: "1 tadan 25 tagacha haydovchini tanlang" }, 400);
   }
 
   // RLS is the authorization boundary before service-role reads.
   const { data: visibleLoad } = await callerClient
     .from("loads")
-    .select("id,status")
+    .select("id,status,driver_brief")
     .eq("id", loadId)
-    .in("status", ["ready_for_offer", "offered"])
+    .in("status", preview ? ["draft", "review", "ready_for_offer", "offered", "assigned", "in_progress", "completed"] : ["ready_for_offer", "offered"])
     .maybeSingle();
   if (!visibleLoad) return json({ error: "Taklif uchun ochiq yuk topilmadi" }, 404);
   const { data: visibleDrivers, error: driverError } = await callerClient
@@ -236,104 +97,34 @@ Deno.serve((request) => withCors(request, async () => {
         .in("driver_id", driverIds),
     ]);
   if (stopsError || presenceError) return json({ error: "Marshrut ma’lumotlarini olib bo‘lmadi" }, 500);
-  const pickup = (stops ?? []).find((stop) => stop.type === "pickup") as Stop | undefined;
-  const delivery = (stops ?? []).find((stop) => stop.type === "delivery") as Stop | undefined;
+  const pickup = (stops ?? []).find((stop) => stop.type === "pickup");
+  const delivery = (stops ?? []).find((stop) => stop.type === "delivery");
   if (!pickup || !delivery) return json({ error: "Pickup yoki delivery manzili topilmadi" }, 422);
 
-  try {
-    const pickupWaypoint = stopWaypoint(pickup);
-    let route: RouteResult;
-    let provider = "google_routes";
-    let pickupCoordinates: Coordinates | null = null;
-    try {
-      route = await computeRoute(googleKey, pickupWaypoint, stopWaypoint(delivery));
-    } catch (googleError) {
-      console.warn("Google Routes unavailable; using OpenStreetMap fallback", googleError);
-      pickupCoordinates = await geocodeWithCensus(pickup);
-      const deliveryCoordinates = await geocodeWithCensus(delivery);
-      route = await computeOsrmRoute(pickupCoordinates, deliveryCoordinates);
-      provider = "openstreetmap_osrm";
-      await Promise.all([
-        adminClient.from("load_stops").update({
-          latitude: pickupCoordinates.latitude,
-          longitude: pickupCoordinates.longitude,
-        }).eq("id", pickup.id),
-        adminClient.from("load_stops").update({
-          latitude: deliveryCoordinates.latitude,
-          longitude: deliveryCoordinates.longitude,
-        }).eq("id", delivery.id),
-      ]);
+  if (preview) {
+    const blocked = visibleLoad.driver_brief?.blockingFields ?? [];
+    if (blocked.some((key: string) => /^(pickup|delivery)\.(addressLine|city|region|postalCode)$/.test(key))) {
+      return json({ error: 'Document address needs review' }, 422);
     }
-    const { error: saveError } = await callerClient.rpc("apply_route_estimate", {
+    try {
+      return json(await previewLoadRoute(stops ?? [], presence ?? [], driverIds, googleKey ?? '', fetch, Date.now(), Deno.env.get('MAPBOX_ACCESS_TOKEN') ?? '', 'mapbox'));
+    } catch (error) {
+      return json({ error: error instanceof Error ? error.message : 'Route unavailable' }, 422);
+    }
+  }
+
+  try {
+    const result = await previewLoadRoute(stops ?? [], presence ?? [], driverIds, googleKey ?? '', fetch,
+      Date.now(), Deno.env.get('MAPBOX_ACCESS_TOKEN') ?? '', 'mapbox');
+    const { error: saveError } = await callerClient.rpc('apply_route_estimate', {
       load_id: loadId,
-      calculated_distance_miles: route.distanceMiles,
-      calculated_duration_seconds: route.durationSeconds,
-      calculated_provider: provider,
+      calculated_distance_miles: result.loadedMiles,
+      calculated_duration_seconds: result.durationSeconds,
+      calculated_provider: result.provider,
     });
     if (saveError) throw new Error(saveError.message);
-
-    const now = Date.now();
-    const presenceByDriver = new Map(
-      (presence ?? []).map((row) => [String(row.driver_id), row]),
-    );
-    const targets = await Promise.all(driverIds.map(async (driverId) => {
-      const current = presenceByDriver.get(driverId);
-      const isFresh = current?.is_online === true &&
-        Date.parse(String(current.last_seen_at)) >= now - 2 * 60 * 1000;
-      const hasCurrentLocation = isFresh && current?.latitude != null && current?.longitude != null;
-      if (!hasCurrentLocation) {
-        return {
-          driverId,
-          originLatitude: null,
-          originLongitude: null,
-          deadheadMiles: 0,
-          hasCurrentLocation: false,
-        };
-      }
-      try {
-        const currentCoordinates = {
-          latitude: Number(current.latitude),
-          longitude: Number(current.longitude),
-        };
-        const deadhead = provider === "google_routes"
-          ? await computeRoute(
-            googleKey,
-            { location: { latLng: currentCoordinates } },
-            pickupWaypoint,
-          )
-          : await computeOsrmRoute(
-            currentCoordinates,
-            pickupCoordinates ?? await geocodeWithCensus(pickup),
-          );
-        return {
-          driverId,
-          originLatitude: Number(current.latitude),
-          originLongitude: Number(current.longitude),
-          deadheadMiles: deadhead.distanceMiles,
-          hasCurrentLocation: true,
-        };
-      } catch {
-        return {
-          driverId,
-          originLatitude: Number(current.latitude),
-          originLongitude: Number(current.longitude),
-          deadheadMiles: 0,
-          hasCurrentLocation: false,
-        };
-      }
-    }));
-    return json({
-      loadedMiles: route.distanceMiles,
-      durationSeconds: route.durationSeconds,
-      provider,
-      attribution: provider === "openstreetmap_osrm"
-        ? "© OpenStreetMap contributors"
-        : null,
-      targets,
-    });
+    return json(result);
   } catch (error) {
-    return json({
-      error: error instanceof Error ? error.message : "Google marshrutni hisoblay olmadi",
-    }, 422);
+    return json({ error: error instanceof Error ? error.message : 'Mapbox route unavailable' }, 422);
   }
 }));

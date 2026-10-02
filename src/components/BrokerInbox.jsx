@@ -8,6 +8,7 @@ import { fetchBrokerInbox, forwardGmailAttachmentToDriver, markBrokerMessageRead
 import { formatDate, formatNumber, formatTime } from '../i18n/format';
 import { ingestionStatusLabel } from '../i18n/labels';
 import { localizedError } from '../i18n/errors';
+import { useWorkspaceQuery, useWorkspaceView } from '../hooks/WorkspaceCache';
 
 function StatusIcon({ status }) {
   if (status === 'extracted') return <CheckCircle2 className="w-4 h-4 text-emerald-500" />;
@@ -71,40 +72,14 @@ function ProposalPreview({ proposal, t }) {
 
 export default function BrokerInbox({ drivers, onCreateLoad, onUnreadChange }) {
   const { t } = useTranslation();
-  const [items, setItems] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
-  const [selectedId, setSelectedId] = useState(null);
+  const { data: items = [], error: requestError, isLoading: loading, mutate } = useWorkspaceQuery(
+    'broker-inbox', fetchBrokerInbox, { refreshInterval: 15_000 },
+  );
+  const error = requestError ? localizedError(t, requestError, 'errors.inboxLoad') : '';
+  const [selectedId, setSelectedId] = useWorkspaceView('inbox.selection', null);
   const [selectedDriverId, setSelectedDriverId] = useState('');
   const [forwardingAttachmentId, setForwardingAttachmentId] = useState(null);
   const [forwardMessage, setForwardMessage] = useState('');
-
-  useEffect(() => {
-    let active = true;
-    let inFlight = false;
-    const refresh = async (initial = false) => {
-      if (inFlight) return;
-      inFlight = true;
-      try {
-        const data = await fetchBrokerInbox();
-        if (!active) return;
-        setItems(data);
-        setSelectedId((current) => data.some((item) => item.id === current) ? current : null);
-        setError('');
-      } catch (requestError) {
-        if (active) setError(localizedError(t, requestError, 'errors.inboxLoad'));
-      } finally {
-        inFlight = false;
-        if (active && initial) setLoading(false);
-      }
-    };
-    refresh(true);
-    const intervalId = window.setInterval(() => refresh(false), 15_000);
-    return () => {
-      active = false;
-      window.clearInterval(intervalId);
-    };
-  }, [t]);
 
   const selected = items.find((item) => item.id === selectedId) || null;
   const availableDrivers = drivers.filter((driver) => driver.status !== 'SUSPENDED');
@@ -113,14 +88,14 @@ export default function BrokerInbox({ drivers, onCreateLoad, onUnreadChange }) {
     if (!selected || selected.is_read || !selected.attachments?.length) return;
     let active = true;
     markBrokerMessageRead(selected.id).then(() => {
-      if (!active) return;
-      setItems((current) => current.map((item) => (
+      // Update the session cache even if the user left the Inbox meanwhile.
+      void mutate((current = []) => current.map((item) => (
         item.id === selected.id ? { ...item, is_read: true } : item
-      )));
-      onUnreadChange?.();
+      )), { revalidate: false });
+      if (active) onUnreadChange?.();
     }).catch(() => {});
     return () => { active = false; };
-  }, [selected, onUnreadChange]);
+  }, [selected, onUnreadChange, mutate]);
 
   const forwardAttachment = async (attachment) => {
     if (!selectedDriverId) {

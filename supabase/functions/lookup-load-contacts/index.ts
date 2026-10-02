@@ -1,6 +1,7 @@
 import { withCors } from "../_shared/cors.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { checkDistributedRateLimit, rateLimitResponse } from "../_shared/rate-limit.ts";
+import { matchesPlaceAddress, validPhone } from '../_shared/load-enrichment.ts';
 
 const corsHeaders = {
   "Access-Control-Allow-Headers":
@@ -22,6 +23,7 @@ type StopRow = {
 };
 
 type GooglePlace = {
+  addressComponents?: unknown[];
   id?: string;
   displayName?: { text?: string };
   formattedAddress?: string;
@@ -92,7 +94,9 @@ function streetNumber(value: string | null | undefined) {
 }
 
 function placeConfidence(stop: StopRow, place: GooglePlace) {
+  if (!matchesPlaceAddress(stop, place)) return 0;
   const facility = stop.facility_name ?? "";
+  if (facility && similarity(facility, place.displayName?.text) < 0.2) return 0;
   const address = [stop.address_line, stop.city, stop.region, stop.postal_code]
     .filter(Boolean)
     .join(", ");
@@ -120,18 +124,19 @@ function placeConfidence(stop: StopRow, place: GooglePlace) {
 }
 
 function phoneOf(place: GooglePlace) {
-  return place.internationalPhoneNumber ?? place.nationalPhoneNumber ?? null;
+  return validPhone(place.internationalPhoneNumber) ?? validPhone(place.nationalPhoneNumber);
 }
 
 async function googleRequest(url: string, apiKey: string, init?: RequestInit) {
   const response = await fetch(url, {
     ...init,
+    signal: AbortSignal.timeout(12_000),
     headers: {
       "Content-Type": "application/json",
       "X-Goog-Api-Key": apiKey,
       "X-Goog-FieldMask": init?.method === "POST"
-        ? "places.id,places.displayName,places.formattedAddress,places.nationalPhoneNumber,places.internationalPhoneNumber,places.googleMapsUri"
-        : "id,displayName,formattedAddress,nationalPhoneNumber,internationalPhoneNumber,googleMapsUri",
+        ? "places.id,places.displayName,places.formattedAddress,places.addressComponents,places.nationalPhoneNumber,places.internationalPhoneNumber,places.googleMapsUri"
+        : "id,displayName,formattedAddress,addressComponents,nationalPhoneNumber,internationalPhoneNumber,googleMapsUri",
     },
   });
   if (!response.ok) {
@@ -147,7 +152,7 @@ async function findStopContact(
   stop: StopRow,
   apiKey: string,
 ): Promise<StopContactResult> {
-  if (stop.contact_phone) {
+  if (validPhone(stop.contact_phone) && stop.contact_source !== 'google_places') {
     const source = stop.contact_source === "broker_document"
       ? "broker_document"
       : stop.contact_source === "dispatcher"
@@ -161,7 +166,7 @@ async function findStopContact(
           (stop.type === "pickup" ? "Shipper" : "Receiver"),
         phone: stop.contact_phone,
         source,
-        confidence: 1,
+      confidence: null,
       } satisfies RouteContact,
       placeId: stop.contact_place_id,
     };
@@ -169,7 +174,7 @@ async function findStopContact(
 
   try {
     let place: GooglePlace | null = null;
-    let confidence = 1;
+    let confidence = 0;
     if (stop.contact_place_id) {
       place = await googleRequest(
         `https://places.googleapis.com/v1/places/${
@@ -177,7 +182,10 @@ async function findStopContact(
         }`,
         apiKey,
       );
-    } else {
+      confidence = placeConfidence(stop, place!);
+      if (confidence < 0.72) place = null;
+    }
+    if (!place) {
       const query = [
         stop.facility_name,
         stop.address_line,
@@ -205,7 +213,8 @@ async function findStopContact(
           score: placeConfidence(stop, candidate),
         }))
         .sort((a, b) => b.score - a.score);
-      if (!ranked.length || ranked[0].score < 0.72) {
+      if (!ranked.length || ranked[0].score < 0.72
+        || (ranked[1] && ranked[0].score - ranked[1].score < 0.1)) {
         return {
           contact: {
             role: stop.type,

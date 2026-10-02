@@ -1,4 +1,6 @@
 const FALLBACK_TRANSLATIONS = {
+  'analytics.title': 'Analitika',
+  'analytics.keywords': ['analitika', 'hisob', 'xarajat', 'qoldiq'],
   'nav.loads': 'Yuklar',
   'nav.drivers': 'Haydovchilar',
   'nav.map': 'Xarita',
@@ -26,6 +28,7 @@ function fallbackTranslate(key, options = {}) {
 }
 
 const PAGE_TARGETS = [
+  { id: 'analytics', titleKey: 'analytics.title', keywordsKey: 'analytics.keywords' },
   { id: 'kanban', titleKey: 'nav.loads', keywordsKey: 'search.keywords.loads' },
   { id: 'drivers', titleKey: 'nav.drivers', keywordsKey: 'search.keywords.drivers' },
   { id: 'map', titleKey: 'nav.map', keywordsKey: 'search.keywords.map' },

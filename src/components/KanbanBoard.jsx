@@ -5,6 +5,7 @@ import {
   CalendarDays,
   ChevronLeft,
   ChevronRight,
+  Plus,
   Table as TableIcon,
   Sparkles,
   UploadCloud,
@@ -12,6 +13,8 @@ import {
   LoaderCircle,
 } from 'lucide-react';
 import { formatCurrency, formatDate } from '../i18n/format';
+import { displayBoardStage } from '../services/loadBoardStatus';
+import LoadDetailsModal from './LoadDetailsModal';
 
 function getClipboardImage(clipboardData) {
   const imageItem = Array.from(clipboardData?.items || []).find(
@@ -39,17 +42,29 @@ export default function KanbanBoard({
   drivers, 
   onOpenDocs, 
   onDeleteLoad,
+  onSendOffer,
   onDropOnOffer,
+  onAssignedDocumentUpload,
   isAiProcessing = false,
+  includeUnassigned = true,
+  hideStageFilters = false,
+  groupDeliveredWithOnRoad = false,
+  hideCompletedCardFooter = false,
 }) {
   const { t } = useTranslation();
-  const stages = [
-    { id: 'OFFER', title: t('loadStatus.offer'), dot: 'bg-amber-500' },
+  const allStages = [
+    { id: 'UNASSIGNED', title: t('loadStatus.unassigned'), dot: 'bg-zinc-400' },
     { id: 'ASSIGNED', title: t('loadStatus.assigned'), dot: 'bg-blue-500' },
-    { id: 'IN_TRANSIT', title: t('loadStatus.in_transit'), dot: 'bg-blue-700' },
+    { id: 'PICKED_UP', title: t('loadStatus.picked_up'), dot: 'bg-teal-500' },
+    { id: 'ON_ROAD', title: t('loadStatus.on_road'), dot: 'bg-blue-700' },
     { id: 'DELIVERED', title: t('loadStatus.delivered'), dot: 'bg-emerald-500' },
     { id: 'COMPLETED', title: t('loadStatus.completed'), dot: 'bg-zinc-400' },
   ];
+  const stages = allStages.filter((stage) => (
+    (includeUnassigned || stage.id !== 'UNASSIGNED')
+    && (!groupDeliveredWithOnRoad || stage.id !== 'DELIVERED')
+  ));
+  const stageForLoad = (load) => displayBoardStage(load.status, groupDeliveredWithOnRoad);
   const calendarDays = Array.from({ length: 7 }, (_, index) => formatDate(
     new Date(2026, 0, 5 + index),
     { weekday: 'short' },
@@ -68,13 +83,15 @@ export default function KanbanBoard({
   const [isDraggingOverOffer, setIsDraggingOverOffer] = useState(false);
   const [isPasteTargetHovered, setIsPasteTargetHovered] = useState(false);
   const [loadPendingDelete, setLoadPendingDelete] = useState(null);
+  const [selectedLoadDetails, setSelectedLoadDetails] = useState(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const calendarPopoverRef = useRef(null);
 
-  const submitOfferFile = useCallback((file) => {
-    if (!file || !onDropOnOffer || isAiProcessing) return;
-    onDropOnOffer(file);
-  }, [isAiProcessing, onDropOnOffer]);
+  const importDocument = onAssignedDocumentUpload || onDropOnOffer;
+  const submitDocumentFile = useCallback((file) => {
+    if (!file || !importDocument || isAiProcessing) return;
+    importDocument(file);
+  }, [importDocument, isAiProcessing]);
 
   useEffect(() => {
     if (!isPasteTargetHovered) return undefined;
@@ -84,12 +101,12 @@ export default function KanbanBoard({
       if (!image) return;
 
       event.preventDefault();
-      submitOfferFile(image);
+      submitDocumentFile(image);
     };
 
     window.addEventListener('paste', handleClipboardPaste);
     return () => window.removeEventListener('paste', handleClipboardPaste);
-  }, [isPasteTargetHovered, submitOfferFile]);
+  }, [isPasteTargetHovered, submitDocumentFile]);
 
   useEffect(() => {
     if (!isDateFilterOpen) return undefined;
@@ -114,16 +131,17 @@ export default function KanbanBoard({
   const filterStart = dateFrom || dateTo;
   const filterEnd = dateTo || dateFrom;
   const hasDateFilter = Boolean(filterStart);
+  const boardLoads = includeUnassigned ? loads : loads.filter((load) => load.status !== 'UNASSIGNED');
   const dateFilteredLoads = hasDateFilter
-    ? loads.filter((load) => {
+    ? boardLoads.filter((load) => {
       const pickupDate = load.origin?.date?.slice(0, 10);
       const deliveryDate = load.destination?.date?.slice(0, 10) || pickupDate;
       return pickupDate && pickupDate <= filterEnd && deliveryDate >= filterStart;
     })
-    : loads;
+    : boardLoads;
   const visibleLoads = stageFilter === 'ALL'
     ? dateFilteredLoads
-    : dateFilteredLoads.filter((load) => load.status === stageFilter);
+    : dateFilteredLoads.filter((load) => stageForLoad(load) === stageFilter);
 
   const selectViewMode = (mode) => {
     localStorage.setItem('drivex_load_view_mode', mode);
@@ -166,8 +184,8 @@ export default function KanbanBoard({
   };
 
   return (
-    <div className="loads-workspace space-y-4">
-      <div className="stage-filters" aria-label={t('loads.statusFilter')}>
+    <div className="loads-workspace space-y-4" style={{ '--board-stage-count': stages.length + 1 }}>
+      {!hideStageFilters && <div className="stage-filters" aria-label={t('loads.statusFilter')}>
         {[{ id: 'ALL', title: t('loads.all'), dot: 'bg-zinc-400' }, ...stages].map(stage => (
           <button
             key={stage.id}
@@ -177,10 +195,10 @@ export default function KanbanBoard({
             onClick={() => setStageFilter(stage.id)}
           >
             <span className="stage-filter-label"><span className={`stage-dot ${stage.dot}`} />{stage.title}</span>
-            <strong>{stage.id === 'ALL' ? dateFilteredLoads.length : dateFilteredLoads.filter(load => load.status === stage.id).length}</strong>
+            <strong>{stage.id === 'ALL' ? dateFilteredLoads.length : dateFilteredLoads.filter(load => stageForLoad(load) === stage.id).length}</strong>
           </button>
         ))}
-      </div>
+      </div>}
       <div className="board-toolbar">
         <div className="flex min-w-0 items-center gap-2 text-sm text-zinc-500">
           <span>{stageFilter === 'ALL' ? t('loads.allTrips') : stages.find(stage => stage.id === stageFilter)?.title} <span className="toolbar-count">{visibleLoads.length}</span></span>
@@ -328,44 +346,43 @@ export default function KanbanBoard({
 
       {/* 1. Kanban View */}
       {viewMode === 'kanban' && (
-        <div className="kanban-columns">
+        <div className="kanban-columns" style={{ '--board-column-count': stageFilter === 'ALL' ? stages.length : 1 }}>
           {stages.filter(col => stageFilter === 'ALL' || col.id === stageFilter).map((col) => {
-            const colLoads = dateFilteredLoads.filter((l) => l.status === col.id);
-            const isOfferCol = col.id === 'OFFER';
+            const colLoads = dateFilteredLoads.filter((load) => stageForLoad(load) === col.id);
+            const isOfferCol = col.id === 'UNASSIGNED';
+            const isAssignedImportCol = col.id === 'ASSIGNED' && Boolean(onAssignedDocumentUpload);
+            const isUploadCol = (isOfferCol && Boolean(onDropOnOffer)) || isAssignedImportCol;
 
             return (
               <div 
                 key={col.id} 
                 onDragOver={(e) => {
-                  if (isOfferCol) {
+                  if (isUploadCol && !isAiProcessing) {
                     e.preventDefault();
                     setIsDraggingOverOffer(true);
                   }
                 }}
                 onDragLeave={(e) => {
-                  if (isOfferCol) {
+                  if (isUploadCol) {
                     e.preventDefault();
                     setIsDraggingOverOffer(false);
                   }
                 }}
                 onDrop={(e) => {
-                  if (isOfferCol) {
+                  if (isUploadCol) {
                     e.preventDefault();
                     setIsDraggingOverOffer(false);
-                    const file = e.dataTransfer.files?.[0];
-                    if (file && onDropOnOffer && !isAiProcessing) {
-                      onDropOnOffer(file);
-                    }
+                    submitDocumentFile(e.dataTransfer.files?.[0]);
                   }
                 }}
                 className={`kanban-column relative bg-zinc-50/50 dark:bg-zinc-900/20 border border-zinc-200/50 dark:border-zinc-800/50 rounded-2xl p-3 flex flex-col min-w-[240px] min-h-[560px] transition-all ${
-                  isOfferCol && isDraggingOverOffer
+                  isUploadCol && isDraggingOverOffer
                     ? 'border-blue-500 ring-4 ring-blue-500/20 bg-blue-50/30 dark:bg-blue-950/40'
                     : ''
                 }`}
               >
                 {/* Drag-over full column overlay */}
-                {isOfferCol && isDraggingOverOffer && (
+                {isUploadCol && isDraggingOverOffer && (
                   <div className="absolute inset-0 border-3 border-dashed border-blue-500 bg-blue-50/95 dark:bg-zinc-950/95 rounded-2xl flex flex-col items-center justify-center p-6 text-center z-30 pointer-events-none animate-in fade-in duration-100 shadow-2xl">
                     <div className="w-16 h-16 rounded-2xl bg-blue-600 text-white flex items-center justify-center shadow-xl mb-3 animate-bounce">
                       <UploadCloud className="w-8 h-8" />
@@ -391,33 +408,34 @@ export default function KanbanBoard({
                 </div>
 
                 {/* Cards / compact upload card when the offer column is empty */}
-                <div className="space-y-3 flex-1 flex flex-col overflow-y-auto">
+                <div className="kanban-card-list space-y-3 flex-1 flex flex-col overflow-y-auto">
                   {colLoads.length === 0 ? (
-                    isOfferCol ? (
+                    isUploadCol ? (
                       /* Keep the upload target aligned with a normal load card. */
                       <label 
                         {...pasteTargetProps}
                         tabIndex={0}
-                        className="flex-none min-h-[210px] border-2 border-dashed border-zinc-300 dark:border-zinc-700 hover:border-blue-500 dark:hover:border-blue-500 rounded-2xl flex flex-col items-center justify-center p-4 text-center bg-white/50 dark:bg-zinc-900/40 hover:bg-blue-50/20 dark:hover:bg-blue-950/20 cursor-pointer transition-all group select-none shadow-2xs"
+                        className="relative flex-none min-h-[210px] border-2 border-dashed border-zinc-300 dark:border-zinc-700 hover:border-blue-500 dark:hover:border-blue-500 rounded-2xl flex flex-col items-center justify-center p-4 text-center bg-white/50 dark:bg-zinc-900/40 hover:bg-blue-50/20 dark:hover:bg-blue-950/20 cursor-pointer transition-all group select-none shadow-2xs focus-within:ring-2 focus-within:ring-blue-500"
                         title={t('loads.dropHint')}
                       >
                         <div className="w-16 h-16 rounded-2xl bg-blue-50 dark:bg-blue-950/60 border border-blue-200 dark:border-blue-900/60 flex items-center justify-center text-blue-600 dark:text-blue-400 mb-4 group-hover:scale-110 transition-transform shadow-xs">
-                          <UploadCloud className="w-8 h-8" />
+                          {isAssignedImportCol ? <Plus className="w-8 h-8" /> : <UploadCloud className="w-8 h-8" />}
                         </div>
                         <span className="text-base font-bold text-zinc-900 dark:text-zinc-100 mb-1.5">
-                          {t('loads.drop')}
+                          {isAssignedImportCol ? t('loads.addForDriver') : t('loads.drop')}
                         </span>
                         <span className="inline-flex items-center space-x-2 px-4 py-2 rounded-xl bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-950 text-sm font-bold shadow-xs group-hover:bg-blue-600 group-hover:text-white transition-colors">
-                          <Sparkles className="w-4 h-4 text-amber-400" />
+                          {isAssignedImportCol ? <Plus className="w-4 h-4" /> : <Sparkles className="w-4 h-4 text-amber-400" />}
                           <span>{t('loads.chooseFile')}</span>
                         </span>
                         <input
                           type="file"
-                          accept=".pdf,image/*"
-                          className="hidden"
+                          accept=".pdf,.jpg,.jpeg,.png,.webp,.gif"
+                          aria-label={t('loads.addForDriver')}
+                          className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
                           onChange={(e) => {
                             const file = e.target.files?.[0];
-                            submitOfferFile(file);
+                            submitDocumentFile(file);
                             e.target.value = '';
                           }}
                         />
@@ -429,8 +447,8 @@ export default function KanbanBoard({
                     )
                   ) : (
                     <>
-                      {/* If cards exist in Takliflar, show top dropzone bar */}
-                      {isOfferCol && (
+                      {/* Keep import available even when the column already contains loads. */}
+                      {isUploadCol && (
                         <label 
                           {...pasteTargetProps}
                           tabIndex={0}
@@ -438,14 +456,14 @@ export default function KanbanBoard({
                           title={t('loads.dropMore')}
                         >
                           <UploadCloud className="w-4 h-4 group-hover:scale-110 transition-transform" />
-                          <span>{t('loads.dropMoreAi')}</span>
+                          <span>{isAssignedImportCol ? t('loads.addForDriver') : t('loads.dropMoreAi')}</span>
                           <input
                             type="file"
-                            accept=".pdf,image/*"
+                            accept=".pdf,.jpg,.jpeg,.png,.webp,.gif"
                             className="hidden"
                             onChange={(e) => {
                               const file = e.target.files?.[0];
-                              submitOfferFile(file);
+                              submitDocumentFile(file);
                               e.target.value = '';
                             }}
                           />
@@ -458,7 +476,16 @@ export default function KanbanBoard({
                         return (
                           <div
                             key={load.id}
-                            className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 hover:border-zinc-300 dark:hover:border-zinc-700 rounded-2xl p-3.5 space-y-2.5 transition-colors shadow-xs"
+                            role="button"
+                            tabIndex={0}
+                            onClick={() => setSelectedLoadDetails(load)}
+                            onKeyDown={(event) => {
+                              if (event.key === 'Enter' || event.key === ' ') {
+                                event.preventDefault();
+                                setSelectedLoadDetails(load);
+                              }
+                            }}
+                            className="cursor-pointer bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 hover:border-teal-400 dark:hover:border-teal-600 rounded-2xl p-3.5 space-y-2.5 transition-colors shadow-xs focus:outline-none focus:ring-2 focus:ring-teal-500/50"
                           >
                             {/* Top Row: Load ID & Rate (No line wraps!) */}
                             <div className="flex items-center justify-between gap-2">
@@ -472,7 +499,10 @@ export default function KanbanBoard({
                                 {canDeleteLoad(load) && (
                                   <button
                                     type="button"
-                                    onClick={() => setLoadPendingDelete(load)}
+                                    onClick={(event) => {
+                                      event.stopPropagation();
+                                      setLoadPendingDelete(load);
+                                    }}
                                     className="inline-flex h-7 w-7 items-center justify-center rounded-lg text-zinc-400 transition-colors hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-950/40 dark:hover:text-red-400"
                                     aria-label={t('loads.deleteNamed', { number: load.loadNumber })}
                                     title={t('loads.deleteTitle')}
@@ -495,8 +525,9 @@ export default function KanbanBoard({
                             </div>
 
                             {/* Bottom Row: Driver & Action */}
+                            {!(hideCompletedCardFooter && load.status === 'COMPLETED') && (
                             <div className="pt-2 border-t border-zinc-100 dark:border-zinc-800/80 flex items-center justify-between">
-                              {load.targetDriverIds && load.targetDriverIds.length > 1 && load.status === 'OFFER' ? (
+                              {load.targetDriverIds && load.targetDriverIds.length > 1 && load.status === 'UNASSIGNED' ? (
                                 <span className="text-xs text-blue-600 dark:text-blue-400 font-bold">
                                   {t('loads.offeredDrivers', { count: load.targetDriverIds.length })}
                                 </span>
@@ -507,38 +538,51 @@ export default function KanbanBoard({
                               )}
 
                               {/* Single Action Button */}
-                              {col.id === 'OFFER' && (
-                                <span className="text-xs text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/40 px-2.5 py-1 rounded-lg font-bold whitespace-nowrap">
-                                  {t('loads.waitingResponse')}
-                                </span>
+                              {['ready_for_offer', 'offered'].includes(load.databaseStatus) && (
+                                <button
+                                  type="button"
+                                  onClick={(event) => {
+                                    event.stopPropagation();
+                                    onSendOffer?.(load);
+                                  }}
+                                  className="rounded-lg bg-blue-50 px-2.5 py-1 text-xs font-bold text-blue-700 transition-colors hover:bg-blue-100 dark:bg-blue-950/40 dark:text-blue-300"
+                                >
+                                  {t('loads.assignToDriver')}
+                                </button>
                               )}
                               {col.id === 'ASSIGNED' && (
                                 <span className="text-xs text-blue-700 dark:text-blue-300 bg-blue-50 dark:bg-blue-950/40 px-2.5 py-1 rounded-lg font-bold whitespace-nowrap">
-                                  {t('loads.accepted')}
+                                  {t('loadStatus.assigned')}
                                 </span>
                               )}
-                              {col.id === 'IN_TRANSIT' && (
+                              {col.id === 'PICKED_UP' && (
                                 <span className="text-xs text-purple-700 dark:text-purple-300 bg-purple-50 dark:bg-purple-950/40 px-2.5 py-1 rounded-lg font-bold whitespace-nowrap">
-                                  {t('loads.driverEnRoute')}
+                                  {t('loadStatus.picked_up')}
                                 </span>
                               )}
-                              {col.id === 'DELIVERED' && (
-                                <button
-                                  onClick={() => onOpenDocs(load)}
-                                  className="text-xs text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40 hover:bg-emerald-100 px-2.5 py-1 rounded-lg font-bold transition-colors whitespace-nowrap"
-                                >
-                                  {t('nav.documents')}
-                                </button>
+                              {col.id === 'ON_ROAD' && load.status !== 'DELIVERED' && (
+                                <span className="rounded-lg bg-blue-50 px-2.5 py-1 text-xs font-bold text-blue-700 dark:bg-blue-950/40 dark:text-blue-300">
+                                  {t('loadStatus.on_road')}
+                                </span>
                               )}
-                              {col.id === 'COMPLETED' && (
+                              {load.status === 'DELIVERED' && (
+                                <span className="rounded-lg bg-amber-50 px-2.5 py-1 text-xs font-bold text-amber-800 dark:bg-amber-950/40 dark:text-amber-300">
+                                  {t('loads.awaitingCompletion')}
+                                </span>
+                              )}
+                              {load.status === 'COMPLETED' && (
                                 <button
-                                  onClick={() => onOpenDocs(load)}
+                                  onClick={(event) => {
+                                    event.stopPropagation();
+                                    onOpenDocs(load);
+                                  }}
                                   className="text-xs text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 font-mono font-bold transition-colors whitespace-nowrap"
                                 >
                                   {t('documents.invoice')}
                                 </button>
                               )}
                             </div>
+                            )}
 
                           </div>
                         );
@@ -558,7 +602,7 @@ export default function KanbanBoard({
         <div className="space-y-4">
           
           {/* Rate Con AI Drag & Drop Banner */}
-          <div
+          {importDocument && <div
             {...pasteTargetProps}
             tabIndex={0}
             onDragOver={(e) => {
@@ -572,10 +616,7 @@ export default function KanbanBoard({
             onDrop={(e) => {
               e.preventDefault();
               setIsDraggingOverOffer(false);
-              const file = e.dataTransfer.files?.[0];
-              if (file && onDropOnOffer && !isAiProcessing) {
-                onDropOnOffer(file);
-              }
+              submitDocumentFile(e.dataTransfer.files?.[0]);
             }}
             className={`upload-strip border border-dashed rounded-xl p-4 transition-all flex flex-col sm:flex-row items-center justify-between gap-3 ${
               isDraggingOverOffer
@@ -589,7 +630,7 @@ export default function KanbanBoard({
               </div>
               <div>
                 <div className="font-bold text-sm text-zinc-900 dark:text-zinc-100 flex items-center space-x-2">
-                  <span>{t('loads.createFromDocument')}</span>
+                  <span>{onAssignedDocumentUpload ? t('loads.addForDriver') : t('loads.createFromDocument')}</span>
                   <span className="inline-flex items-center space-x-1 px-2 py-0.5 rounded-full bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400 text-[10px] font-mono font-bold">
                     <Sparkles className="w-3 h-3" />
                     <span>AI</span>
@@ -606,16 +647,16 @@ export default function KanbanBoard({
               <span>{t('loads.chooseFile')}</span>
               <input
                 type="file"
-                accept="image/*,application/pdf"
+                accept=".pdf,.jpg,.jpeg,.png,.webp,.gif"
                 className="hidden"
                 onChange={(e) => {
                   const file = e.target.files?.[0];
-                  submitOfferFile(file);
+                  submitDocumentFile(file);
                   e.target.value = '';
                 }}
               />
             </label>
-          </div>
+          </div>}
 
           <div className="loads-table w-full overflow-x-auto border border-zinc-200 dark:border-zinc-800">
           <table className="w-full text-left border-collapse min-w-[800px]">
@@ -634,7 +675,7 @@ export default function KanbanBoard({
             <tbody className="divide-y divide-zinc-200 dark:divide-zinc-800 text-sm">
               {visibleLoads.map((load) => {
                 const driver = getDriver(load.driverId);
-                const stage = stages.find(s => s.id === load.status);
+                const stage = allStages.find(s => s.id === load.status);
 
                 return (
                   <tr key={load.id} className="hover:bg-zinc-50 dark:hover:bg-zinc-800/40 transition-colors">
@@ -657,7 +698,7 @@ export default function KanbanBoard({
                       {load.equipment || t('common.notProvided')}
                     </td>
                     <td className="py-3 px-3 text-zinc-700 dark:text-zinc-300 font-bold">
-                      {load.targetDriverIds && load.targetDriverIds.length > 1 && load.status === 'OFFER' ? (
+                      {load.targetDriverIds && load.targetDriverIds.length > 1 && load.status === 'UNASSIGNED' ? (
                         <span className="text-blue-600 dark:text-blue-400">
                           {t('loads.offeredDrivers', { count: load.targetDriverIds.length })}
                         </span>
@@ -670,6 +711,15 @@ export default function KanbanBoard({
                     </td>
                     <td className="py-3 px-3 text-right">
                       <div className="flex items-center justify-end gap-2">
+                        {['ready_for_offer', 'offered'].includes(load.databaseStatus) && (
+                          <button
+                            type="button"
+                            onClick={() => onSendOffer?.(load)}
+                            className="rounded-lg bg-blue-50 px-3.5 py-1.5 text-sm font-bold text-blue-700 hover:bg-blue-100 dark:bg-blue-950/40 dark:text-blue-300"
+                          >
+                            {t('loads.assignToDriver')}
+                          </button>
+                        )}
                         <button
                           onClick={() => onOpenDocs(load)}
                           className="text-sm font-bold text-zinc-700 dark:text-zinc-300 hover:text-zinc-900 dark:hover:text-zinc-100 px-3.5 py-1.5 bg-zinc-100 dark:bg-zinc-800 rounded-lg hover:bg-zinc-200 transition-colors"
@@ -701,6 +751,18 @@ export default function KanbanBoard({
           </table>
         </div>
         </div>
+      )}
+
+      {selectedLoadDetails && (
+        <LoadDetailsModal
+          load={selectedLoadDetails}
+          driver={getDriver(selectedLoadDetails.driverId)}
+          onClose={() => setSelectedLoadDetails(null)}
+          onOpenDocs={(load, documentId) => {
+            setSelectedLoadDetails(null);
+            onOpenDocs(load, documentId);
+          }}
+        />
       )}
 
       {loadPendingDelete && (

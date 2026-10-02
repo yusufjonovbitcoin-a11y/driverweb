@@ -21,7 +21,12 @@ function amount(value, label, required = false) {
 export function normalizeManualLoad(form, selectedDriverIds, availableDriverIds) {
   const allowed = new Set(availableDriverIds);
   const targets = [...new Set(selectedDriverIds)].filter((id) => allowed.has(id));
-  if (!targets.length) throw new Error('Kamida bitta haydovchini tanlang.');
+  if (targets.length > 1) {
+    throw new Error('Har bir yukni faqat bitta haydovchiga tayinlash mumkin.');
+  }
+  if (selectedDriverIds.length && !targets.length) {
+    throw new Error('Tanlangan haydovchi mavjud emas. Ro‘yxatni yangilang.');
+  }
   const stop = (prefix, label) => ({
     city: requiredText(form[`${prefix}City`], `${label} shahri`),
     state: requiredText(form[`${prefix}State`], `${label} shtati / hududi`),

@@ -4,6 +4,8 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
+    "test:driver-brief-db": "node scripts/test-driver-brief-db.mjs",
+    "test:chat-db": "node scripts/test-chat-db.mjs",
     "dev": "vite",
     "test": "node --test src/**/*.test.js scripts/*.test.mjs",
     "test:i18n": "node --test src/i18n/*.test.js",
@@ -22,9 +24,13 @@
     "imapflow": "^2.0.6",
     "lucide-react": "^1.47.0",
     "mailparser": "^3.9.28",
+    "mapbox-gl": "^3.32.0",
+    "pdf-lib": "^1.17.1",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
-    "react-i18next": "^17.0.15"
+    "react-i18next": "^17.0.15",
+    "react-virtuoso": "4.18.3",
+    "swr": "^2.5.1"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.3.3",

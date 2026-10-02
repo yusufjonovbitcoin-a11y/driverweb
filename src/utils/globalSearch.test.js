@@ -2,6 +2,11 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { buildGlobalSearchResults, normalizeSearchText } from './globalSearch.js';
 
+test('finds trip accounting through the analytics navigation entry', () => {
+  const results = buildGlobalSearchResults({ query: 'xarajat' });
+  assert.ok(results.some(result => result.tab === 'analytics'));
+});
+
 const drivers = [{
   id: 'driver-1',
   name: 'Amin Karimov',

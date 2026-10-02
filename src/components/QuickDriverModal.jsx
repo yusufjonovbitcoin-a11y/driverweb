@@ -4,12 +4,13 @@ import {
   X, 
   Sparkles, 
   Send, 
-  Check, 
   Search,
   FileImage,
   TriangleAlert,
 } from 'lucide-react';
 import { formatCurrency } from '../i18n/format';
+import DriverBriefPreview from './DriverBriefPreview';
+import { briefFieldLabel } from '../services/driverBrief';
 
 const FIELD_LABELS = {
   'broker.contactName': 'missingFields.brokerContact',
@@ -35,13 +36,16 @@ export default function QuickDriverModal({
   onClose, 
   loadData, 
   drivers, 
+  initialDriverId = null,
   onConfirm 
 }) {
   const { t } = useTranslation();
-  const [selectedDriverIds, setSelectedDriverIds] = useState([]);
-  const [isSelectAll, setIsSelectAll] = useState(false);
+  const [selectedDriverIds, setSelectedDriverIds] = useState(() => initialDriverId ? [initialDriverId] : []);
   const [searchQuery, setSearchQuery] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [reviewConfirmed, setReviewConfirmed] = useState(false);
+  const reviewRequired = loadData?.review?.required === true;
+  const reviewBlocked = (loadData?.review?.blockingFields?.length || 0) > 0;
   const missingFields = loadData?.missingFields || [];
   const isReassignment = ['assigned', 'in_progress'].includes(loadData?.lifecycleStatus);
   const isClosed = Boolean(loadData?.lifecycleStatus) && ![
@@ -49,30 +53,13 @@ export default function QuickDriverModal({
     'offered',
     'assigned',
     'in_progress',
+    ...(reviewRequired ? ['review', 'draft'] : []),
   ].includes(loadData.lifecycleStatus);
 
   if (!isOpen || !loadData) return null;
 
   const toggleDriver = (id) => {
-    if (isReassignment) {
-      setSelectedDriverIds((current) => current[0] === id ? [] : [id]);
-      return;
-    }
-    if (selectedDriverIds.includes(id)) {
-      setSelectedDriverIds(selectedDriverIds.filter(d => d !== id));
-    } else {
-      setSelectedDriverIds([...selectedDriverIds, id]);
-    }
-  };
-
-  const toggleSelectAll = () => {
-    if (isSelectAll) {
-      setIsSelectAll(false);
-      setSelectedDriverIds([]);
-    } else {
-      setIsSelectAll(true);
-      setSelectedDriverIds(drivers.map(d => d.id));
-    }
+    setSelectedDriverIds((current) => current[0] === id ? [] : [id]);
   };
 
   const availableDrivers = isReassignment
@@ -90,7 +77,8 @@ export default function QuickDriverModal({
 
   const handleSend = async (e) => {
     e.preventDefault();
-    if (selectedDriverIds.length === 0 || isSubmitting) return;
+    if (selectedDriverIds.length === 0 || isSubmitting || reviewBlocked
+        || (reviewRequired && !reviewConfirmed)) return;
     setIsSubmitting(true);
     try {
       await onConfirm(selectedDriverIds);
@@ -101,22 +89,22 @@ export default function QuickDriverModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
-      <div className="bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+      <div role="dialog" aria-modal="true" aria-label={t('loads.aiPreparedTitle')} className="bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-2xl w-full max-w-2xl max-h-[92dvh] flex flex-col shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150">
         
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-zinc-100 dark:border-zinc-800">
+        <div className="flex shrink-0 items-center justify-between px-6 py-4 border-b border-zinc-100 dark:border-zinc-800">
           <div className="flex items-center space-x-3">
             <div className="w-9 h-9 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800 flex items-center justify-center text-emerald-600 dark:text-emerald-400">
               <Sparkles className="w-5 h-5" />
             </div>
             <div>
               <h2 className="text-base lg:text-lg font-bold text-zinc-900 dark:text-zinc-100">
-                {isReassignment ? t('loads.reassign') : t('loads.aiPreparedTitle')}
+                {isReassignment ? t('loads.reassign') : loadData.source === 'saved' ? t('loads.savedTitle') : t('loads.aiPreparedTitle')}
               </h2>
               <p className="text-xs lg:text-sm text-zinc-400">
                 {isReassignment
                   ? t('loads.reassignHint')
-                  : t('loads.selectAndSend')}
+                  : t('loads.selectDriver')}
               </p>
             </div>
           </div>
@@ -129,7 +117,7 @@ export default function QuickDriverModal({
           </button>
         </div>
 
-        <form onSubmit={handleSend} className="p-6 space-y-4">
+        <form onSubmit={handleSend} className="p-6 space-y-4 overflow-y-auto min-h-0">
           
           {/* AI Parsed Summary Card */}
           <div className="bg-zinc-50 dark:bg-zinc-900/60 border border-zinc-200/80 dark:border-zinc-800 p-4 rounded-xl space-y-2">
@@ -140,16 +128,16 @@ export default function QuickDriverModal({
                 <span>{loadData.destination.city}, {loadData.destination.state}</span>
               </div>
               <span className="font-mono font-extrabold text-base lg:text-lg text-zinc-900 dark:text-zinc-100">
-                {formatCurrency(loadData.rate)}
+                {loadData.rate == null || loadData.rateKnown === false ? '—' : formatCurrency(loadData.rate)}
               </span>
             </div>
 
             <div className="flex items-center justify-between text-xs lg:text-sm text-zinc-500 font-medium">
-              <span>{loadData.equipment} • {loadData.distanceMiles} mi</span>
-              <span className="flex items-center space-x-1.5 text-blue-600 dark:text-blue-400 font-bold">
+              <span>{loadData.equipment || '—'}{loadData.distanceMiles != null && loadData.distanceKnown !== false ? ` • ${loadData.distanceMiles} mi` : ''}</span>
+              {loadData.source !== 'saved' && <span className="flex items-center space-x-1.5 text-blue-600 dark:text-blue-400 font-bold">
                 <FileImage className="w-4 h-4" />
                 <span className="truncate max-w-[140px]">{loadData.fileName || t('loads.imageAttached')}</span>
-              </span>
+              </span>}
             </div>
             <div className="flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-zinc-500 dark:text-zinc-400">
               {loadData.temperatureFahrenheit != null && (
@@ -159,12 +147,22 @@ export default function QuickDriverModal({
               {loadData.freightMode && <span>{loadData.freightMode}</span>}
           {loadData.isHazmat === false && <span>{t('loads.nonHazmat')}</span>}
             </div>
-            {loadData.requirements?.length > 0 && (
+            {!loadData.driverBrief && loadData.requirements?.length > 0 && (
               <div className="text-[11px] leading-relaxed text-zinc-600 dark:text-zinc-300">
                 <span className="font-bold">{t('loads.requirements')}:</span> {loadData.requirements.join(' • ')}
               </div>
             )}
           </div>
+
+          {loadData.driverBrief && <DriverBriefPreview brief={loadData.driverBrief} sourceUrl={loadData.sourceUrl || loadData.documents?.rateCon} />}
+          {reviewBlocked && <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-800 dark:bg-red-950/30 dark:text-red-200">
+            <p className="font-semibold">{t('driverBrief.blocked')}</p>
+            <p className="mt-1">{loadData.review.blockingFields.map(key => briefFieldLabel(t, key)).join(', ')}</p>
+          </div>}
+          {reviewRequired && !reviewBlocked && <label className="flex items-start gap-3 rounded-xl border border-teal-200 p-3 text-sm">
+            <input type="checkbox" checked={reviewConfirmed} onChange={event => setReviewConfirmed(event.target.checked)} className="mt-1" />
+            <span>{t('driverBrief.confirm')}</span>
+          </label>}
 
           {missingFields.length > 0 && (
             <div className="flex items-start gap-2.5 rounded-xl border border-amber-200 bg-amber-50 px-3.5 py-3 text-xs text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200">
@@ -172,7 +170,7 @@ export default function QuickDriverModal({
               <div>
                 <div className="font-bold">{t('loads.missingFields')}</div>
                 <div className="mt-1 leading-relaxed">
-                  {missingFields.map((field) => FIELD_LABELS[field] ? t(FIELD_LABELS[field]) : field).join(', ')}. {t('loads.warningOffer')}
+                  {missingFields.map((field) => FIELD_LABELS[field] ? t(FIELD_LABELS[field]) : field).join(', ')}.
                 </div>
               </div>
             </div>
@@ -190,15 +188,6 @@ export default function QuickDriverModal({
               <span className="font-bold text-zinc-800 dark:text-zinc-200">
                 {t('loads.selectDriver')}
               </span>
-              {!isReassignment && !isClosed && (
-                <button
-                  type="button"
-                  onClick={toggleSelectAll}
-                  className="text-xs lg:text-sm text-blue-600 dark:text-blue-400 hover:underline font-bold"
-                >
-                  {isSelectAll ? t('loads.selectIndividually') : t('loads.sendToAll')}
-                </button>
-              )}
             </div>
 
             {/* Search Input */}
@@ -224,7 +213,7 @@ export default function QuickDriverModal({
             </div>
 
             {/* Driver List */}
-            <div className="space-y-1.5 max-h-52 overflow-y-auto pr-1">
+            <div role="radiogroup" aria-label={t('loads.selectDriver')} className="space-y-1.5 max-h-52 overflow-y-auto pr-1">
               {filteredDrivers.length === 0 ? (
                 <div className="py-4 text-center text-sm text-zinc-400 font-medium">
                   {searchQuery
@@ -242,7 +231,16 @@ export default function QuickDriverModal({
                   return (
                     <div
                       key={driver.id}
+                      role="radio"
+                      aria-checked={isSelected}
+                      tabIndex={0}
                       onClick={() => toggleDriver(driver.id)}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter' || event.key === ' ') {
+                          event.preventDefault();
+                          toggleDriver(driver.id);
+                        }
+                      }}
                       className={`flex items-center justify-between px-3.5 py-2.5 rounded-xl cursor-pointer transition-colors ${
                         isSelected
                           ? 'bg-zinc-100 dark:bg-zinc-800/90 text-zinc-900 dark:text-zinc-100 font-bold'
@@ -250,12 +248,12 @@ export default function QuickDriverModal({
                       }`}
                     >
                       <div className="flex items-center space-x-3 min-w-0">
-                        <div className={`w-4 h-4 rounded border flex items-center justify-center flex-shrink-0 ${
+                        <div className={`w-4 h-4 rounded-full border flex items-center justify-center flex-shrink-0 ${
                           isSelected 
                             ? 'bg-zinc-900 dark:bg-zinc-100 border-zinc-900 dark:border-zinc-100 text-white dark:text-zinc-950' 
                             : 'border-zinc-300 dark:border-zinc-700'
                         }`}>
-                          {isSelected && <Check className="w-3 h-3 stroke-[3]" />}
+                          {isSelected && <span className="h-1.5 w-1.5 rounded-full bg-current" />}
                         </div>
                         <div className="truncate">
                           <span className="font-bold text-sm lg:text-base text-zinc-900 dark:text-zinc-100 mr-2">
@@ -280,7 +278,7 @@ export default function QuickDriverModal({
           {/* Footer */}
           <div className="pt-3.5 border-t border-zinc-100 dark:border-zinc-800 flex items-center justify-between">
             <span className="text-xs text-zinc-400 font-medium">
-              {t('loads.selected')}: <strong className="text-zinc-900 dark:text-zinc-100 font-bold">{t('loads.driverCount', { count: selectedDriverIds.length })}</strong>
+              {t('loads.selected', { count: selectedDriverIds.length })}
             </span>
 
             <div className="flex items-center space-x-2.5">
@@ -293,7 +291,7 @@ export default function QuickDriverModal({
               </button>
               <button
                 type="submit"
-                disabled={selectedDriverIds.length === 0 || isSubmitting || isClosed}
+                disabled={selectedDriverIds.length === 0 || isSubmitting || isClosed || reviewBlocked || (reviewRequired && !reviewConfirmed)}
                 className="inline-flex items-center space-x-2 bg-zinc-900 hover:bg-zinc-800 disabled:opacity-50 disabled:cursor-not-allowed text-white dark:bg-zinc-100 dark:hover:bg-white dark:text-zinc-950 px-5 py-2 rounded-xl font-bold text-sm transition-colors shadow-xs"
               >
                 <Send className="w-4 h-4" />
@@ -302,9 +300,7 @@ export default function QuickDriverModal({
                     ? t('loads.sending')
                     : isReassignment
                     ? t('loads.reassign')
-                    : selectedDriverIds.length > 1
-                    ? t('loads.sendToDrivers', { count: selectedDriverIds.length })
-                    : t('loads.sendToDriver')}
+                    : t('loads.assignToDriver')}
                 </span>
               </button>
             </div>

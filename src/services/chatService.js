@@ -6,8 +6,36 @@ import {
   uploadCloudinaryMedia,
 } from './cloudinaryMediaService';
 import { buildChatCursor, chatIceServers } from './chatReliability';
+import { createBatchedNotifier, MediaSends, PendingSends, reconcileHistory } from './chatTransport';
 
 const bucket = 'chat-media';
+let sessionStorage;
+try { sessionStorage = globalThis.sessionStorage; } catch { /* private browsing */ }
+const pendingSends = new PendingSends(sessionStorage);
+const pendingMedia = new MediaSends();
+const mediaUrls = new Map();
+const changes = createBatchedNotifier();
+let unreadRequest = null;
+let changeChannel = null;
+let changeListeners = 0;
+
+function actorKey(client) { return client.auth.getSession().then(({ data }) => data.session?.user?.id || 'anonymous'); }
+
+function subscribeChanges(callback) {
+  const client = requireSupabase();
+  const off = changes.subscribe(callback);
+  changeListeners += 1;
+  if (!changeChannel) {
+    changeChannel = client.channel('chat-summary-changes')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'chat_messages' }, () => changes.notify())
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'chat_messages' }, () => changes.notify())
+      .subscribe((status) => { if (status === 'SUBSCRIBED') changes.notify(); });
+  }
+  return () => {
+    off(); changeListeners -= 1;
+    if (!changeListeners && changeChannel) { client.removeChannel(changeChannel); changeChannel = null; changes.clear(); mediaUrls.clear(); }
+  };
+}
 
 function assertNoError(result) {
   if (result.error) throw result.error;
@@ -21,21 +49,58 @@ export async function openChat(driverId) {
 }
 
 async function withMediaUrl(client, message) {
-  if (!message.storage_path) return message;
+  if (!message.storage_path || message.deleted_at) return message;
+  const key = `${await actorKey(client)}:${message.storage_path}`;
+  const cached = mediaUrls.get(key);
+  if (cached && cached.until > Date.now()) {
+    try { return { ...message, mediaUrl: await cached.promise }; }
+    catch (error) { return { ...message, mediaError: error.message }; }
+  }
+  const promise = resolveMediaUrl(client, message);
+  mediaUrls.set(key, { promise, until: Date.now() + 50 * 60_000 });
+  if (mediaUrls.size > 300) mediaUrls.delete(mediaUrls.keys().next().value);
+  try { return { ...message, mediaUrl: await promise }; }
+  catch (error) { mediaUrls.delete(key); return { ...message, mediaError: error.message }; }
+}
+
+async function resolveMediaUrl(client, message) {
   if (isCloudinaryReference(message.storage_path)) {
-    try {
-      return { ...message, mediaUrl: await cloudinarySignedUrl(message.storage_path) };
-    } catch (error) {
-      return { ...message, mediaError: error.message };
-    }
+    return cloudinarySignedUrl(message.storage_path);
   }
   const { data, error } = await client.storage.from(bucket).createSignedUrl(message.storage_path, 3600);
-  if (error) return { ...message, mediaError: error.message };
-  return { ...message, mediaUrl: data?.signedUrl || null };
+  if (error) throw error;
+  return data?.signedUrl || null;
 }
 
 export async function refreshChatMessageMedia(message) {
-  return withMediaUrl(requireSupabase(), message);
+  const client = requireSupabase();
+  mediaUrls.delete(`${await actorKey(client)}:${message.storage_path}`);
+  return withMediaUrl(client, message);
+}
+
+export async function syncChatHistory(conversationId, oldest, isCurrent) {
+  const client = requireSupabase();
+  return reconcileHistory(async (before) => {
+    const rows = assertNoError(await client.rpc('get_chat_sync_page', {
+      target_conversation_id: conversationId, before_created_at: before?.createdAt || null,
+      before_message_id: before?.id || null, requested_page_size: 100,
+    })) || [];
+    return { messages: await Promise.all(rows.map((row) => withMediaUrl(client, row))),
+      cursor: buildChatCursor(rows), hasMore: rows.length === 100 };
+  }, oldest, isCurrent);
+}
+
+export async function searchChatMessages(conversationId, search, kind, before = null) {
+  const client = requireSupabase();
+  const rows = assertNoError(await client.rpc('search_chat_messages', {
+    target_conversation_id: conversationId, search_text: search.trim().slice(0, 200), media_kind: kind,
+    before_created_at: before?.createdAt || null, before_message_id: before?.id || null,
+  })) || [];
+  return { messages: (await Promise.all(rows.map((row) => withMediaUrl(client, row)))).reverse(), hasMore: rows.length === 50, cursor: buildChatCursor(rows) };
+}
+
+export async function fetchChatMediaCounts(conversationId) {
+  return assertNoError(await requireSupabase().rpc('get_chat_media_counts', { target_conversation_id: conversationId }));
 }
 
 export async function fetchChatMessages(conversationId, { before = null, pageSize = 50 } = {}) {
@@ -58,11 +123,27 @@ export async function fetchChatMessages(conversationId, { before = null, pageSiz
 
 export async function sendTextMessage(conversationId, text) {
   const client = requireSupabase();
+  if (text.trim().length > 4000) throw new Error('CHAT_MESSAGE_TOO_LONG');
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text.trim()));
+  const hash = Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('');
+  const key = `chat-send:v1:${await actorKey(client)}:${conversationId}:${hash}`;
   const result = await client.rpc('send_chat_message', {
     conversation_id: conversationId,
     message_kind: 'text',
     message_body: text.trim(),
-    message_client_id: crypto.randomUUID(),
+    message_client_id: pendingSends.get(key),
+  });
+  const message = assertNoError(result);
+  pendingSends.complete(key);
+  changes.notify();
+  return message;
+}
+
+export async function editChatMessage(messageId, text) {
+  const client = requireSupabase();
+  const result = await client.rpc('edit_chat_message', {
+    target_message_id: messageId,
+    new_body: text.trim(),
   });
   return assertNoError(result);
 }
@@ -82,16 +163,14 @@ export async function sendMediaMessage({
   signal,
 }) {
   const client = requireSupabase();
-  const uploaded = await uploadCloudinaryMedia({
+  const owner = `${await actorKey(client)}:${conversationId}`;
+  const saved = await pendingMedia.send(file, owner, () => uploadCloudinaryMedia({
     file,
     scope: 'chat',
     contextId: conversationId,
     onProgress,
     signal,
-  });
-  const path = uploaded.reference;
-
-  try {
+  }), async (clientId, path) => {
     const result = await client.rpc('send_chat_message', {
       conversation_id: conversationId,
       message_kind: fileKind(file),
@@ -101,18 +180,27 @@ export async function sendMediaMessage({
       media_mime_type: file.type || 'application/octet-stream',
       media_size_bytes: file.size,
       media_duration_ms: durationMs,
-      message_client_id: crypto.randomUUID(),
+      message_client_id: clientId,
     });
-    return withMediaUrl(client, assertNoError(result));
-  } catch (error) {
-    await deleteCloudinaryMedia(path).catch(() => undefined);
-    throw error;
-  }
+    return assertNoError(result);
+  });
+  changes.notify();
+  return withMediaUrl(client, saved);
+  // An ambiguous transport error MUST NOT delete an asset already referenced by a committed message.
 }
 
-export async function markChatRead(conversationId) {
+export async function markChatRead(conversationId, messageIds) {
+  if (!messageIds?.length) return 0;
   const client = requireSupabase();
-  const result = await client.rpc('mark_chat_read', { target_conversation_id: conversationId });
+  const result = await client.rpc('mark_chat_messages_read', { target_conversation_id: conversationId, message_ids: messageIds.slice(0, 100) });
+  const count = assertNoError(result);
+  if (count) changes.notify();
+  return count;
+}
+
+export async function markChatUnread(conversationId) {
+  const client = requireSupabase();
+  const result = await client.rpc('mark_chat_unread', { target_conversation_id: conversationId });
   return assertNoError(result);
 }
 
@@ -137,11 +225,24 @@ export async function fetchUnreadChatCount() {
   return Number(assertNoError(result) || 0);
 }
 
+export async function fetchUnreadChatCountsByDriver() {
+  const client = requireSupabase();
+  const actor = await actorKey(client);
+  if (!unreadRequest || unreadRequest.actor !== actor) {
+    const promise = client.rpc('get_chat_unread_summary').then((result) =>
+      Object.fromEntries((assertNoError(result) || []).map((row) => [row.driver_id, Number(row.unread_count)])));
+    const request = { actor, promise };
+    unreadRequest = request;
+    promise.finally(() => { if (unreadRequest === request) unreadRequest = null; }).catch(() => {});
+  }
+  return unreadRequest.promise;
+}
+
 export async function fetchChatPreviews() {
   const client = requireSupabase();
   const result = await client
     .from('chat_conversations')
-    .select('id, dispatcher_id, driver_id, chat_messages!left(id, kind, body, file_name, created_at, deleted_at)')
+    .select('id, dispatcher_id, driver_id, chat_messages!left(id, sender_id, kind, body, file_name, read_at, created_at, deleted_at)')
     .is('chat_messages.deleted_at', null)
     .order('last_message_at', { ascending: false })
     .order('created_at', { referencedTable: 'chat_messages', ascending: false })
@@ -151,17 +252,7 @@ export async function fetchChatPreviews() {
 }
 
 export function subscribeChatPreviews(onChange) {
-  const client = requireSupabase();
-  const channel = client
-    .channel(`chat-previews:${crypto.randomUUID()}`)
-    .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'chat_messages' }, onChange)
-    .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'chat_messages' }, (payload) => {
-      if (payload.new?.deleted_at) onChange?.();
-    })
-    .subscribe((status) => {
-      if (status === 'SUBSCRIBED') onChange?.();
-    });
-  return () => client.removeChannel(channel);
+  return subscribeChanges(onChange);
 }
 
 export function subscribeChat({ conversationId, onMessage, onMessageUpdated, onStatus, onReconnect }) {
@@ -232,13 +323,7 @@ export async function fetchRingingCalls() {
 }
 
 export function subscribeUnreadChats(onChange) {
-  const client = requireSupabase();
-  const channel = client
-    .channel(`chat-unread:${crypto.randomUUID()}`)
-    .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'chat_messages' }, onChange)
-    .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'chat_messages' }, onChange)
-    .subscribe();
-  return () => client.removeChannel(channel);
+  return subscribeChanges(onChange);
 }
 
 export async function startCall(conversationId, kind) {

@@ -34,6 +34,23 @@ npx supabase test db --local
 
 Supabase yadro va deploy tartibi [supabase/README.md](supabase/README.md) da yozilgan.
 
+## GPS reys tarixi
+
+`driverapp` faol assignment vaqtida GPS nuqtalarini SQLite navbatida saqlaydi va
+100 tagacha nuqtani bir RPC so‘rovda yuboradi. Tarmoq bo‘lmasa navbat telefonda
+qoladi; server nuqta UUID orqali takroriy yuborishni idempotent qabul qiladi.
+Dispatcher xaritasi `driver_location_points` dan reys tarixini sahifalab o‘qib,
+polyline chizadi. Xom nuqtalar Realtime kanaliga ulanmagan. Xarita stili
+`VITE_MAP_STYLE_URL` orqali almashtiriladi; sukut bo‘yicha OpenFreeMap.
+
+Avval `202609300001_driver_tracking.sql` migratsiyasini **shu Supabase loyihasiga**
+deploy qiling, keyin mobil va web ilovani yangilang. RLS tarixni faqat haydovchi
+va unga ruxsatli kompaniya admin/dispatcherlariga ko‘rsatadi. Xom GPS tarixi
+90 kundan keyin o‘chiriladi: `pg_cron` migratsiya paytida faol bo‘lsa kunlik job
+o‘rnatiladi; bo‘lmasa Supabase Dashboard’da `pg_cron`ni yoqib,
+`select cron.schedule('driver-location-retention', '15 3 * * *',
+'select public.purge_driver_location_history()');` ni bir marta bajaring.
+
 ## Asosiy oqim
 
 1. Gmail worker broker xabari va faylini saqlaydi.

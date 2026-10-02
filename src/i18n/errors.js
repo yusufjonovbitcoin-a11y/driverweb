@@ -1,7 +1,12 @@
 const ERROR_PATTERNS = [
+  [/CHAT_RATE_LIMIT/, 'errors.chatRateLimit'],
+  [/CHAT_MESSAGE_TOO_LONG/, 'errors.chatMessageTooLong'],
   [/session|jwt|token.*expired/i, 'errors.sessionExpired'],
   [/invalid login|invalid credentials/i, 'errors.invalidCredentials'],
   [/network|fetch failed|failed to fetch/i, 'errors.network'],
+  [/Route service environment is incomplete|Google.*(?:HTTP|marshrut)|Zaxira marshrut xizmati/i, 'errors.routeUnavailable'],
+  [/koordinatasi topilmadi|Marshrut xizmati masofani qaytarmadi/i, 'errors.routeAddress'],
+  [/Could not find the function|schema cache/i, 'errors.backendOutdated'],
   [/permission|not authorized|forbidden/i, 'errors.permission'],
   [/not found/i, 'errors.notFound'],
 ];

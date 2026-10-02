@@ -1,51 +1,156 @@
-import React, { useMemo } from 'react';
-import { DollarSign, Milestone, Package, TrendingUp, Truck } from 'lucide-react';
-import { aggregateLoadAnalytics } from '../services/loadAnalytics';
+import React, { useEffect, useRef, useState } from 'react';
+import { useWorkspaceInvalidation, useWorkspaceQuery, useWorkspaceView } from '../hooks/WorkspaceCache';
+import { useTranslation } from 'react-i18next';
+import { RefreshCw, ChevronLeft, ChevronRight, X, CalendarDays, ChevronDown } from 'lucide-react';
+import { formatCurrency, formatDate } from '../i18n/format';
+import { loadStatusLabel } from '../i18n/labels';
+import { accountingFields, accountingPayload, accountingPreview, accountingErrorKey } from '../services/tripAccounting';
+import { fetchTripAnalytics, saveTripAccounting } from '../services/tripAnalyticsService';
+import './trip-analytics.css';
+import MockAnalyticsLoad from './MockAnalyticsLoad';
+import MockAnalyticsLoadsList from './MockAnalyticsLoadsList';
 
-const number = (value) => value == null ? '—' : value.toLocaleString('en-US', { maximumFractionDigits: 2 });
-const money = (value) => value == null ? '—' : `$${number(value)}`;
+function AccountingEditor({ row, onClose, onSaved }) {
+  const { t } = useTranslation();
+  const a = (key, options) => t('analytics.' + key, options);
+  const initialValues = Object.fromEntries(accountingFields.map(key => [key, row[key] == null ? '' : String(row[key])]));
+  const [values, setValues] = useState(initialValues);
+  const [notes, setNotes] = useState(row.notes || '');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState(null);
+  const dirty = JSON.stringify(values) !== JSON.stringify(initialValues) || notes !== (row.notes || '');
+  const readOnly = row.trip_group === 'cancelled' || row.isDemo;
+  let preview = {};
+  try { preview = accountingPreview(row.contract_amount, values); } catch { /* Invalid input is reported on save. */ }
 
-export default function AnalyticsOverview({ loads = [] }) {
-  const stats = useMemo(() => aggregateLoadAnalytics(loads), [loads]);
-  const cards = [
-    { label: 'Yuk shartnomalari summasi', value: money(stats.contractAmount), detail: `${stats.knownRates} / ${stats.count} yukda stavka kiritilgan`, icon: DollarSign },
-    { label: 'O‘rtacha stavka / mil', value: money(stats.rpm), detail: `${stats.rpmLoads} ta stavka va masofasi ma’lum yuk bo‘yicha`, icon: TrendingUp },
-    { label: 'Yuk marshrutlari masofasi', value: `${number(stats.miles)} mi`, detail: `${stats.knownDistances} / ${stats.count} yukda masofa kiritilgan`, icon: Milestone },
-    { label: 'Yuklar soni', value: number(stats.count), detail: 'Barcha yuk holatlari hisobga olingan', icon: Package },
-  ];
-  return (
-    <div className="w-full space-y-6 pb-12">
-      <header className="border-b border-zinc-200 pb-4 dark:border-zinc-800">
-        <h2 className="text-xl font-black tracking-tight text-zinc-900 dark:text-zinc-100">Yuklar bo‘yicha tahlil</h2>
-        <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">Summalar yuk shartnomalaridagi stavkalarga asoslangan. To‘lov kelib tushgani haqida ma’lumot yo‘q.</p>
-      </header>
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        {cards.map(({ label, value, detail, icon: Icon }) => <div key={label} className="space-y-2 rounded-xl border border-zinc-200 bg-zinc-50 p-4 dark:border-zinc-800 dark:bg-zinc-900/50">
-          <div className="flex items-center justify-between gap-2 text-xs font-bold text-zinc-500 dark:text-zinc-400"><span>{label}</span><Icon className="h-4 w-4 shrink-0" /></div>
-          <div className="font-mono text-2xl font-black text-zinc-900 dark:text-zinc-100">{value}</div>
-          <p className="text-xs text-zinc-500 dark:text-zinc-400">{detail}</p>
-        </div>)}
-      </div>
-      {!stats.count && <p className="rounded-xl border border-dashed border-zinc-300 p-6 text-center text-sm text-zinc-500 dark:border-zinc-700">Hozircha tahlil uchun yuklar yo‘q.</p>}
-      <section className="space-y-3">
-        <div><h3 className="text-lg font-bold text-zinc-900 dark:text-zinc-100">Brokerlar bo‘yicha yuklar</h3><p className="mt-1 text-xs text-zinc-500">Ulush yuklar sonidan hisoblanadi. Summa faqat stavkasi ma’lum yuklarni qamrab oladi.</p></div>
-        <div className="overflow-x-auto rounded-xl border border-zinc-200 dark:border-zinc-800">
-          <table className="w-full min-w-[600px] text-left text-sm">
-            <thead className="border-b border-zinc-200 bg-zinc-50 text-xs text-zinc-500 dark:border-zinc-800 dark:bg-zinc-900"><tr><th scope="col" className="px-4 py-3">Broker</th><th scope="col" className="px-4 py-3">Yuklar</th><th scope="col" className="px-4 py-3">Shartnoma summasi</th><th scope="col" className="px-4 py-3">Yuklar ulushi</th></tr></thead>
-            <tbody className="divide-y divide-zinc-200 dark:divide-zinc-800">
-              {stats.brokers.map((broker) => <tr key={broker.name} className="text-zinc-800 dark:text-zinc-200"><th scope="row" className="px-4 py-3 font-semibold">{broker.name}</th><td className="px-4 py-3">{broker.count}</td><td className="px-4 py-3 font-mono">{money(broker.amount)}{broker.knownRates < broker.count && <span className="mt-1 block font-sans text-xs text-zinc-500">{broker.knownRates}/{broker.count} stavka ma’lum</span>}</td><td className="px-4 py-3"><span>{number(broker.percent)}%</span><div aria-hidden="true" className="mt-1 h-1.5 w-28 overflow-hidden rounded-full bg-zinc-200 dark:bg-zinc-800"><div className="h-full rounded-full bg-blue-600" style={{ width: `${broker.percent}%` }} /></div></td></tr>)}
-              {!stats.brokers.length && <tr><td colSpan={4} className="px-4 py-5 text-center text-zinc-500">Brokerlar bo‘yicha ma’lumot yo‘q.</td></tr>}
-            </tbody>
-          </table>
-        </div>
-      </section>
-      <section className="space-y-3">
-        <div><h3 className="text-lg font-bold text-zinc-900 dark:text-zinc-100">Yuklarda ko‘rsatilgan texnika</h3><p className="mt-1 text-xs text-zinc-500">Har bir texnika turi bo‘yicha yuklar soni.</p></div>
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-          {stats.equipment.map((item) => <div key={item.name} className="flex items-center gap-3 rounded-xl border border-zinc-200 bg-zinc-50 p-4 dark:border-zinc-800 dark:bg-zinc-900/50"><Truck className="h-5 w-5 shrink-0 text-blue-600" /><div className="min-w-0 flex-1"><h4 className="break-words text-sm font-bold text-zinc-900 dark:text-zinc-100">{item.name}</h4><p className="mt-1 text-xs text-zinc-500">{number(item.percent)}% yuk</p></div><span className="whitespace-nowrap text-sm font-bold text-zinc-900 dark:text-zinc-100">{item.count} ta yuk</span></div>)}
-          {!stats.equipment.length && <p className="text-sm text-zinc-500">Texnika bo‘yicha ma’lumot yo‘q.</p>}
-        </div>
-      </section>
+  useEffect(() => {
+    if (!dirty) return;
+    const warn = event => { event.preventDefault(); event.returnValue = ''; };
+    window.addEventListener('beforeunload', warn);
+    return () => window.removeEventListener('beforeunload', warn);
+  }, [dirty]);
+
+  async function submit(event) {
+    event.preventDefault();
+    if (saving || readOnly) return;
+    setError(null);
+    setSaving(true);
+    try {
+      await saveTripAccounting(row, accountingPayload(values), notes);
+      onSaved();
+    } catch (failure) { setError(failure); }
+    finally { setSaving(false); }
+  }
+  function close() {
+    if (!dirty || window.confirm(a('discard'))) onClose();
+  }
+
+  return <section className="trip-editor" aria-label={a('accounting')}>
+    <header><div><h2>{a('accounting')} · {row.load_number || '—'}</h2><p>{a(row.isDemo ? 'demoHint' : 'manualHint')}</p></div>
+      <button type="button" onClick={close} disabled={saving} aria-label={a('close')}><X size={18} /></button></header>
+    <div className="trip-basis"><span>{a('contract')}: <strong>{formatCurrency(row.contract_amount)}</strong></span>
+      <span>{a(row.isDemo ? 'demoTitle' : row.price_source === 'accepted_snapshot' ? 'snapshot' : 'currentRate')}</span>
+      {row.requires_reconfirmation && <strong role="status">{a('reconfirm')}</strong>}
     </div>
+    <form onSubmit={submit}>
+      <fieldset disabled={saving || readOnly} className="trip-input-grid">
+        {accountingFields.map(key => <label key={key}>{a('fields.' + key)} · USD
+          <input inputMode="decimal" autoComplete="off" maxLength={13} placeholder="—" value={values[key]}
+            onChange={event => setValues(previous => ({ ...previous, [key]: event.target.value }))} />
+        </label>)}
+        <label className="trip-notes">{a('notes')}<textarea rows={2} maxLength={2000} value={notes} onChange={event => setNotes(event.target.value)} /></label>
+      </fieldset>
+      <p className="trip-help">{a('unknownHint')}</p>
+      <div className="trip-preview">{['revenue', 'costs', 'balance', 'outstanding'].map(key => <div key={key}><span>{a(key)}</span><strong className={preview[key] < 0 ? 'trip-negative' : ''}>{formatCurrency(preview[key])}</strong></div>)}</div>
+      <p className="trip-help">{a('formula')}</p>
+      {row.has_receipt && <p className="trip-help">{a('receiptHint')}</p>}
+      {row.accounting_updated_at && <p className="trip-help">{a('updated')}: {formatDate(row.accounting_updated_at, { dateStyle: 'medium', timeStyle: 'short' })}</p>}
+      {error && <p className="trip-error" role="alert">{t(accountingErrorKey(error))}</p>}
+      <footer><button type="button" disabled={saving} onClick={close}>{a('close')}</button>
+        {!readOnly && <button className="trip-primary" type="submit" disabled={saving || !dirty}>{a(saving ? 'saving' : 'save')}</button>}</footer>
+    </form>
+  </section>;
+}
+
+export default function AnalyticsOverview() {
+  const { t } = useTranslation();
+  const a = (key, options) => t('analytics.' + key, options);
+  const [filters, setFilters] = useWorkspaceView('analytics.filters', { group: 'active', search: '', from: '', to: '', page: 1, pageSize: 4 });
+  const [search, setSearch] = useState(filters.search);
+  const invalidate = useWorkspaceInvalidation();
+  const [editing, setEditing] = useState(null);
+  const [saved, setSaved] = useState(false);
+  const [mode, setMode] = useWorkspaceView('analytics.mode', 'mock');
+  const [selectedMockLoad, setSelectedMockLoad] = useState(null);
+  const [mockLoadGroup, setMockLoadGroup] = useWorkspaceView('analytics.mockGroup', 'active');
+  const tableArea = useRef(null);
+  const { data, error, isLoading: loading, isValidating, mutate: refresh } = useWorkspaceQuery(
+    mode === 'real' ? ['trip-analytics', filters] : null,
+    ([, query]) => fetchTripAnalytics(query),
+    { staleTime: 30_000, refreshInterval: 60_000 },
   );
+
+  useEffect(() => {
+    if (mode !== 'real' || editing || loading || !tableArea.current) return;
+    const observer = new ResizeObserver(([entry]) => {
+      const pageSize = Math.max(1, Math.min(8, Math.floor((entry.contentRect.height - 100) / 90)));
+      setFilters(previous => previous.pageSize === pageSize ? previous : { ...previous, page: 1, pageSize });
+    });
+    observer.observe(tableArea.current);
+    return () => observer.disconnect();
+  }, [mode, editing, loading, setFilters]);
+
+  useEffect(() => {
+    const timer = setTimeout(() => setFilters(previous => previous.search === search ? previous : ({ ...previous, search, page: 1 })), 300);
+    return () => clearTimeout(timer);
+  }, [search, setFilters]);
+
+  function filter(key, value) { setSaved(false); setFilters(previous => ({ ...previous, [key]: value, page: 1 })); }
+  const pages = Math.max(1, Math.ceil((data?.total || 0) / filters.pageSize));
+
+  if (mode === 'mock' && !editing) {
+    return selectedMockLoad
+      ? <MockAnalyticsLoad load={selectedMockLoad} onBack={() => setSelectedMockLoad(null)} />
+      : <MockAnalyticsLoadsList group={mockLoadGroup} onGroup={setMockLoadGroup} onSelect={setSelectedMockLoad}
+          onRealData={() => { setFilters(previous => ({ ...previous, group: mockLoadGroup, page: 1 })); setMode('real'); }} />;
+  }
+
+  return <section className="trip-analytics analytics-dashboard" aria-busy={loading}>
+    <header className="trip-heading"><div><h1>{a('trips')}</h1><p>{a('dashboardSubtitle')}</p></div>
+      <div className="ad-header-actions">
+        <button type="button" disabled={Boolean(editing)} onClick={() => { setSelectedMockLoad(null); setMode('mock'); }}>{t('mockLoad.sampleData')}</button>
+        <details className="ad-date-picker"><summary><CalendarDays size={17} /><span>{filters.from || filters.to ? (filters.from || '…') + ' — ' + (filters.to || '…') : a('allDates')}</span><ChevronDown size={14} /></summary>
+          <div><label>{a('from')}<input type="date" disabled={Boolean(editing)} value={filters.from} onChange={event => filter('from', event.target.value)} /></label><label>{a('to')}<input type="date" disabled={Boolean(editing)} value={filters.to} min={filters.from} onChange={event => filter('to', event.target.value)} /></label><p className="trip-help">{a('dateHint')}</p></div>
+        </details>
+        <button type="button" aria-label={a('refresh')} title={a('refresh')} disabled={isValidating || Boolean(editing)} onClick={() => { void refresh().catch(() => {}); }}><RefreshCw size={16} className={isValidating ? 'animate-spin' : ''} /></button>
+      </div></header>
+    {editing ? <AccountingEditor key={editing.id + ':' + editing.accounting_version} row={editing} onClose={() => setEditing(null)} onSaved={() => {
+      setEditing(null); setSaved(true);
+      void invalidate(key => Array.isArray(key) && key[0] === 'trip-analytics').catch(() => {});
+    }} /> : <>
+      <div className="ad-toolbar"><nav className="ml-list-tabs" aria-label={t('mockLoad.listGroups')}>
+        {['active', 'completed'].map(group => <button type="button" key={group} aria-pressed={filters.group === group} onClick={() => filter('group', group)}>{t('mockLoad.' + group)}<span>{data?.counts?.[group] ?? '—'}</span></button>)}
+      </nav><input className="ad-search" type="search" aria-label={a('search')} placeholder={a('searchHint')} value={search} onChange={event => setSearch(event.target.value)} /></div>
+      {saved && <p className="trip-success" role="status">{a('saved')}</p>}
+      {error && <p className="trip-error" role="alert">{t(accountingErrorKey(error))}</p>}
+      {loading ? <div className="ad-loading" role="status"><RefreshCw size={23} className="animate-spin" />{a('loading')}</div> : <div className="ad-trips-view" ref={tableArea}>
+        <div className="trip-table-wrap"><table><thead><tr>{['trip', 'driverBroker', 'status', 'contract', 'recordedCosts', 'balance', 'accounting'].map(key => <th key={key} scope="col">{a(key)}</th>)}</tr></thead>
+          <tbody>{(data?.rows || []).map(row => <tr key={row.id}>
+            <td><strong>{row.load_number || '—'}</strong><small>{row.pickup_city || '—'} → {row.delivery_city || '—'}</small><small>{row.trip_date ? formatDate(row.trip_date, { timeZone: 'UTC' }) : '—'}</small></td>
+            <td>{row.driver_name || '—'}<small>{row.broker_name || '—'}</small></td>
+            <td><span className={'trip-status trip-status-' + row.trip_group}>{loadStatusLabel(t, row.status)}</span></td>
+            <td>{formatCurrency(row.contract_amount)}</td>
+            <td>{formatCurrency(row.recorded_costs)}{row.costs == null && <small>{a('incomplete')}</small>}</td>
+            <td className={row.balance < 0 ? 'trip-negative' : ''}>{formatCurrency(row.balance)}</td>
+            <td><button type="button" onClick={() => { setEditing(row); setSaved(false); }}>{a('open')}</button></td>
+          </tr>)}</tbody></table>
+          {!data?.rows?.length && !error && <p className="trip-empty">{a('empty')}</p>}
+        </div>
+        <footer className="trip-pagination"><span>{a('pagination', { page: filters.page, pages, total: data?.total || 0 })}</span><div>
+          <button type="button" aria-label={a('previous')} disabled={filters.page <= 1} onClick={() => setFilters(previous => ({ ...previous, page: previous.page - 1 }))}><ChevronLeft size={18} /></button>
+          <button type="button" aria-label={a('next')} disabled={filters.page >= pages} onClick={() => setFilters(previous => ({ ...previous, page: previous.page + 1 }))}><ChevronRight size={18} /></button>
+        </div></footer>
+      </div>}
+    </>}
+  </section>;
 }

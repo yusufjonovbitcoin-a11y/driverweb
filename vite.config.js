@@ -12,5 +12,12 @@ export default defineConfig({
     host: true,
     port: 5173,
     allowedHosts: true,
+    proxy: {
+      '/api/vin-decode/': {
+        target: 'https://vpic.nhtsa.dot.gov',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api\/vin-decode\//, '/api/vehicles/DecodeVinValues/'),
+      },
+    },
   },
 })
