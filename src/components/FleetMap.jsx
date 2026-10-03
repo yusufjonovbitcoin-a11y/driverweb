@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useEffect, useMemo, useRef } from 'react';
 import { unstable_serialize, useSWRConfig } from 'swr';
 import { useWorkspaceQuery, useWorkspaceView } from '../hooks/WorkspaceCache';
 import { useTranslation } from 'react-i18next';
@@ -8,6 +8,7 @@ import { formatCurrency, formatDateTime, formatNumber } from '../i18n/format';
 import { currentDriverLoad, knownLoadStatistics, loadStageIndex } from './mapLoadStatsModel';
 
 const TrackingMap = React.lazy(() => import('./TrackingMap'));
+const EMPTY_POINTS = [];
 
 function hasCoordinates(driver) {
   return Number.isFinite(driver?.lat) && Number.isFinite(driver?.lng);
@@ -17,16 +18,18 @@ function stopAddress(stop) {
   return [stop?.address, stop?.city, stop?.state, stop?.postalCode].filter(Boolean).join(', ');
 }
 
-export default function FleetMap({ drivers, loads }) {
+export default function FleetMap({ drivers, loads, isVisible = true }) {
   const { t } = useTranslation();
   const [selectedTruckId, setSelectedTruckId] = useWorkspaceView('map.driver', drivers[0]?.id || null);
   const [selectedLoadId, setSelectedLoadId] = useWorkspaceView('map.load', null);
   const { cache } = useSWRConfig();
   const selectedDriver = drivers.find((driver) => driver.id === selectedTruckId) || drivers[0];
-  const { data: sessions } = useWorkspaceQuery(
+  const hiddenAtRef = useRef(null);
+  const { data: sessions, mutate: refreshSessions } = useWorkspaceQuery(
     selectedDriver?.id ? ['driver-sessions', selectedDriver.id] : null,
     ([, driverId]) => fetchDriverTrackingSessions(driverId),
-    { staleTime: 60_000, refreshInterval: 120_000 },
+    { staleTime: 60_000, refreshInterval: isVisible ? 120_000 : 0,
+      revalidateOnFocus: isVisible, isPaused: () => !isVisible },
   );
   const driverLoads = useMemo(() => {
     const historicIds = new Set((sessions || []).map(session => session.load_id));
@@ -44,7 +47,7 @@ export default function FleetMap({ drivers, loads }) {
       && driverLoad.driverId === selectedDriver.id
       && ['ASSIGNED', 'PICKED_UP', 'ON_ROAD'].includes(driverLoad.status),
   );
-  const { data: points = [], error: trackError, isLoading: trackLoading } = useWorkspaceQuery(
+  const { data: trackPoints, error: trackError, isLoading: trackLoading, mutate: refreshTrack } = useWorkspaceQuery(
     selectedDriver?.id && driverLoad?.id ? ['driver-track', selectedDriver.id, driverLoad.id] : null,
     async (key) => {
       const previous = cache.get(unstable_serialize(key))?.data || [];
@@ -53,8 +56,23 @@ export default function FleetMap({ drivers, loads }) {
       received.forEach(point => byId.set(point.id, point));
       return [...byId.values()].sort((a, b) => a.captured_at.localeCompare(b.captured_at) || a.id.localeCompare(b.id));
     },
-    { staleTime: 60_000, refreshInterval: isActiveLoad ? 120_000 : 0 },
+    { staleTime: 60_000, refreshInterval: isVisible && isActiveLoad ? 120_000 : 0,
+      revalidateOnFocus: isVisible, isPaused: () => !isVisible },
   );
+  useEffect(() => {
+    if (!isVisible) {
+      hiddenAtRef.current = Date.now();
+      return;
+    }
+    // Short navigation uses the cached track; a long absence catches up quietly.
+    if (hiddenAtRef.current !== null) {
+      const stale = Date.now() - hiddenAtRef.current >= 60_000;
+      if (stale || sessions === undefined) void refreshSessions().catch(() => {});
+      if (stale || trackPoints === undefined) void refreshTrack().catch(() => {});
+    }
+    hiddenAtRef.current = null;
+  }, [isVisible, refreshSessions, refreshTrack, sessions, trackPoints]);
+  const points = trackPoints || EMPTY_POINTS;
   const visibleTrack = { points, status: trackError ? 'error' : trackLoading ? 'loading' : 'ready' };
 
   return (
@@ -150,6 +168,7 @@ export default function FleetMap({ drivers, loads }) {
         <div className="relative min-h-[520px] overflow-hidden rounded-2xl border border-zinc-200 bg-zinc-100 shadow-sm dark:border-zinc-800 dark:bg-zinc-900 lg:order-2 lg:h-full lg:min-h-0">
           <React.Suspense fallback={<div className="h-full min-h-[520px] w-full animate-pulse bg-zinc-200 dark:bg-zinc-800" role="status"><span className="sr-only">{t('common.loading')}</span></div>}>
           <TrackingMap
+            isVisible={isVisible}
             title={t('map.title')}
             routeKey={routeKey}
             points={visibleTrack.points}

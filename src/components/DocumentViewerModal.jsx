@@ -1,7 +1,8 @@
 import { useState } from 'react';
-import { FileText, X } from 'lucide-react';
+import { AlertTriangle, BadgeCheck, FileText, LoaderCircle, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { formatCurrency } from '../i18n/format';
+import { warningLabel } from '../i18n/labels';
 
 export default function DocumentViewerModal({
   isOpen,
@@ -20,24 +21,28 @@ export default function DocumentViewerModal({
       title: t('documents.brokerRateCon'),
       url: load.documents?.rateCon,
       mimeType: load.documentMeta?.rateCon?.mimeType,
+      review: load.documentChecks?.rateCon,
     },
     {
       id: 'shipperBol',
       title: t('documents.shipperBol'),
       url: load.documents?.shipperBol,
       mimeType: load.documentMeta?.shipperBol?.mimeType,
+      review: load.documentChecks?.shipperBol,
     },
     {
       id: 'receiverPod',
       title: t('documents.receiverPod'),
       url: load.documents?.receiverPod,
       mimeType: load.documentMeta?.receiverPod?.mimeType,
+      review: load.documentChecks?.receiverPod,
     },
     {
       id: 'receipt',
       title: t('documents.paymentReceipt'),
       url: load.documents?.receipt,
       mimeType: load.documentMeta?.receipt?.mimeType,
+      review: load.documentChecks?.receipt,
     },
   ].map((document) => ({ ...document, available: Boolean(document.url) }));
 
@@ -78,6 +83,8 @@ export default function DocumentViewerModal({
             <X className="h-5 w-5" />
           </button>
         </header>
+
+        {currentDoc.available && <DocumentCheckSummary review={currentDoc.review} t={t} />}
 
         <main className="min-h-0 flex-1 bg-zinc-100/70 p-3 dark:bg-zinc-900/60">
           {currentDoc.available ? (
@@ -128,6 +135,47 @@ export default function DocumentViewerModal({
           })}
         </nav>
       </section>
+    </div>
+  );
+}
+
+function DocumentCheckSummary({ review, t }) {
+  if (!review) return null;
+  const status = review.check_status;
+  const warnings = Array.isArray(review.active_warnings) ? review.active_warnings : [];
+
+  if (status === 'passed' || status === 'overridden') {
+    return (
+      <div className="flex shrink-0 items-center gap-2 border-b border-emerald-200 bg-emerald-50 px-6 py-2 text-sm font-bold text-emerald-800 dark:border-emerald-900/70 dark:bg-emerald-950/30 dark:text-emerald-300">
+        <BadgeCheck className="h-4 w-4" />
+        <span>{t('documents.aiPassed')}</span>
+      </div>
+    );
+  }
+
+  if (status === 'queued' || status === 'checking') {
+    return (
+      <div className="flex shrink-0 items-center gap-2 border-b border-blue-200 bg-blue-50 px-6 py-2 text-sm font-bold text-blue-800 dark:border-blue-900/70 dark:bg-blue-950/30 dark:text-blue-300">
+        <LoaderCircle className="h-4 w-4 animate-spin" />
+        <span>{t('documents.aiChecking')}</span>
+      </div>
+    );
+  }
+
+  if (!warnings.length && status !== 'failed_to_read') return null;
+  return (
+    <div role="alert" className="shrink-0 border-b border-red-200 bg-red-50 px-6 py-2.5 text-red-900 dark:border-red-900/70 dark:bg-red-950/30 dark:text-red-200">
+      <div className="flex items-center gap-2 text-sm font-black">
+        <AlertTriangle className="h-4 w-4 shrink-0" />
+        <span>{t('documents.issueCount', { count: Math.max(1, warnings.length) })}</span>
+      </div>
+      {warnings.length > 0 && (
+        <ul className="mt-1.5 list-disc space-y-0.5 pl-6 text-xs font-semibold">
+          {warnings.map((warning, index) => (
+            <li key={warning.id || `${warning.code}:${index}`}>{warningLabel(t, warning)}</li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }

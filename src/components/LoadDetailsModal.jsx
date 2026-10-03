@@ -4,11 +4,8 @@ import { useTranslation } from 'react-i18next';
 import { formatCurrency, formatDateTime, formatNumber } from '../i18n/format';
 import { loadStatusLabel } from '../i18n/labels';
 import { buildLoadDetails } from './loadDetailsModel';
-import {
-  createLoadDocumentsPdfFile,
-  fileAsDataUrl,
-  setLoadDocumentsPdfDragData,
-} from '../services/loadDocumentPdf';
+
+const loadPdfTools = () => import('../services/loadDocumentPdf');
 
 const value = (content) => content ?? '—';
 
@@ -17,8 +14,11 @@ export default function LoadDetailsModal({ load, driver, onClose, onOpenDocs }) 
   const closeRef = useRef(null);
   const pdfAssetRef = useRef(null);
   const pdfPreparationRef = useRef(null);
+  const pdfControllerRef = useRef(null);
+  const pdfToolsRef = useRef(null);
   const pdfPreparationVersionRef = useRef(0);
   const [isCombiningPdf, setIsCombiningPdf] = useState(false);
+  const [isDownloadingPdf, setIsDownloadingPdf] = useState(false);
   const [pdfAsset, setPdfAsset] = useState(null);
   const [combineError, setCombineError] = useState('');
   const details = buildLoadDetails(load, driver);
@@ -38,10 +38,15 @@ export default function LoadDetailsModal({ load, driver, onClose, onOpenDocs }) 
     if (pdfPreparationRef.current) return pdfPreparationRef.current;
 
     const version = pdfPreparationVersionRef.current;
+    const controller = new AbortController();
+    pdfControllerRef.current = controller;
     setIsCombiningPdf(true);
     setCombineError('');
-    const preparation = createLoadDocumentsPdfFile(load).then(async (result) => {
-      const dragUrl = await fileAsDataUrl(result.file);
+    const preparation = loadPdfTools().then(async (tools) => {
+      if (version !== pdfPreparationVersionRef.current) return null;
+      pdfToolsRef.current = tools;
+      const result = await tools.createLoadDocumentsPdfFile(load, { signal: controller.signal });
+      const dragUrl = await tools.fileAsDataUrl(result.file);
       if (version !== pdfPreparationVersionRef.current) return null;
       const asset = {
         ...result,
@@ -58,6 +63,7 @@ export default function LoadDetailsModal({ load, driver, onClose, onOpenDocs }) 
       return await preparation;
     } finally {
       if (pdfPreparationRef.current === preparation) pdfPreparationRef.current = null;
+      if (pdfControllerRef.current === controller) pdfControllerRef.current = null;
       if (version === pdfPreparationVersionRef.current) setIsCombiningPdf(false);
     }
   }, [load]);
@@ -71,31 +77,39 @@ export default function LoadDetailsModal({ load, driver, onClose, onOpenDocs }) 
 
   useEffect(() => {
     pdfPreparationVersionRef.current += 1;
-    const version = pdfPreparationVersionRef.current;
+    pdfControllerRef.current?.abort();
+    pdfControllerRef.current = null;
     if (pdfAssetRef.current?.objectUrl) URL.revokeObjectURL(pdfAssetRef.current.objectUrl);
     pdfAssetRef.current = null;
     pdfPreparationRef.current = null;
     // oxlint-disable-next-line react/set-state-in-effect -- a different document set invalidates the prepared drag file.
     setPdfAsset(null);
-
-    if (details.documentCount > 0) {
-      void prepareCombinedPdf().catch(() => {
-        if (version === pdfPreparationVersionRef.current) {
-          setCombineError(t('documents.combinePdfError'));
-        }
-      });
-    }
+    setIsCombiningPdf(false);
+    setIsDownloadingPdf(false);
+    setCombineError('');
 
     return () => {
       pdfPreparationVersionRef.current += 1;
+      pdfControllerRef.current?.abort();
+      pdfControllerRef.current = null;
       if (pdfAssetRef.current?.objectUrl) URL.revokeObjectURL(pdfAssetRef.current.objectUrl);
       pdfAssetRef.current = null;
       pdfPreparationRef.current = null;
     };
-  }, [details.documentCount, documentsSignature, prepareCombinedPdf, t]);
+  }, [load.id, load.loadNumber, documentsSignature]);
+
+  const preparePdfForDrag = () => {
+    if (!details.documentCount) return;
+    const version = pdfPreparationVersionRef.current;
+    void prepareCombinedPdf().catch(() => {
+      if (version === pdfPreparationVersionRef.current) setCombineError(t('documents.combinePdfError'));
+    });
+  };
 
   const combineDocuments = async () => {
-    if (details.documentCount === 0) return;
+    if (details.documentCount === 0 || isDownloadingPdf) return;
+    const version = pdfPreparationVersionRef.current;
+    setIsDownloadingPdf(true);
     setCombineError('');
     try {
       const asset = await prepareCombinedPdf();
@@ -104,8 +118,12 @@ export default function LoadDetailsModal({ load, driver, onClose, onOpenDocs }) 
       link.href = asset.objectUrl;
       link.download = asset.file.name;
       link.click();
-    } catch {
-      setCombineError(t('documents.combinePdfError'));
+    } catch (error) {
+      if (version === pdfPreparationVersionRef.current && error.name !== 'AbortError') {
+        setCombineError(t('documents.combinePdfError'));
+      }
+    } finally {
+      if (version === pdfPreparationVersionRef.current) setIsDownloadingPdf(false);
     }
   };
 
@@ -113,10 +131,10 @@ export default function LoadDetailsModal({ load, driver, onClose, onOpenDocs }) 
     const asset = pdfAssetRef.current;
     if (!asset) {
       event.preventDefault();
-      void prepareCombinedPdf().catch(() => setCombineError(t('documents.combinePdfError')));
+      preparePdfForDrag();
       return;
     }
-    setLoadDocumentsPdfDragData(event.dataTransfer, asset.file, asset.dragUrl);
+    pdfToolsRef.current.setLoadDocumentsPdfDragData(event.dataTransfer, asset.file, asset.dragUrl);
   };
 
   return (
@@ -194,8 +212,10 @@ export default function LoadDetailsModal({ load, driver, onClose, onOpenDocs }) 
               {combineError && <p role="alert" className="text-xs font-semibold text-red-600 dark:text-red-400">{combineError}</p>}
               <button
                 type="button"
-                disabled={isCombiningPdf || details.documentCount === 0}
+                disabled={isDownloadingPdf || details.documentCount === 0}
                 onClick={combineDocuments}
+                onPointerEnter={preparePdfForDrag}
+                onFocus={preparePdfForDrag}
                 draggable={Boolean(pdfAsset)}
                 onDragStart={dragCombinedPdf}
                 title={pdfAsset ? t('documents.dragPdfHint') : t('documents.combinePdfHint')}

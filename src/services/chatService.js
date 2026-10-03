@@ -7,6 +7,7 @@ import {
 } from './cloudinaryMediaService';
 import { buildChatCursor, chatIceServers } from './chatReliability';
 import { createBatchedNotifier, MediaSends, PendingSends, reconcileHistory } from './chatTransport';
+import { invalidateSignedMediaUrl } from './mediaUrlCache';
 
 const bucket = 'chat-media';
 let sessionStorage;
@@ -75,6 +76,9 @@ async function resolveMediaUrl(client, message) {
 export async function refreshChatMessageMedia(message) {
   const client = requireSupabase();
   mediaUrls.delete(`${await actorKey(client)}:${message.storage_path}`);
+  if (isCloudinaryReference(message.storage_path)) {
+    invalidateSignedMediaUrl(client, message.storage_path);
+  }
   return withMediaUrl(client, message);
 }
 

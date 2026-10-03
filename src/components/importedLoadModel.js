@@ -4,7 +4,7 @@ import { validMapCoordinate } from './mapboxMapModel.js';
 import { validPhone } from '../../supabase/functions/_shared/load-enrichment.ts';
 
 export function importedMapState(details, driver) {
-  const addressBlocked = details.blockingFields.some(key => /^(pickup|delivery)\.(addressLine|city|region|postalCode)$/.test(key));
+  const addressBlocked = details.blockingFields.some(key => /^(pickup|delivery|stops\.\d+)\.(addressLine|city|region|postalCode)$/.test(key));
   return {
     routeEnabled: !addressBlocked,
     livePosition: driver?.isOnline && validMapCoordinate(driver.lat, driver.lng)
@@ -19,6 +19,8 @@ export function buildImportedLoad(load = {}) {
   const unknown = new Set(snapshot?.unknownFields || []);
   const get = (key, fallback) => hasBrief ? fields.get(key)?.value ?? null : fallback ?? null;
   const stop = (key, fallback = {}) => ({
+    dateNeedsReview: (load.review?.blockingFields || []).some(field => field === `${key}.scheduledDate` || field === `${key}.readyDate`),
+    timeNeedsReview: (load.review?.blockingFields || []).some(field => field === `${key}.timePrinted` || field === `${key}.appointmentPrinted`),
     facility: get(`${key}.facilityName`, fallback.facility),
     address: get(`${key}.addressLine`, fallback.address),
     city: get(`${key}.city`, fallback.city),
@@ -30,11 +32,16 @@ export function buildImportedLoad(load = {}) {
     phone: validPhone(get(`${key}.contactPhone`, fallback.contactPhone)),
     readyDate: get(`${key}.readyDate`), hours: get(`${key}.hours`),
     scheduledDate: get(`${key}.scheduledDate`), timePrinted: get(`${key}.timePrinted`), note: get(`${key}.note`),
+    timingNote: get(`${key}.timingNote`), timezone: get(`${key}.appointmentTimezone`),
     appointmentReference: get(`${key}.appointmentReference`), orderReferences: get(`${key}.orderReferences`),
   });
   const rate = load.rateKnown === false || unknown.has('brokerRate') ? null : load.documentDetails ? get('brokerRate') : load.rate ?? null;
   const distance = load.distanceKnown === false || unknown.has('loadedMiles') ? null : load.documentDetails ? get('loadedMiles') : load.distanceMiles ?? null;
+  const ordered = snapshot?.stops;
+  const stops = Array.isArray(ordered) && ordered.length ? ordered.map((item, i) => ({ ...stop(`stops.${i}`), role: item.role, sequence: i + 1 }))
+    : [{ ...stop('pickup', load.origin), role: 'pickup', sequence: 1 }, { ...stop('delivery', load.destination), role: 'delivery', sequence: 2 }];
   return {
+    stops, issues: load.review?.issues || [],
     number: get('loadNumber', load.loadNumber),
     pickup: stop('pickup', load.origin), delivery: stop('delivery', load.destination),
     broker: get('broker.name', load.broker), brokerContact: get('broker.contactName', load.brokerContact),

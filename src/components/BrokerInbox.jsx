@@ -4,11 +4,13 @@ import {
   AlertTriangle, ArrowLeft, Bot, CheckCircle2, FileText, Inbox, LoaderCircle,
   Mail, Paperclip, Send, Star,
 } from 'lucide-react';
-import { fetchBrokerInbox, fetchBrokerMessageBody, forwardGmailAttachmentToDriver, markBrokerMessageRead } from '../services/operationsService';
+import { fetchBrokerInbox, fetchBrokerMessageBody, markBrokerMessageRead } from '../services/operationsService';
 import { formatDate, formatNumber, formatTime } from '../i18n/format';
 import { ingestionStatusLabel } from '../i18n/labels';
 import { localizedError } from '../i18n/errors';
 import { useWorkspaceQuery, useWorkspaceView } from '../hooks/WorkspaceCache';
+import { supabase } from '../lib/supabase';
+import { createCoalescedAsyncTrigger } from '../services/realtimeRefresh';
 
 function StatusIcon({ status }) {
   if (status === 'extracted') return <CheckCircle2 className="w-4 h-4 text-emerald-500" />;
@@ -97,19 +99,42 @@ function MessageBody({ messageId, t }) {
   );
 }
 
-export default function BrokerInbox({ drivers, onCreateLoad, onUnreadChange }) {
+export default function BrokerInbox({ drivers, onPrepareAttachment, onUnreadChange }) {
   const { t } = useTranslation();
   const { data: items = [], error: requestError, isLoading: loading, mutate } = useWorkspaceQuery(
-    'broker-inbox', fetchBrokerInbox, { refreshInterval: 15_000 },
+    'broker-inbox', fetchBrokerInbox, { refreshInterval: 60_000 },
   );
   const error = requestError ? localizedError(t, requestError, 'errors.inboxLoad') : '';
   const [selectedId, setSelectedId] = useWorkspaceView('inbox.selection', null);
   const [selectedDriverId, setSelectedDriverId] = useState('');
-  const [forwardingAttachmentId, setForwardingAttachmentId] = useState(null);
-  const [forwardMessage, setForwardMessage] = useState('');
+  const [preparingAttachmentId, setPreparingAttachmentId] = useState(null);
 
   const selected = items.find((item) => item.id === selectedId) || null;
   const availableDrivers = drivers.filter((driver) => driver.status !== 'SUSPENDED');
+
+  useEffect(() => {
+    if (!supabase) return undefined;
+    const refresh = createCoalescedAsyncTrigger(async () => {
+      try {
+        await mutate();
+      } catch {
+        // Periodic revalidation remains a fallback during a network outage.
+      }
+    });
+    const channel = supabase.channel('broker-inbox-changes');
+    for (const table of ['broker_messages', 'broker_attachments', 'ai_extractions', 'broker_message_reads']) {
+      channel.on('postgres_changes', { event: 'INSERT', schema: 'public', table }, refresh);
+      channel.on('postgres_changes', { event: 'UPDATE', schema: 'public', table }, refresh);
+    }
+    channel.subscribe((status) => {
+      // Close the gap between the initial HTTP fetch and the live subscription.
+      if (status === 'SUBSCRIBED') refresh();
+    });
+    return () => {
+      refresh.dispose();
+      void supabase.removeChannel(channel);
+    };
+  }, [mutate]);
 
   useEffect(() => {
     if (!selected || selected.is_read || !selected.attachments?.length) return;
@@ -124,21 +149,13 @@ export default function BrokerInbox({ drivers, onCreateLoad, onUnreadChange }) {
     return () => { active = false; };
   }, [selected, onUnreadChange, mutate]);
 
-  const forwardAttachment = async (attachment) => {
-    if (!selectedDriverId) {
-      setForwardMessage(t('inbox.selectDriverFirst'));
-      return;
-    }
-    setForwardingAttachmentId(attachment.id);
-    setForwardMessage('');
+  const prepareAttachment = async (attachment) => {
+    if (!selected || !selectedDriverId || preparingAttachmentId) return;
+    setPreparingAttachmentId(attachment.id);
     try {
-      await forwardGmailAttachmentToDriver({ attachmentId: attachment.id, driverId: selectedDriverId });
-      const driver = availableDrivers.find((item) => item.id === selectedDriverId);
-      setForwardMessage(t('inbox.forwarded', { file: attachment.file_name, driver: driver?.name || t('roles.driver') }));
-    } catch (forwardError) {
-      setForwardMessage(localizedError(t, forwardError, 'errors.forwardAttachment'));
+      await onPrepareAttachment?.(selected, attachment, selectedDriverId);
     } finally {
-      setForwardingAttachmentId(null);
+      setPreparingAttachmentId(null);
     }
   };
 
@@ -147,8 +164,10 @@ export default function BrokerInbox({ drivers, onCreateLoad, onUnreadChange }) {
   }
 
   if (selected) {
-    const pdfAttachments = selected.attachments?.filter((attachment) => (
-      attachment.mime_type === 'application/pdf' || attachment.file_name?.toLowerCase().endsWith('.pdf')
+    const loadAttachments = selected.attachments?.filter((attachment) => (
+      attachment.mime_type === 'application/pdf'
+      || ['image/jpeg', 'image/png', 'image/webp', 'image/gif'].includes(attachment.mime_type)
+      || attachment.file_name?.toLowerCase().endsWith('.pdf')
     )) || [];
 
     return (
@@ -231,19 +250,19 @@ export default function BrokerInbox({ drivers, onCreateLoad, onUnreadChange }) {
 
           <section className="space-y-3 rounded-2xl border border-zinc-200 p-5 dark:border-zinc-800">
             <div>
-              <h3 className="text-sm font-black">{t('inbox.forwardPdf')}</h3>
-              <p className="mt-1 text-xs text-zinc-500">{t('inbox.forwardHint')}</p>
+              <h3 className="text-sm font-black">{t('inbox.prepareLoad')}</h3>
+              <p className="mt-1 text-xs text-zinc-500">{t('inbox.prepareHint')}</p>
             </div>
             <select
               value={selectedDriverId}
-              onChange={(event) => { setSelectedDriverId(event.target.value); setForwardMessage(''); }}
+              onChange={(event) => setSelectedDriverId(event.target.value)}
               className="w-full rounded-xl border border-zinc-200 bg-white px-3 py-2.5 text-sm font-medium outline-none focus:border-zinc-500 dark:border-zinc-700 dark:bg-zinc-900"
               aria-label={t('inbox.selectDriver')}
             >
               <option value="">{t('inbox.selectDriver')}</option>
               {availableDrivers.map((driver) => <option key={driver.id} value={driver.id}>{driver.name}</option>)}
             </select>
-            {pdfAttachments.map((attachment) => (
+            {loadAttachments.map((attachment) => (
               <div key={attachment.id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-zinc-50 p-3 dark:bg-zinc-950">
                 <div className="flex min-w-0 items-center gap-2">
                   <FileText className="h-5 w-5 shrink-0 text-red-500" />
@@ -254,27 +273,18 @@ export default function BrokerInbox({ drivers, onCreateLoad, onUnreadChange }) {
                 </div>
                 <button
                   type="button"
-                  disabled={!selectedDriverId || forwardingAttachmentId === attachment.id}
-                  onClick={() => forwardAttachment(attachment)}
-                  className="inline-flex items-center gap-2 rounded-lg bg-zinc-900 px-3 py-2 text-xs font-bold text-white disabled:cursor-not-allowed disabled:opacity-40 dark:bg-white dark:text-zinc-950"
+                  disabled={!selectedDriverId || Boolean(preparingAttachmentId)}
+                  onClick={() => prepareAttachment(attachment)}
+                  aria-label={t('inbox.forward')}
+                  title={t('inbox.forward')}
+                  className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-zinc-900 text-white disabled:cursor-not-allowed disabled:opacity-40 dark:bg-white dark:text-zinc-950"
                 >
-                  {forwardingAttachmentId === attachment.id ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
-                  {t('inbox.forward')}
+                  {preparingAttachmentId === attachment.id ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
                 </button>
               </div>
             ))}
-            {pdfAttachments.length === 0 && <p className="text-sm text-zinc-500">{t('inbox.noPdf')}</p>}
-            {forwardMessage && <p className="text-xs font-medium text-zinc-600 dark:text-zinc-300">{forwardMessage}</p>}
+            {loadAttachments.length === 0 && <p className="text-sm text-zinc-500">{t('inbox.noLoadAttachment')}</p>}
           </section>
-
-          <button
-            type="button"
-            onClick={() => onCreateLoad?.(selected)}
-            disabled={!selected.extraction?.result || Object.keys(selected.extraction.result).length === 0}
-            className="rounded-xl bg-zinc-900 px-5 py-2.5 text-sm font-bold text-white disabled:opacity-40 dark:bg-white dark:text-zinc-950"
-          >
-            {t('inbox.reviewProposal')}
-          </button>
         </article>
       </div>
     );
@@ -305,7 +315,7 @@ export default function BrokerInbox({ drivers, onCreateLoad, onUnreadChange }) {
               <button
                 key={item.id}
                 type="button"
-                onClick={() => { setSelectedId(item.id); setForwardMessage(''); }}
+                onClick={() => setSelectedId(item.id)}
                 className={`grid w-full grid-cols-[18px_18px_minmax(110px,170px)_minmax(0,1fr)_auto] items-center gap-2 border-b border-zinc-200 px-4 py-2.5 text-left transition-colors dark:border-zinc-800 sm:gap-3 sm:px-6 ${
                   item.is_read
                     ? 'bg-zinc-50/70 hover:bg-zinc-100 dark:bg-zinc-900 dark:hover:bg-zinc-800'

@@ -3,6 +3,7 @@ import {
   CloudinaryMediaError,
   isCloudinaryReference,
 } from './cloudinaryMediaErrors';
+import { cachedSignedMediaUrl, invalidateSignedMediaUrl } from './mediaUrlCache';
 
 export {
   CloudinaryMediaError,
@@ -85,12 +86,15 @@ export async function uploadCloudinaryMedia({
 
 export async function cloudinarySignedUrl(reference) {
   if (!isCloudinaryReference(reference)) return null;
-  const result = await request({ action: 'signedUrl', reference });
-  return result.url || null;
+  return cachedSignedMediaUrl(requireSupabase(), reference, async () => {
+    const result = await request({ action: 'signedUrl', reference });
+    return result.url || null;
+  });
 }
 
 export async function deleteCloudinaryMedia(reference) {
   if (!isCloudinaryReference(reference)) return false;
   await request({ action: 'delete', reference });
+  invalidateSignedMediaUrl(requireSupabase(), reference);
   return true;
 }

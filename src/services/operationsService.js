@@ -1,6 +1,10 @@
 import { requireSupabase } from '../lib/supabase';
 import { cloudinarySignedUrl } from './cloudinaryMediaService';
+import { isCloudinaryReference } from './cloudinaryMediaErrors';
+import { loadImportFileError } from './loadImportFile';
+import { fetchBrokerInboxRows, fetchBrokerUnreadCount } from './brokerInboxQueries';
 import { createCoalescedAsyncTrigger } from './realtimeRefresh';
+import { driverPresenceFields } from './driverPresenceModel';
 import { normalizeLocale } from '../i18n/locales';
 import { vehicleRowToModel } from './fleetVehicleModel';
 import { loadBoardStatus } from './loadBoardStatus';
@@ -194,20 +198,13 @@ function toUiLoad(row, offersByLoad, documentsByLoad, warningsByLoad, reviewsByD
 }
 
 function toUiDriver(member, presence, avatar = null) {
-  const online = Boolean(presence?.is_online) && Date.now() - new Date(presence.last_seen_at).getTime() < 120000;
   return {
     id: member.id,
     name: member.full_name,
     email: member.email || null,
     driverNumber: `#${member.id.slice(0, 4).toUpperCase()}`,
     phone: member.phone || null,
-    status: online ? 'AVAILABLE' : 'RESTING',
-    dutyStatus: online ? 'ON_DUTY' : 'OFF_DUTY',
-    currentLocation: online && presence?.latitude && presence?.longitude
-      ? `${Number(presence.latitude).toFixed(4)}, ${Number(presence.longitude).toFixed(4)}`
-      : null,
-    lat: online && presence?.latitude ? Number(presence.latitude) : null,
-    lng: online && presence?.longitude ? Number(presence.longitude) : null,
+    ...driverPresenceFields(presence),
     hos: {
       driveLeft: member.hos_available_minutes == null
         ? '—'
@@ -235,8 +232,6 @@ function toUiDriver(member, presence, avatar = null) {
     completedLoads: 0,
     onTimeRate: '—',
     avatar,
-    isOnline: online,
-    lastSeenAt: presence?.last_seen_at || null,
   };
 }
 
@@ -314,6 +309,7 @@ export async function fetchWorkspace() {
   const stagesByAssignment = new Map(
     (assignmentsResult.data || []).map((assignment) => [assignment.id, assignment.driver_stage]),
   );
+  const presenceByDriver = new Map((presenceResult.data || []).map(item => [item.driver_id, item]));
   return {
     loads: (loadsResult.data || []).map((row) => (
       toUiLoad(row, offersByLoad, documentsByLoad, warningsByLoad, reviewsByDocument, stagesByAssignment)
@@ -321,7 +317,7 @@ export async function fetchWorkspace() {
     drivers: members.filter((member) => member.role === 'driver').map((member) => (
       toUiDriver(
         member,
-        (presenceResult.data || []).find((item) => item.driver_id === member.id),
+        presenceByDriver.get(member.id),
         avatarUrls.get(member.id),
       )
     )),
@@ -330,26 +326,7 @@ export async function fetchWorkspace() {
 }
 
 export async function fetchBrokerInbox() {
-  const client = requireSupabase();
-  const [messagesResult, extractionsResult, attachmentsResult, readsResult] = await Promise.all([
-    client.from('broker_messages')
-      .select('id,company_id,gmail_connection_id,provider_message_id,provider_thread_id,from_email,subject,received_at,raw_storage_path,status,error_message,created_at')
-      .order('received_at', { ascending: false }).limit(100),
-    client.from('ai_extractions').select('*').order('processed_at', { ascending: false }).limit(100),
-    client.from('broker_attachments').select('id,message_id,file_name,mime_type,size_bytes,created_at').order('created_at'),
-    client.from('broker_message_reads').select('message_id'),
-  ]);
-  if (messagesResult.error) throw messagesResult.error;
-  if (extractionsResult.error) throw extractionsResult.error;
-  if (attachmentsResult.error) throw attachmentsResult.error;
-  if (readsResult.error) throw readsResult.error;
-  const readMessageIds = new Set((readsResult.data || []).map((item) => item.message_id));
-  return (messagesResult.data || []).map((message) => ({
-    ...message,
-    is_read: readMessageIds.has(message.id),
-    extraction: (extractionsResult.data || []).find((item) => item.message_id === message.id) || null,
-    attachments: (attachmentsResult.data || []).filter((attachment) => attachment.message_id === message.id),
-  }));
+  return fetchBrokerInboxRows(requireSupabase());
 }
 
 export async function fetchBrokerMessageBody(messageId) {
@@ -363,22 +340,7 @@ export async function fetchBrokerMessageBody(messageId) {
 }
 
 export async function fetchBrokerInboxUnreadCount() {
-  const client = requireSupabase();
-  const [attachmentsResult, readsResult] = await Promise.all([
-    client.from('broker_attachments').select('message_id,mime_type,file_name'),
-    client.from('broker_message_reads').select('message_id'),
-  ]);
-  if (attachmentsResult.error) throw attachmentsResult.error;
-  if (readsResult.error) throw readsResult.error;
-  const readMessageIds = new Set((readsResult.data || []).map((item) => item.message_id));
-  const supportedMessageIds = new Set((attachmentsResult.data || [])
-    .filter((attachment) => (
-      attachment.mime_type === 'application/pdf'
-      || attachment.mime_type?.startsWith('image/')
-      || /\.(pdf|jpe?g|png|webp|gif)$/i.test(attachment.file_name || '')
-    ))
-    .map((attachment) => attachment.message_id));
-  return [...supportedMessageIds].filter((messageId) => !readMessageIds.has(messageId)).length;
+  return fetchBrokerUnreadCount(requireSupabase());
 }
 
 export async function fetchGmailIntegration() {
@@ -576,11 +538,16 @@ export async function createManualLoad(newLoad) {
   return loadId;
 }
 
-export async function prepareLoadFromDocument(file) {
+export async function prepareLoadFromDocument(file, { brokerMessageId, brokerAttachmentId, corrections } = {}) {
   if (!(file instanceof File)) throw new Error('PDF yoki surat tanlang.');
   const client = requireSupabase();
   const formData = new FormData();
   formData.append('file', file, file.name);
+  if (corrections) formData.append('corrections', JSON.stringify(corrections));
+  if (brokerMessageId && brokerAttachmentId) {
+    formData.append('brokerMessageId', brokerMessageId);
+    formData.append('brokerAttachmentId', brokerAttachmentId);
+  }
   const { data, error } = await invokeAuthenticatedFunction('parse-load-document', formData);
   if (error) await throwFunctionError(error, 'AI hujjatni tahlil qila olmadi.');
   if (data?.error) throw new Error(data.error);
@@ -602,6 +569,42 @@ export async function prepareLoadFromDocument(file) {
       currentDriverId: lifecycle.driver_id,
     },
   };
+}
+
+export async function prepareLoadFromBrokerAttachment({ messageId, attachmentId }) {
+  if (!messageId || !attachmentId) throw new Error('Broker xati yoki biriktirma topilmadi.');
+  const client = requireSupabase();
+  const { data: attachment, error } = await client.from('broker_attachments')
+    .select('id,message_id,file_name,mime_type,size_bytes,storage_path')
+    .eq('id', attachmentId).eq('message_id', messageId).single();
+  if (error || !attachment?.storage_path) throw error || new Error('Biriktirma topilmadi.');
+  let blob;
+  let sourceUrl = null;
+  if (isCloudinaryReference(attachment.storage_path)) {
+    sourceUrl = await cloudinarySignedUrl(attachment.storage_path);
+    if (!sourceUrl) throw new Error('Broker hujjatini ochib bo‘lmadi.');
+    const response = await fetch(sourceUrl);
+    if (!response.ok) throw new Error('Broker hujjatini yuklab bo‘lmadi.');
+    blob = await response.blob();
+  } else {
+    const downloaded = await client.storage.from('broker-originals').download(attachment.storage_path);
+    if (downloaded.error || !downloaded.data) throw downloaded.error || new Error('Broker hujjatini yuklab bo‘lmadi.');
+    blob = downloaded.data;
+    const signed = await client.storage.from('broker-originals').createSignedUrl(attachment.storage_path, 3600);
+    sourceUrl = signed.data?.signedUrl || null;
+  }
+  const mimeType = attachment.file_name.toLowerCase().endsWith('.pdf')
+    ? 'application/pdf' : attachment.mime_type;
+  const file = new File([blob], attachment.file_name, { type: mimeType });
+  const fileError = loadImportFileError(file);
+  if (fileError || Number(attachment.size_bytes) !== file.size) {
+    throw new Error('Biriktirma hajmi yoki turi noto‘g‘ri. Asl xatni tekshiring.');
+  }
+  const result = await prepareLoadFromDocument(file, {
+    brokerMessageId: messageId,
+    brokerAttachmentId: attachmentId,
+  });
+  return { ...result, sourceUrl, fileName: attachment.file_name };
 }
 
 export async function fetchImportRoadRoute(loadId, driverId, signal) {
@@ -767,7 +770,7 @@ export async function unassignFleetVehicleDriver(vehicleId) {
   return data;
 }
 
-export function subscribeWorkspace(onChange) {
+export function subscribeWorkspace(onChange, onPresenceChange) {
   const client = requireSupabase();
   const refresh = createCoalescedAsyncTrigger(onChange);
   const channel = client
@@ -777,12 +780,21 @@ export function subscribeWorkspace(onChange) {
     .on('postgres_changes', { event: '*', schema: 'public', table: 'assignments' }, refresh)
     .on('postgres_changes', { event: '*', schema: 'public', table: 'document_checks' }, refresh)
     .on('postgres_changes', { event: '*', schema: 'public', table: 'warnings' }, refresh)
-    .on('postgres_changes', { event: '*', schema: 'public', table: 'driver_presence' }, refresh)
+    // GPS heartbeats change a driver, not every load/document in the workspace.
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'driver_presence' }, payload => {
+      if (!onPresenceChange) return refresh();
+      const row = payload.eventType === 'DELETE' ? payload.old : payload.new;
+      if (row?.driver_id) onPresenceChange(row.driver_id, payload.eventType === 'DELETE' ? null : row);
+    })
     .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, refresh)
     .on('postgres_changes', { event: '*', schema: 'public', table: 'driver_profiles' }, refresh)
     .on('postgres_changes', { event: '*', schema: 'public', table: 'vehicles' }, refresh)
     .on('postgres_changes', { event: '*', schema: 'public', table: 'vehicle_driver_assignments' }, refresh)
-    .subscribe();
+    .subscribe(status => {
+      if (status !== 'SUBSCRIBED') return;
+      // Reconcile changes in the HTTP-to-WebSocket gap and after reconnects.
+      refresh();
+    });
   return () => {
     refresh.dispose();
     void client.removeChannel(channel);

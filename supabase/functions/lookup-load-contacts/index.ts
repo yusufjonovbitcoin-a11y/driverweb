@@ -379,7 +379,7 @@ Deno.serve((request) => withCors(request, async () => {
   );
 
   const contacts: RouteContact[] = [
-    ...stopResults.map((result) => result.contact),
+    ...stopResults.map((result, index) => ({ ...result.contact, stopId: stops[index].id, sequence: index + 1 })),
     {
       role: "dispatcher",
       status: dispatcher?.phone ? "found" : "not_found",

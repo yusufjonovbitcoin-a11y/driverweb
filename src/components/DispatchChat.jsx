@@ -132,7 +132,7 @@ function MediaMessage({ message, onRefresh }) {
     return <img src={message.mediaUrl} onError={() => { void retry(); }} alt={message.file_name || t('chat.imageAlt')} className="max-h-72 rounded-2xl object-cover" />;
   }
   if (message.kind === 'video') {
-    return <video src={message.mediaUrl} onError={() => { void retry(); }} controls playsInline className="max-h-72 max-w-full rounded-2xl" />;
+    return <video src={message.mediaUrl} onError={() => { void retry(); }} controls playsInline preload="metadata" className="max-h-72 max-w-full rounded-2xl" />;
   }
   if (message.kind === 'audio') {
     return <audio src={message.mediaUrl} onError={() => { void retry(); }} controls preload="metadata" className="max-w-full h-10" />;
@@ -224,6 +224,8 @@ export default function DispatchChat({
   const conversationCurrentRef = useRef(() => false);
   const visibilityRef = useRef(isVisible);
   const unreadChangeRef = useRef(onUnreadChange);
+  const driversRef = useRef(drivers);
+  const translationRef = useRef(t);
   const callStartingRef = useRef(false);
   const contextMenuButtonRef = useRef(null);
   const [playbackBlocked, setPlaybackBlocked] = useState(false);
@@ -232,7 +234,9 @@ export default function DispatchChat({
   useLayoutEffect(() => {
     visibilityRef.current = isVisible;
     unreadChangeRef.current = onUnreadChange;
-  }, [isVisible, onUnreadChange]);
+    driversRef.current = drivers;
+    translationRef.current = t;
+  }, [isVisible, onUnreadChange, drivers, t]);
 
   useLayoutEffect(() => { messagesRef.current = messages; }, [messages]);
   const onMessagesRead = useCallback((ids) => {
@@ -564,7 +568,7 @@ export default function DispatchChat({
       return;
     }
     if (call.recipient_id === currentUser.id && call.status === 'ringing' && !activeCallRef.current && (!incomingCallRef.current || incomingCallRef.current.id === call.id)) {
-      const caller = drivers.find((driver) => driver.id === call.initiator_id);
+      const caller = driversRef.current.find((driver) => driver.id === call.initiator_id);
       if (caller) setSelectedDriverId(caller.id);
       incomingCallRef.current = call;
       setIncomingCall(call);
@@ -573,13 +577,13 @@ export default function DispatchChat({
       activeCallRef.current = call;
       setActiveCall(call);
     }
-  }, [cleanupCall, currentUser.id, drivers]);
+  }, [cleanupCall, currentUser.id]);
 
   useEffect(() => {
     let cancelled = false;
     const unsubscribe = subscribeCalls({
       onCall: processCall,
-      onSignal: (signal) => handleSignal(signal).catch((signalError) => setError(localizedError(t, signalError, 'errors.call'))),
+      onSignal: (signal) => handleSignal(signal).catch((signalError) => setError(localizedError(translationRef.current, signalError, 'errors.call'))),
     });
     fetchRingingCalls()
       .then((calls) => {
@@ -587,20 +591,21 @@ export default function DispatchChat({
         calls.forEach(processCall);
       })
       .catch((callError) => {
-        if (!cancelled) setError(localizedError(t, callError, 'errors.call'));
+        if (!cancelled) setError(localizedError(translationRef.current, callError, 'errors.call'));
       });
     return () => {
       cancelled = true;
       unsubscribe();
     };
-  }, [handleSignal, processCall, t]);
+  }, [handleSignal, processCall]);
 
   useEffect(() => {
     fetchRtcIceServers().catch(() => {});
   }, []);
 
   useEffect(() => {
-    if (!isVisible) return undefined;
+    // Keep the selected conversation connected across workspace navigation.
+    // Visibility controls read receipts and recording, not cached history.
     let cancelled = false;
     let subscription = null;
     const isCurrent = conversationScope.begin();
@@ -677,7 +682,7 @@ export default function DispatchChat({
       } catch (loadError) {
         if (!cancelled) {
           setConnectionStatus('offline');
-          setError(localizedError(t, loadError, 'errors.chatOpen'));
+          setError(localizedError(translationRef.current, loadError, 'errors.chatOpen'));
         }
       } finally {
         if (!cancelled) setLoading(false);
@@ -687,7 +692,7 @@ export default function DispatchChat({
     window.addEventListener('online', refresh);
     document.addEventListener('visibilitychange', refresh);
     return () => { cancelled = true; syncRef.current = null; conversationScope.cancel(); subscription?.unsubscribe(); window.removeEventListener('online', refresh); document.removeEventListener('visibilitychange', refresh); };
-  }, [selectedDriver?.id, currentUser.id, conversationScope, t, isVisible]);
+  }, [selectedDriver?.id, currentUser.id, conversationScope]);
 
   useEffect(() => {
     if (isVisible) return;

@@ -164,4 +164,11 @@ test('document warnings use semantic codes and never expose provider messages', 
     }),
     'The document contains information that needs review.',
   );
+  assert.equal(
+    warningLabel(instance.t.bind(instance), {
+      code: 'load_number_mismatch',
+      params: { field: 'loadNumber', actual: '25008654', expected: '25008655' },
+    }),
+    'Load number does not match: document 25008654, load 25008655.',
+  );
 });

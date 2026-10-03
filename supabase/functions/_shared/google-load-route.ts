@@ -108,12 +108,18 @@ async function road(origin: any, destination: any, apiKey: string, fetcher: type
 export async function previewLoadRoute(stops: any[], presence: any[], driverIds: string[], apiKey: string,
   fetcher: typeof fetch = fetch, now = Date.now(), mapboxToken = '', preferredProvider = 'google_routes') {
   if (preferredProvider === 'mapbox' ? !mapboxToken : !apiKey) throw new Error(`${preferredProvider === 'mapbox' ? 'Mapbox' : 'Google Routes'} key is not configured`);
-  if (stops.length !== 2 || stops[0].type !== 'pickup' || stops[1].type !== 'delivery') {
-    throw new Error('Route preview requires exactly one pickup followed by one delivery');
+  if (stops.length < 2 || stops.length > 25 || stops[0].type !== 'pickup' || stops.at(-1).type !== 'delivery'
+    || stops.some(stop => !['pickup', 'delivery'].includes(stop.type))) {
+    throw new Error('Route requires 2–25 ordered pickup/delivery stops');
   }
-  const [pickup, delivery] = await Promise.all(stops.map(stop => preferredProvider === 'mapbox'
+  const locations = await Promise.all(stops.map(stop => preferredProvider === 'mapbox'
     ? locateWithMapbox(stop, mapboxToken, fetcher) : locate(stop, apiKey, fetcher)));
-  const loaded = await road(pickup, delivery, apiKey, fetcher, mapboxToken, preferredProvider);
+  const pickup = locations[0], delivery = locations.at(-1);
+  const legs = await Promise.all(locations.slice(1).map((destination, i) => road(locations[i], destination, apiKey, fetcher, mapboxToken, preferredProvider)));
+  if (new Set(legs.map(leg => leg.provider)).size !== 1) throw Error('Route providers differ between stops');
+  const meters = legs.reduce((sum, leg) => sum + leg.distanceMeters, 0);
+  const loaded = { ...legs[0], distanceMeters: meters, distanceMiles: Math.round(meters / 1609.344 * 100) / 100,
+    durationSeconds: legs.reduce((sum, leg) => sum + leg.durationSeconds, 0), points: legs.flatMap((leg, i) => i ? leg.points.slice(1) : leg.points) };
   const targets = await Promise.all(driverIds.map(async driverId => {
       const row = presence.find(item => item.driver_id === driverId);
       const origin = freshPosition(row, now);
@@ -131,7 +137,10 @@ export async function previewLoadRoute(stops: any[], presence: any[], driverIds:
       }
     }));
   return { loadedMiles: loaded.distanceMiles, loadedMeters: loaded.distanceMeters, durationSeconds: loaded.durationSeconds,
-    points: loaded.points, pickup, delivery, targets: targets.map(target => ({ ...target,
+    points: loaded.points, pickup, delivery,
+    stops: locations.map((location, i) => ({ ...location, role: stops[i].type, sequence: i + 1 })),
+    legs: legs.map((leg, i) => ({ from: i + 1, to: i + 2, distanceMiles: leg.distanceMiles, durationSeconds: leg.durationSeconds })),
+    targets: targets.map(target => ({ ...target,
       totalMiles: target.deadheadMeters == null ? null : Math.round((loaded.distanceMeters + target.deadheadMeters) / 1609.344 * 100) / 100 })),
     provider: loaded.provider, usedFallback: loaded.fallback === true, fallbackReason: loaded.fallbackReason,
     calculatedAt: new Date(now).toISOString(), vehicleMode: 'DRIVE' };

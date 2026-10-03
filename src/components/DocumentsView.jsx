@@ -175,6 +175,8 @@ export default function DocumentsView({ loads, drivers, onOpenDocs }) {
                   const hasReceipt = !!load.documents?.receipt;
                   const hasDocumentWarning = Object.values(load.documentChecks || {})
                     .some((review) => ['warning', 'failed_to_read'].includes(review?.check_status));
+                  const documentIssueCount = Object.values(load.documentChecks || {})
+                    .reduce((count, review) => count + (Array.isArray(review?.active_warnings) ? review.active_warnings.length : 0), 0);
 
                   return (
                     <tr key={load.id} className="hover:bg-zinc-50/80 dark:hover:bg-zinc-800/40 transition-colors">
@@ -264,7 +266,7 @@ export default function DocumentsView({ loads, drivers, onOpenDocs }) {
                           </span>
                           {hasDocumentWarning && (
                             <span className="inline-flex items-center rounded border border-amber-200 bg-amber-50 px-2 py-0.5 text-xs font-bold text-amber-700 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-300">
-                              {t('documents.aiWarning')}
+                              {t('documents.issueCount', { count: Math.max(1, documentIssueCount) })}
                             </span>
                           )}
                         </div>

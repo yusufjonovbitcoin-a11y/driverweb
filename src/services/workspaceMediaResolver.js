@@ -2,6 +2,28 @@ import {
   isCloudinaryReference,
   isMissingCloudinaryMediaError,
 } from './cloudinaryMediaErrors.js';
+import { cachedSignedMediaUrl } from './mediaUrlCache.js';
+
+function isMissingStorageObject(error) {
+  if (error?.name !== 'StorageApiError' || ![400, 404].includes(Number(error.status))) return false;
+  const code = error.code || error.statusCode;
+  if (code === 'NoSuchKey') return true;
+  // Older Storage versions report a missing object as HTTP 400 with a 404
+  // body. Do not hide a missing bucket/route, authorization or network error.
+  return ['not_found', '404'].includes(String(code))
+    && /^(object|file) not found[.!]?$/i.test(error.message || '');
+}
+
+function storageSignedUrl(client, bucket, path) {
+  return cachedSignedMediaUrl(client, `storage:${bucket}:${path}`, async () => {
+    const { data, error } = await client.storage.from(bucket).createSignedUrl(path, 3600);
+    if (error) {
+      if (isMissingStorageObject(error)) return null;
+      throw error;
+    }
+    return data?.signedUrl || null;
+  });
+}
 
 export async function resolveDocumentMediaUrls(client, documents, signMedia) {
   const versionIds = [...new Set(documents.map((document) => document.current_version_id).filter(Boolean))];
@@ -37,10 +59,10 @@ export async function resolveDocumentMediaUrls(client, documents, signMedia) {
         fileName: version.file_name || null,
       };
     }
-    const { data } = await client.storage.from('load-documents').createSignedUrl(version.storage_path, 3600);
+    const signedUrl = await storageSignedUrl(client, 'load-documents', version.storage_path);
     return {
       ...document,
-      signedUrl: data?.signedUrl || null,
+      signedUrl,
       mimeType: version.mime_type || null,
       fileName: version.file_name || null,
     };
@@ -58,8 +80,7 @@ export async function resolveProfileAvatarUrls(client, members, signMedia) {
         throw error;
       }
     }
-    const { data } = await client.storage.from('profile-media').createSignedUrl(member.avatar_path, 3600);
-    return [member.id, data?.signedUrl || null];
+    return [member.id, await storageSignedUrl(client, 'profile-media', member.avatar_path)];
   }));
   return new Map(entries);
 }

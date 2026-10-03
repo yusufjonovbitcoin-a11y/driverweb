@@ -1,4 +1,9 @@
 const ERROR_PATTERNS = [
+  [/PDF_CORRECTION_SOURCE_MISSING/, 'importReview.sourceMismatch'],
+  [/PDF_SOURCE_REIMPORT_REQUIRED/, 'importReview.sourceReimport'],
+  [/PDF_(?:SOURCE|WORKER|PREPROCESS|OCR|PAGE)/, 'importReview.sourceUnavailable'],
+  [/LOAD_NUMBER_EXISTS|loads_company_id_load_number_key/, 'importReview.duplicateLoad'],
+  [/AI_DOCUMENT_TIMEOUT|Signal timed out/, 'importReview.timeout'],
   [/CHAT_RATE_LIMIT/, 'errors.chatRateLimit'],
   [/CHAT_MESSAGE_TOO_LONG/, 'errors.chatMessageTooLong'],
   [/session|jwt|token.*expired/i, 'errors.sessionExpired'],

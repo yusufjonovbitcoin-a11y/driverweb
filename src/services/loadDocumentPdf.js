@@ -133,19 +133,21 @@ async function appendImagePage(output, bytes, blob, mimeType, documentItem, font
   drawSectionHeader(page, font, documentItem.label, 0, 1);
 }
 
-export async function mergeLoadDocumentsPdf(load, { fetchDocument = fetch } = {}) {
+export async function mergeLoadDocumentsPdf(load, { fetchDocument = fetch, signal } = {}) {
   const documents = orderedLoadDocuments(load);
   if (!documents.length) throw new Error('No load documents are available');
 
   const output = await PDFDocument.create();
   const headerFont = await output.embedFont(StandardFonts.HelveticaBold);
   for (const documentItem of documents) {
-    const response = await fetchDocument(documentItem.url);
+    signal?.throwIfAborted();
+    const response = await fetchDocument(documentItem.url, { signal });
     if (!response.ok) {
       throw new Error(`${documentItem.label} could not be downloaded`);
     }
     const blob = await response.blob();
     const bytes = new Uint8Array(await blob.arrayBuffer());
+    signal?.throwIfAborted();
     const mimeType = documentItem.mimeType || blob.type || response.headers.get('content-type') || '';
 
     if (/application\/pdf/i.test(mimeType) || /\.pdf(?:$|\?)/i.test(documentItem.url)) {
@@ -157,6 +159,7 @@ export async function mergeLoadDocumentsPdf(load, { fetchDocument = fetch } = {}
     }
   }
 
+  signal?.throwIfAborted();
   return {
     bytes: await output.save(),
     documentCount: documents.length,

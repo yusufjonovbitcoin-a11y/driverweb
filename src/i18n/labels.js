@@ -27,9 +27,13 @@ const WARNING_FIELD_KEYS = {
   'pickup.city': 'pickupCity',
   'pickup.region': 'pickupRegion',
   'pickup.facilityName': 'pickupFacility',
+  'pickup.address': 'pickupAddress',
   'delivery.city': 'deliveryCity',
   'delivery.region': 'deliveryRegion',
   'delivery.facilityName': 'deliveryFacility',
+  'delivery.address': 'deliveryAddress',
+  loadNumber: 'loadNumber',
+  receiverSignature: 'receiverSignature',
   'broker.phone': 'brokerPhone',
   'pickup.appointment': 'pickupTime',
   'pickup.contactPhone': 'pickupPhone',
@@ -45,7 +49,13 @@ export function warningLabel(t, warning = {}) {
     ? t(`missingFields.${fieldKey}`, { defaultValue: t('common.unknown') })
     : t('common.unknown');
   const translated = code
-    ? t(`warningCodes.${code}`, { ...warning.params, field, defaultValue: '' })
+    ? t(`warningCodes.${code}`, {
+      ...warning.params,
+      field,
+      expected: warning.params?.expected || '—',
+      actual: warning.params?.actual || '—',
+      defaultValue: '',
+    })
     : '';
 
   return translated || t('warningCodes.unknown');

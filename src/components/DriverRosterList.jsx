@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ChevronLeft, ChevronRight, Clock3, Filter, MoreHorizontal, Search, Truck } from 'lucide-react';
 import { formatDate, formatTime } from '../i18n/format';
@@ -33,16 +33,25 @@ export default function DriverRosterList({ drivers, loads, onOpenDriver, onPrefe
   const [openMenuId, setOpenMenuId] = useState(null);
   const [page, setPage] = useState(1);
 
-  const roster = drivers.map(driver => {
-    const activeLoads = activeLoadsForDriver(loads, driver.id);
-    return { driver, activeLoads, state: driverState(driver, activeLoads) };
-  });
-  const counts = {
-    ALL: roster.length,
-    ON_LOAD: roster.filter(item => item.state === 'ON_LOAD').length,
-    AVAILABLE: roster.filter(item => item.state === 'AVAILABLE').length,
-    OFF_DUTY: roster.filter(item => item.state === 'OFF_DUTY').length,
-  };
+  const loadsByDriver = useMemo(() => {
+    const grouped = new Map();
+    for (const load of loads) {
+      if (!load.driverId) continue;
+      if (!grouped.has(load.driverId)) grouped.set(load.driverId, []);
+      grouped.get(load.driverId).push(load);
+    }
+    return grouped;
+  }, [loads]);
+  const { roster, counts } = useMemo(() => {
+    const counts = { ALL: drivers.length, ON_LOAD: 0, AVAILABLE: 0, OFF_DUTY: 0 };
+    const roster = drivers.map(driver => {
+      const activeLoads = activeLoadsForDriver(loadsByDriver.get(driver.id) || [], driver.id);
+      const state = driverState(driver, activeLoads);
+      counts[state] += 1;
+      return { driver, activeLoads, state };
+    });
+    return { roster, counts };
+  }, [drivers, loadsByDriver]);
   const query = search.trim().toLowerCase();
   const filtered = roster.filter(({ driver, activeLoads, state }) => {
     if (status !== 'ALL' && status !== state) return false;

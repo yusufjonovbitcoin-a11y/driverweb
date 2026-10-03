@@ -14,7 +14,7 @@ import {
 } from 'lucide-react';
 import { formatCurrency, formatDate } from '../i18n/format';
 import { displayBoardStage } from '../services/loadBoardStatus';
-import LoadDetailsModal from './LoadDetailsModal';
+const LoadDetailsModal = React.lazy(() => import('./LoadDetailsModal'));
 
 function getClipboardImage(clipboardData) {
   const imageItem = Array.from(clipboardData?.items || []).find(
@@ -754,6 +754,7 @@ export default function KanbanBoard({
       )}
 
       {selectedLoadDetails && (
+        <React.Suspense fallback={<div className="fixed inset-0 z-50 grid place-items-center bg-white/80 dark:bg-zinc-950/80"><LoaderCircle className="h-7 w-7 animate-spin" aria-label={t('common.loading')} /></div>}>
         <LoadDetailsModal
           load={selectedLoadDetails}
           driver={getDriver(selectedLoadDetails.driverId)}
@@ -763,6 +764,7 @@ export default function KanbanBoard({
             onOpenDocs(load, documentId);
           }}
         />
+        </React.Suspense>
       )}
 
       {loadPendingDelete && (

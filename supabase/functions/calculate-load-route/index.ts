@@ -103,7 +103,7 @@ Deno.serve((request) => withCors(request, async () => {
 
   if (preview) {
     const blocked = visibleLoad.driver_brief?.blockingFields ?? [];
-    if (blocked.some((key: string) => /^(pickup|delivery)\.(addressLine|city|region|postalCode)$/.test(key))) {
+    if (blocked.some((key: string) => /^(pickup|delivery|stops\.\d+)\.(addressLine|city|region|postalCode)$/.test(key))) {
       return json({ error: 'Document address needs review' }, 422);
     }
     try {
