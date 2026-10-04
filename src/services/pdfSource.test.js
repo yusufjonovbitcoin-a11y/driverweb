@@ -1,11 +1,19 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { validatePdfSource, evidenceFromSource, findCorrectionSource, fetchPdfSource, pdfSourceInput } from '../../supabase/functions/_shared/pdf-source.ts';
-import { decodeSourcedExtraction, sourcedExtractionSchema } from '../../supabase/functions/_shared/load-sourced-fields.ts';
+import { decodeSourcedExtraction, sourcedExtractionSchema, databaseSafeModelText } from '../../supabase/functions/_shared/load-sourced-fields.ts';
 import { verifyLoadExtraction } from '../../supabase/functions/_shared/load-extraction-verification.ts';
 import { correctExtraction } from '../../supabase/functions/_shared/load-corrections.ts';
 
 const block = (n,text) => ({id:`page_1_block_${n}_line_0`,text,bbox:[10,10+n*10,200,20+n*10]});
+test('invalid model Unicode is storage-safe and cannot silently become a verified ID',()=>{
+  const {source,wire}=fixture();
+  wire.loadNumber.value='TEST-\u000042';
+  const candidate=decodeSourcedExtraction(wire,source);
+  assert.equal(candidate.loadNumber,'TEST-\uFFFD42');
+  assert.equal(verifyLoadExtraction(candidate,null,true).safe.loadNumber,null);
+  assert.deepEqual(databaseSafeModelText(['\ud800','\udc00','😀',null,42]),['\uFFFD','\uFFFD','😀',null,42]);
+});
 function fixture() {
   const source={version:1,checksum:'a'.repeat(64),engine:'test',pageCount:1,pages:[{number:1,width:600,height:800,ocr:false,
     image:'data:image/jpeg;base64,/9j/',blocks:[block(0,'Load TEST-42'),block(1,'Pickup 1 First Ave Phoenix AZ'),block(2,'Delivery 2 Second Ave Dallas TX'),block(3,'Rate $1000')]}]};

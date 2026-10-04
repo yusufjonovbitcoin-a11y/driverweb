@@ -1,6 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildImportedLoad, canAssignImportedLoad, importedMapState, stopAddress } from './importedLoadModel.js';
+import { buildImportedLoad, canAssignImportedLoad, importedMapState, importedRatePerMile, importedTripRatePerMile, stopAddress, stopScheduleParts } from './importedLoadModel.js';
+
+test('stop schedule prints the same appointment window only once', () => {
+  assert.deepEqual(stopScheduleParts({ scheduledDate: '09/28/2026', timePrinted: '07:30 - 14:00',
+    appointment: ' 07:30  -  14:00 ', readyDate: null, hours: null }),
+  [['date', '09/28/2026'], ['time', '07:30 - 14:00']]);
+  assert.deepEqual(stopScheduleParts({ timePrinted: '07:30 - 14:00', appointment: 'FCFS 07:30 - 14:00' }),
+    [['time', '07:30 - 14:00'], ['appointment', 'FCFS 07:30 - 14:00']]);
+});
 
 test('staff snapshot is authoritative and preserves date-only stops without inventing time', () => {
   const fields = Object.entries({ loadNumber: '25008654', 'pickup.scheduledDate': 'Thu 10/01/2026', 'delivery.note': 'Give notice.',
@@ -36,6 +44,22 @@ test('unrelated extraction warnings never disable the route preview', () => {
   assert.equal(importedMapState({ blockingFields: ['caseCount', 'requirements.1', 'requirements'] }).routeEnabled, true);
   assert.equal(importedMapState({ blockingFields: ['pickup.addressLine'] }).routeEnabled, false);
   assert.equal(importedMapState({ blockingFields: ['delivery.city'] }).routeEnabled, false);
+  assert.equal(importedMapState({ blockingFields: ['stops.1.addressLine'] }).routeEnabled, false);
+});
+test('preview keeps every verified stop without borrowing missing facts from raw extraction', () => {
+  const documentDetails = { version: 3,
+    stops: [{ role: 'pickup', addressLine: 'stale A' }, { role: 'delivery', addressLine: 'stale B' }, { role: 'delivery', addressLine: 'stale C' }],
+    fields: [
+      { key: 'stops.0.addressLine', value: '1 First St' }, { key: 'stops.0.city', value: 'Phoenix' },
+      { key: 'stops.1.addressLine', value: '2 Second St' }, { key: 'stops.1.city', value: 'Dallas' },
+      { key: 'stops.2.addressLine', value: '3 Third St' }, { key: 'stops.2.city', value: 'Austin' },
+      { key: 'stops.2.referenceNumber', value: 'DEL-9' },
+    ] };
+  const result = buildImportedLoad({ documentDetails });
+  assert.deepEqual(result.stops.map(stop => stop.address), ['1 First St', '2 Second St', '3 Third St']);
+  assert.deepEqual(result.stops.map(stop => stop.role), ['pickup', 'delivery', 'delivery']);
+  assert.equal(result.stops[1].reference, null);
+  assert.equal(result.delivery.reference, 'DEL-9');
 });
 test('only the selected online driver with valid GPS gets a current-location marker', () => {
   const details = { blockingFields: [] };
@@ -71,16 +95,45 @@ test('missing financial values stay unknown and RPM requires positive documented
   assert.equal(buildImportedLoad({ distanceMiles: 0, driverBrief: { fields: [], unknownFields: ['loadedMiles'] } }).distance, null);
   assert.equal(stopAddress({ address: '100 First Ave', city: 'Phoenix', state: 'AZ' }), '100 First Ave, Phoenix, AZ');
 });
-test('import assignment requires a real driver, reviewed data, open status and no blockers', () => {
+test('a separate appointment code is not part of the stop street address', () => {
+  assert.equal(stopAddress({ address: '1222MS925 488 PARRIOTT PLACE', appointmentReference: '1222MS925',
+    city: 'CITY OF INDUSTRY', state: 'CA', postalCode: '91745' }),
+  '488 PARRIOTT PLACE, CITY OF INDUSTRY, CA, 91745');
+  assert.equal(stopAddress({ address: '488 PARRIOTT PLACE', appointmentReference: '1222MS925' }), '488 PARRIOTT PLACE');
+  assert.equal(stopAddress({ address: '1222MS925 Warehouse Road', appointmentReference: '1222MS925' }),
+    '1222MS925 Warehouse Road');
+});
+test('route miles supply a clearly separate rate per mile only when document miles are absent', () => {
+  assert.deepEqual(importedRatePerMile({ rate: 5500, distance: null }, { loadedMiles: 1100 }), { value: 5, source: 'route' });
+  assert.deepEqual(importedRatePerMile({ rate: 5500, distance: 1000 }, { loadedMiles: 1100 }), { value: 5.5, source: 'document' });
+  assert.deepEqual(importedRatePerMile({ rate: 5500, distance: 0 }, { loadedMiles: 1100 }), { value: null, source: 'document' });
+  assert.deepEqual(importedRatePerMile({ rate: null, distance: null }, { loadedMiles: 1100 }), { value: null, source: 'document' });
+  assert.deepEqual(importedRatePerMile({ rate: 5500, distance: null }, { loadedMiles: 0 }), { value: null, source: 'route' });
+});
+test('trip rate falls back to pickup-to-delivery miles when driver miles are unavailable', () => {
+  assert.deepEqual(importedTripRatePerMile({ rate: 1000 }, { loadedMiles: 2405.69 }, { totalMiles: null }),
+    { value: 1000 / 2405.69, source: 'loaded' });
+  assert.deepEqual(importedTripRatePerMile({ rate: 1000 }, { loadedMiles: 1000 }, { totalMiles: 1200 }),
+    { value: 1000 / 1200, source: 'total' });
+  assert.deepEqual(importedTripRatePerMile({ rate: 1000 }, { loadedMiles: 0 }, { totalMiles: null }),
+    { value: null, source: 'total' });
+  assert.deepEqual(importedTripRatePerMile({ rate: null }, { loadedMiles: 1000 }, null),
+    { value: null, source: 'total' });
+});
+test('import assignment requires a real driver and open status, not a clean PDF review', () => {
   const load = { id: 'load', lifecycleStatus: 'review', review: { required: true, blockingFields: [] } };
   const drivers = [{ id: 'driver' }];
-  assert.equal(canAssignImportedLoad(load, 'driver', drivers, false), false);
-  assert.equal(canAssignImportedLoad(load, 'driver', drivers, true), true);
-  assert.equal(canAssignImportedLoad(load, 'missing', drivers, true), false);
-  assert.equal(canAssignImportedLoad(load, 'driver', drivers, true, true), false);
-  assert.equal(canAssignImportedLoad({ ...load, review: { blockingFields: ['pickup.addressLine'] } }, 'driver', drivers, true), false);
-  assert.equal(canAssignImportedLoad({ ...load, lifecycleStatus: 'completed' }, 'driver', drivers, true), false);
-  assert.equal(canAssignImportedLoad({ ...load, importError: 'failed' }, 'driver', drivers, true), false);
+  assert.equal(canAssignImportedLoad(load, 'driver', drivers), true);
+  assert.equal(canAssignImportedLoad({ ...load, id: null, previewTicket: { payload: 'signed' } }, 'driver', drivers), true);
+  assert.equal(canAssignImportedLoad({ ...load, id: null, previewTicket: null }, 'driver', drivers), false);
+  assert.equal(canAssignImportedLoad(load, 'missing', drivers), false);
+  assert.equal(canAssignImportedLoad(load, 'driver', drivers, true), false);
+  assert.equal(canAssignImportedLoad({ ...load, review: { blockingFields: ['pickup.addressLine'] } }, 'driver', drivers), true);
+  assert.equal(canAssignImportedLoad({ ...load, review: { required: true,
+    blockingFields: ['isHazmat', 'billingEmail', 'requiredDocuments', 'pickup.contactPhone', 'stops.0.contactPhone'] } }, 'driver', drivers), true);
+  assert.equal(canAssignImportedLoad({ ...load, review: { blockingFields: ['multiStopDriverWorkflow'] } }, 'driver', drivers), true);
+  assert.equal(canAssignImportedLoad({ ...load, lifecycleStatus: 'completed' }, 'driver', drivers), false);
+  assert.equal(canAssignImportedLoad({ ...load, importError: 'failed' }, 'driver', drivers), false);
 });
 test('legacy malformed phones never appear as dialable stop contacts', () => {
   const result = buildImportedLoad({ driverBrief: { fields: [

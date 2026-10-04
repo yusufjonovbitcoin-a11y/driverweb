@@ -2,8 +2,8 @@ import { useId, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { briefFieldLabel } from '../services/driverBrief';
 
-const TABS = ['cargo', 'requirements', 'payment', 'terms', 'source'];
-const CARGO = ['cargoDescription', 'cargoModel', 'equipmentType', 'weightPrinted', 'weightLbs', 'lengthPrinted', 'widthPrinted', 'heightPrinted', 'cargoValuePrinted', 'quantityPrinted', 'palletCount', 'caseCount', 'pieceCount', 'packageCount', 'temperatureFahrenheit', 'isHazmat', 'serialNumber', 'vin', 'bolNumber'];
+const TABS = ['cargo', 'requirements', 'payment', 'terms'];
+const CARGO = ['cargoDescription', 'equipmentType', 'weightPrinted', 'weightLbs', 'lengthPrinted', 'widthPrinted', 'heightPrinted', 'quantityPrinted', 'palletCount', 'caseCount', 'pieceCount', 'packageCount', 'temperatureFahrenheit', 'isHazmat'];
 const PAYMENT = ['paymentTerms', 'billingEmail', 'requiredDocuments', 'documentDeadline', 'accessorialTerms', 'carrierName', 'carrierMc', 'carrierDot', 'documentDriverName', 'documentDriverPhone'];
 
 export default function ImportDocumentDetails({ details, selectedDriver }) {
@@ -35,28 +35,23 @@ export default function ImportDocumentDetails({ details, selectedDriver }) {
       {(tab === 'cargo' || tab === 'payment') && <>
         {tab === 'payment' && <p className="import-detail-notice">{t('importDetails.staffOnly')}</p>}
         {tab === 'payment' && details.documentDriverName && <p className="import-detail-notice warning">{t('importDetails.driverCheck', { documentDriver: details.documentDriverName, selectedDriver: selectedDriver?.name || '—' })}</p>}
-        <dl className="import-detail-facts">{(tab === 'cargo' ? CARGO : PAYMENT).filter(key => fields.has(key) && !(key === 'weightLbs' && fields.has('weightPrinted'))).map(key => <div key={key}>
-          <dt>{briefFieldLabel(t, key)}</dt><dd><CompactText text={display(fields.get(key)?.value)} t={t} />{fields.has(key) && <Evidence field={fields.get(key)} t={t} />}</dd>
+        <dl className="import-detail-facts">{(tab === 'cargo' ? CARGO : PAYMENT).map(key => <div key={key}>
+          <dt>{briefFieldLabel(t, key)}</dt><dd>{display(fields.get(key)?.value)}{fields.has(key) && <Evidence field={fields.get(key)} t={t} aiDirect={details.aiDirect} />}</dd>
         </div>)}</dl>
-        {!(tab === 'cargo' ? CARGO : PAYMENT).some(key => fields.has(key)) && <p className="import-muted">{t('loadImport.notProvided')}</p>}
       </>}
       {tab === 'requirements' && <>
-        {details.instructions && <div className="import-detail-notice"><CompactText text={details.instructions} t={t} />{fields.has('specialInstructions') && <Evidence field={fields.get('specialInstructions')} t={t} />}</div>}
-        {requirements.length > 0 ? <Clauses fields={requirements} t={t} /> : details.requirements.length > 0 ? <ol className="import-clause-list">{details.requirements.map((text, i) => <li key={i}>{text}</li>)}</ol> : !details.instructions && <p className="import-muted">{t('loadImport.notProvided')}</p>}
+        {details.instructions && <div className="import-detail-notice"><p>{details.instructions}</p>{fields.has('specialInstructions') && <Evidence field={fields.get('specialInstructions')} t={t} aiDirect={details.aiDirect} />}</div>}
+        {requirements.length > 0 ? <Clauses fields={requirements} t={t} aiDirect={details.aiDirect} /> : details.requirements.length > 0 ? <ol className="import-clause-list">{details.requirements.map((text, i) => <li key={i}>{text}</li>)}</ol> : !details.instructions && <p className="import-muted">{t('loadImport.notProvided')}</p>}
       </>}
-      {tab === 'terms' && <><p className="import-detail-notice">{t('importDetails.originalTerms')}</p>{terms.length ? <Clauses fields={terms} t={t} /> : <p className="import-muted">{t('loadImport.notProvided')}</p>}</>}
-      {tab === 'source' && <>{details.fields.filter(field => !details.fields.some(f => f.key.startsWith('stops.')) || !/^(pickup|delivery)\./.test(field.key)).map(field => <details className="import-source-field" key={field.key}><summary>{briefFieldLabel(t, field.key)} · {t('importDetails.page', { page: field.page })}</summary><p>{display(field.value)}</p><Evidence field={field} t={t} /></details>)}{!details.fields.length && <p className="import-muted">{t('loadImport.notProvided')}</p>}</>}
+      {tab === 'terms' && <><p className="import-detail-notice">{t(details.aiDirect ? 'importDetails.aiDirectTerms' : 'importDetails.originalTerms')}</p>{terms.length ? <Clauses fields={terms} t={t} aiDirect={details.aiDirect} /> : <p className="import-muted">{t('loadImport.notProvided')}</p>}</>}
     </div>
   </section>;
 }
 
-function Clauses({ fields, t }) {
-  return <ol className="import-clause-list">{fields.map(field => <li key={field.key}><CompactText text={String(field.value)} t={t} /><Evidence field={field} t={t} /></li>)}</ol>;
+function Clauses({ fields, t, aiDirect }) {
+  return <ol className="import-clause-list">{fields.map(field => <li key={field.key}><p>{String(field.value)}</p><Evidence field={field} t={t} aiDirect={aiDirect} /></li>)}</ol>;
 }
-function CompactText({ text, t }) {
-  if (text.length <= 240) return <span>{text}</span>;
-  return <details className="import-full-text"><summary>{text.slice(0, 150)}… <small>{t('importReview.fullText')}</small></summary><p>{text}</p></details>;
-}
-function Evidence({ field, t }) {
-  return <details className="import-field-evidence"><summary>{t('importDetails.page', { page: field.page })}</summary><blockquote>{field.quote}</blockquote></details>;
+function Evidence({ field, t, aiDirect }) {
+  if (!field.page && !field.quote) return null;
+  return <details className="import-field-evidence"><summary>{field.page ? t(aiDirect ? 'importDetails.aiPage' : 'importDetails.page', { page: field.page }) : t('importDetails.aiQuote')}</summary>{field.quote && <blockquote>{field.quote}</blockquote>}</details>;
 }

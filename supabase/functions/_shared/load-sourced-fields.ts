@@ -28,6 +28,11 @@ export function sourcedExtractionSchema(legacy: any, stop: any, grounded = false
 }
 
 export function decodeSourcedExtraction(wire: any, source?: PdfSource) {
+  // JSON.parse accepts NUL/lone surrogates, PostgreSQL jsonb does not. Preserve
+  // a visible replacement instead of removing characters and accidentally
+  // turning a corrupted identifier into a seemingly valid one. Rules still
+  // compare the resulting field against the untouched trusted PDF text.
+  wire = databaseSafeModelText(wire);
   if (source && (!Array.isArray(wire?.stops) || wire.documentReview?.pageCount !== source.pageCount)) throw Error('PDF_SOURCE_PAGE_MISMATCH');
   // Legacy snapshots are still understood; only new requests use the bound schema.
   if (!Array.isArray(wire?.stops)) return wire;
@@ -55,4 +60,12 @@ export function decodeSourcedExtraction(wire: any, source?: PdfSource) {
   result.deliveryCount = result.stops.filter((s: any) => s.role === 'delivery').length;
   if (source) result.sourceManifest = storedPdfSource(source);
   return result;
+}
+
+export function databaseSafeModelText(value: any): any {
+  if (typeof value === 'string') return value.toWellFormed().replaceAll('\u0000', '\uFFFD');
+  if (Array.isArray(value)) return value.map(databaseSafeModelText);
+  if (value && typeof value === 'object') return Object.fromEntries(Object.entries(value)
+    .map(([key, item]) => [databaseSafeModelText(key), databaseSafeModelText(item)]));
+  return value;
 }

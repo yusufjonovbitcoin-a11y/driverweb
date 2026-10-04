@@ -3,6 +3,8 @@ import { validPhone } from './load-enrichment.ts';
 import { EXTRA_DOCUMENT_FIELDS, EXTRA_STOP_FIELDS, STAFF_DOCUMENT_FIELDS } from './load-document-fields.ts';
 import { singlePassValueSupported, sourcePrintedDate } from './load-single-pass.ts';
 import { evidenceFromSource } from './pdf-source.ts';
+import { dispatchBlockingFields, dispatchWarningFields } from './load-dispatch-policy.ts';
+import { streetAddressWithoutAppointmentCode } from './load-stop-address.ts';
 export const FIELD_TYPES = {
   loadNumber: 'string',
   'broker.name': 'string', 'broker.contactName': 'string', 'broker.phone': 'string',
@@ -34,6 +36,10 @@ function set(data: any, path: string, value: unknown) {
 }
 
 export function verifyLoadExtraction(candidate: any, audit: any, singlePass = false) {
+  const aiPdfDirect = singlePass && candidate?.extractionMode === 'ai_pdf_direct';
+  if (singlePass && Array.isArray(candidate?.stops)) candidate = { ...candidate,
+    stops: candidate.stops.map((stop: any) => ({ ...stop,
+      addressLine: streetAddressWithoutAppointmentCode(stop.addressLine, stop.appointmentReference) })) };
   const stops = singlePass && Array.isArray(candidate?.stops) ? candidate.stops : null;
   if (stops) {
     if (stops.length < 2 || stops.length > 25 || stops[0].role !== 'pickup' || stops.at(-1).role !== 'delivery'
@@ -49,7 +55,7 @@ export function verifyLoadExtraction(candidate: any, audit: any, singlePass = fa
   }
   if (singlePass) {
     audit = candidate?.documentReview;
-    if (!audit || audit.allPagesRead !== true || !Number.isInteger(audit.pageCount) || audit.pageCount < 1
+    if (!audit || (!aiPdfDirect && audit.allPagesRead !== true) || !Number.isInteger(audit.pageCount) || audit.pageCount < 1
       || !Array.isArray(audit.uncertainFields)) throw new Error('Hujjatning barcha sahifalari aniq o‘qilmadi. Asl faylni tekshiring.');
     if (stops) audit = { ...audit, uncertainFields: [...audit.uncertainFields,
       ...audit.uncertainFields.filter((key: string) => key.startsWith('stops.0.')).map((key: string) => key.replace('stops.0.', 'pickup.')),
@@ -66,7 +72,7 @@ export function verifyLoadExtraction(candidate: any, audit: any, singlePass = fa
     .map((e: any) => candidate.sourceManifest ? evidenceFromSource(e.sourceIds, candidate.sourceManifest, e.field) : e).filter(Boolean) : [];
   const reviews: Review[] = Array.isArray(audit.fields) ? audit.fields.map(canonical) : [];
   const safe: any = { broker: {}, pickup: {}, delivery: {}, requirements: [], contractTerms: [] };
-  const fields: Array<{ key: string; value: unknown; page: number; quote: string }> = [];
+  const fields: Array<{ key: string; value: unknown; page: number | null; quote: string | null }> = [];
   const rejectedFields: string[] = [];
   const issues: any[] = [];
   const missingFields: string[] = [];
@@ -85,7 +91,7 @@ export function verifyLoadExtraction(candidate: any, audit: any, singlePass = fa
       continue;
     }
     const source = evidence.filter(item => item?.field === path);
-    if (singlePass && source.length === 1 && typeof source[0].quote === 'string') value = sourcePrintedDate(path, value, source[0].quote);
+    if (singlePass && !aiPdfDirect && source.length === 1 && typeof source[0].quote === 'string') value = sourcePrintedDate(path, value, source[0].quote);
     const checked = reviews.filter(item => item?.field === path);
     const correctType = type === 'string' ? typeof value === 'string'
       : type === 'boolean' ? typeof value === 'boolean'
@@ -111,8 +117,14 @@ export function verifyLoadExtraction(candidate: any, audit: any, singlePass = fa
         && !/\b(?:load|shipment|order)\s*(?:#|no\.?\b|number\b|id\b)/i.test(item.quote))
       || (path === 'brokerRate' && /\b(?:declared\s+|cargo\s+|insured\s+)?value\b/i.test(item.quote)
         && !/\b(?:total|rate|line\s*haul|carrier\s*pay|freight\s*charge)\b/i.test(item.quote)));
+    // City/region is useful for the preview, but is not a dispatch street address.
+    const stopData = /\.addressLine$/.test(path) ? get(candidate, path.replace(/\.addressLine$/, '')) : null;
+    const addressWords = (v: unknown) => String(v ?? '').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+    const cityOnlyAddress = stopData?.city && [stopData.city,
+      `${stopData.city} ${stopData.region ?? ''}`, `${stopData.city} ${stopData.region ?? ''} ${stopData.postalCode ?? ''}`]
+      .some(v => addressWords(v) === addressWords(value));
     // A CONTACT/address blob must never become a dialable number even if both models accept it.
-    const semanticValid = !bolOnlyReference && !groundedWrongLabel && (!phoneField || validPhone(value) != null)
+    const semanticValid = !bolOnlyReference && !groundedWrongLabel && !cityOnlyAddress && (!phoneField || validPhone(value) != null)
       && (path !== 'weightLbs' || source.some(item => /\b(?:lbs?|pounds?)\b/i.test(item.quote)))
       && (path !== 'freightMode' || !/^[A-Z]$/i.test(String(value)))
       && (!/\.appointment(?:From|To)$/.test(path)
@@ -124,7 +136,7 @@ export function verifyLoadExtraction(candidate: any, audit: any, singlePass = fa
         && singlePassValueSupported(path, value, source[0].quote)
       : checked.length === 1 && validEvidence(checked[0]) && checked[0].verdict === 'supported'
         && sourceValid && (source[0].page === checked[0].page || normalizeQuote(source[0].quote) === normalizeQuote(checked[0].quote!));
-    if (!correctType || !semanticValid || !sourceValid || !verificationValid) {
+    if (!correctType || (!aiPdfDirect && (!semanticValid || !sourceValid || !verificationValid))) {
       set(safe, path, null);
       rejectedFields.push(path);
       issues.push({ field: path, value, status: !correctType || !semanticValid ? 'conflict' : 'needs_review',
@@ -134,7 +146,10 @@ export function verifyLoadExtraction(candidate: any, audit: any, singlePass = fa
     }
     set(safe, path, value);
     const acceptedSource = singlePass ? source[0] : checked[0];
-    fields.push({ ...acceptedSource, key: path, value, page: acceptedSource.page!, quote: acceptedSource.quote!.trim() });
+    fields.push({ ...(acceptedSource ?? {}), key: path, value,
+      page: acceptedSource && Number.isInteger(acceptedSource.page) && acceptedSource.page > 0 ? acceptedSource.page : null,
+      quote: acceptedSource && typeof acceptedSource.quote === 'string' && acceptedSource.quote.trim()
+        ? acceptedSource.quote.trim() : null });
   }
   safe.requirements = safe.requirements.filter((value: unknown) => typeof value === 'string');
   safe.contractTerms = safe.contractTerms.filter((value: unknown) => typeof value === 'string');
@@ -147,6 +162,7 @@ export function verifyLoadExtraction(candidate: any, audit: any, singlePass = fa
   if (stops && stops.length > 2) blockingFields.push('multiStopDriverWorkflow');
   if (singlePass) {
     for (const path of audit.uncertainFields) blockingFields.push(Object.hasOwn(paths, path) ? path : 'documentDetails');
+    if (aiPdfDirect && !audit.allPagesRead) blockingFields.push('documentDetails');
     for (const stop of ['pickup', 'delivery', ...(stops ?? []).map((_: any, i: number) => `stops.${i}`)]) {
       const from = get(safe, `${stop}.appointmentFrom`), to = get(safe, `${stop}.appointmentTo`);
       if (from && to && Date.parse(to) < Date.parse(from)) blockingFields.push(`${stop}.appointmentTo`);
@@ -179,11 +195,13 @@ export function verifyLoadExtraction(candidate: any, audit: any, singlePass = fa
     'pickup.appointmentFrom', 'pickup.appointmentTo', 'pickup.appointmentTimezone',
     'delivery.appointmentFrom', 'delivery.appointmentTo', 'delivery.appointmentTimezone',
   ].includes(field.key));
+  const reviewFields = [...new Set([...blockingFields, ...(aiPdfDirect ? ['documentDetails'] : [])])];
   return {
     safe,
     missingFields,
-    review: { required: true, blockingFields: [...new Set(blockingFields)], rejectedFields, issues,
-      method: candidate.sourceManifest ? 'pdf_source_rules' : singlePass ? 'single_pass_rules' : 'independent_model_audit',
+    review: { required: true, blockingFields: dispatchBlockingFields(reviewFields),
+      warningFields: dispatchWarningFields(reviewFields), rejectedFields, issues,
+      method: aiPdfDirect ? 'ai_pdf_direct' : candidate.sourceManifest ? 'pdf_source_rules' : singlePass ? 'single_pass_rules' : 'independent_model_audit',
       sourceGrounded: Boolean(candidate.sourceManifest), independentAudit: !singlePass },
     documentDetails: { version: 3, fields, stops: safe.stops, issues, unknownFields: [...new Set([...missingFields, ...rejectedFields])] },
     driverBrief: { version: 1, fields: driverFields, stops: safe.stops, unknownFields: [...new Set([...missingFields, ...rejectedFields])] },

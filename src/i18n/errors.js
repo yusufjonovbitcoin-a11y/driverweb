@@ -1,4 +1,9 @@
 const ERROR_PATTERNS = [
+  [/ASSIGN_FAILED_DRAFT_SAVED/, 'loadImport.assignmentFailedSaved'],
+  [/PREVIEW_TICKET_(?:INVALID|EXPIRED_OR_MISMATCHED)/, 'loadImport.previewExpired'],
+  [/DOCUMENT_REVIEW_BLOCKED/, 'loadImport.reviewBlocked'],
+  [/IMPORT_STILL_PROCESSING|Bu hujjat hozir tahlil qilinmoqda/, 'importReview.stillProcessing'],
+  [/IMPORT_STATUS_UNAVAILABLE|IMPORT_RESULT_MISSING/, 'importReview.resultUnavailable'],
   [/PDF_CORRECTION_SOURCE_MISSING/, 'importReview.sourceMismatch'],
   [/PDF_SOURCE_REIMPORT_REQUIRED/, 'importReview.sourceReimport'],
   [/PDF_(?:SOURCE|WORKER|PREPROCESS|OCR|PAGE)/, 'importReview.sourceUnavailable'],

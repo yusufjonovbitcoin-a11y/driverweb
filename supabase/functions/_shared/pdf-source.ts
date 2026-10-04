@@ -41,10 +41,10 @@ export async function fetchPdfSource(bytes: Uint8Array, checksum: string, url: s
   return source;
 }
 
-export function pdfSourceInput(source: PdfSource) {
+export function pdfSourceInput(source: PdfSource, { includeImages = true } = {}) {
   return source.pages.flatMap(page => [{ type: 'input_text', text: JSON.stringify({ page: page.number,
     width: page.width, height: page.height, ocr: page.ocr, blocks: page.blocks.map(({ id, text, bbox }) => ({ id, text, bbox })) }) },
-  { type: 'input_image', image_url: page.image, detail: 'high' }]);
+  ...(includeImages ? [{ type: 'input_image', image_url: page.image, detail: 'high' }] : [])]);
 }
 
 export function storedPdfSource(source: PdfSource): PdfSource {

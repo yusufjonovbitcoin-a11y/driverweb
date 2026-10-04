@@ -10,6 +10,7 @@ import {
   createManualLoad,
   prepareLoadFromDocument,
   prepareLoadFromBrokerAttachment,
+  sendPreviewDocumentLoad,
   assignLoadDirectly,
   reviewAndAssignDocumentLoad,
   deleteUnassignedLoad,
@@ -32,7 +33,6 @@ import { changeLocaleWithProfileSync } from './i18n/localeSync';
 import { supabase } from './lib/supabase';
 import { createCoalescedAsyncTrigger } from './services/realtimeRefresh';
 import { createSerializedRefresh } from './services/serializedRefresh';
-import { updateDriverPresence, expireDriverPresence } from './services/driverPresenceModel';
 import {
   clearPendingLocaleOverride,
   persistPendingLocaleOverride,
@@ -118,8 +118,6 @@ function Workspace({ auth }) {
   const [unreadChatsByDriver, setUnreadChatsByDriver] = useState({});
   const [unreadInboxCount, setUnreadInboxCount] = useState(0);
   const inboxRefreshRef = useRef(null);
-  const presenceUpdatesRef = useRef(new Map());
-  const presenceVersionRef = useRef(0);
   const workspaceActiveRef = useRef(true);
   const foregroundRefreshCountRef = useRef(0);
   const inlineChatVisible = activeTab === 'drivers' && Boolean(inlineChatDriverId);
@@ -196,16 +194,9 @@ function Workspace({ auth }) {
   const readWorkspaceRef = useRef(null);
   readWorkspaceRef.current = async () => {
     if (!workspaceActiveRef.current) return;
-    const presenceVersion = presenceVersionRef.current;
     try {
       const workspace = await fetchWorkspace();
       if (!workspaceActiveRef.current) return;
-      // A live update received while the HTTP snapshot was in flight wins.
-      for (const [driverId, update] of presenceUpdatesRef.current) {
-        if (update.version > presenceVersion) {
-          workspace.drivers = updateDriverPresence(workspace.drivers, driverId, update.row);
-        }
-      }
       const querySources = JSON.stringify([
         workspace.loads.map(load => [load.id, load.status, load.rate, load.distanceMiles, load.driverId]),
         workspace.drivers.map(driver => [driver.id, driver.truck, driver.trailer]),
@@ -245,23 +236,6 @@ function Workspace({ auth }) {
       }
     }
   }, [currentUserId, currentUserRoleCode, serializedWorkspaceRefresh]);
-
-  const handlePresenceChange = useCallback((driverId, row) => {
-    presenceUpdatesRef.current.set(driverId, { row, version: ++presenceVersionRef.current });
-    setDrivers(current => updateDriverPresence(current, driverId, row));
-  }, []);
-
-  useEffect(() => {
-    const expire = () => {
-      if (document.visibilityState === 'visible') setDrivers(current => expireDriverPresence(current));
-    };
-    const interval = window.setInterval(expire, 30_000);
-    document.addEventListener('visibilitychange', expire);
-    return () => {
-      window.clearInterval(interval);
-      document.removeEventListener('visibilitychange', expire);
-    };
-  }, []);
 
   const refreshUnreadChats = useCallback(async () => {
     if (!currentUserId || ['driver', 'super_admin'].includes(currentUserRoleCode)) return;
@@ -309,12 +283,12 @@ function Workspace({ auth }) {
     workspaceActiveRef.current = true;
     // oxlint-disable-next-line react/set-state-in-effect -- synchronize the authenticated workspace with remote data.
     refreshWorkspace();
-    const unsubscribe = subscribeWorkspace(() => refreshWorkspace({ quiet: true }), handlePresenceChange);
+    const unsubscribe = subscribeWorkspace(() => refreshWorkspace({ quiet: true }));
     return () => {
       workspaceActiveRef.current = false;
       unsubscribe();
     };
-  }, [currentUserId, currentUserRoleCode, refreshWorkspace, handlePresenceChange]);
+  }, [currentUserId, currentUserRoleCode, refreshWorkspace]);
 
   useEffect(() => {
     if (!currentUserId || ['driver', 'super_admin'].includes(currentUserRoleCode)) return undefined;
@@ -467,21 +441,6 @@ function Workspace({ auth }) {
     }
   };
 
-  const handleCorrectImport = async corrections => {
-    const current = aiPreparedLoad;
-    let file = importFileRef.current;
-    if (!file) {
-      const response = await fetch(current.sourceUrl || current.documents?.rateCon);
-      if (!response.ok) throw new Error(t('errors.documentAnalysis'));
-      file = new File([await response.blob()], current.fileName, { type: 'application/pdf' });
-    }
-    const result = await prepareLoadFromDocument(file, { corrections,
-      brokerMessageId: current.brokerMessageId, brokerAttachmentId: current.brokerAttachmentId });
-    setAiPreparedLoad(value => value?.importRequestId === current.importRequestId
-      ? { ...value, ...result.preparedLoad, reviewRevision: (value.reviewRevision || 0) + 1, sourceUrl: result.sourceUrl || value.sourceUrl } : value);
-    void refreshWorkspace({ quiet: true });
-  };
-
   const handleAiDocument = async (file, preferredDriverId = null, brokerSource = null) => {
     if ((!file && !brokerSource) || importBusyRef.current) return;
     const fileError = brokerSource ? null : loadImportFileError(file);
@@ -508,10 +467,10 @@ function Workspace({ auth }) {
       const result = brokerSource
         ? await prepareLoadFromBrokerAttachment(brokerSource)
         : await prepareLoadFromDocument(file);
+      importFileRef.current = result.file || file;
       setAiPreparedLoad(current => current?.importRequestId === importRequestId
         ? { ...result.preparedLoad, ...importContext, sourceUrl: result.sourceUrl || sourceUrl } : current);
-      // The result page should not wait for the rest of the workspace to refresh.
-      void refreshWorkspace({ quiet: true });
+      // A preview has no database/media write, so there is nothing to refresh.
       const warningCount = result.preparedLoad.missingFields?.length || 0;
       showToast(
         result.duplicate
@@ -563,18 +522,25 @@ function Workspace({ auth }) {
     setOperationLoading(true);
     try {
       const preparedLoad = aiPreparedLoad;
-      if (preparedLoad.review?.required) {
+      if (preparedLoad.previewTicket) {
+        await sendPreviewDocumentLoad(importFileRef.current, preparedLoad.previewTicket, driverIds[0], {
+          brokerMessageId: preparedLoad.brokerMessageId,
+          brokerAttachmentId: preparedLoad.brokerAttachmentId,
+        });
+      } else if (preparedLoad.review?.required) {
         await reviewAndAssignDocumentLoad(preparedLoad.id, driverIds[0], preparedLoad.review.checksum);
       } else {
         await assignLoadDirectly(preparedLoad.id, driverIds[0]);
       }
       await refreshWorkspace({ quiet: true });
+      importFileRef.current = null;
       setAiPreparedLoad(null);
       showToast(t('loads.assignedDirectly'));
       return true;
     } catch (error) {
-      showToast(localizedError(t, error, 'errors.createLoad'));
-      return false;
+      const message = localizedError(t, error, 'errors.createLoad');
+      showToast(message);
+      return message;
     } finally {
       setOperationLoading(false);
     }
@@ -730,7 +696,7 @@ function Workspace({ auth }) {
             load={aiPreparedLoad}
             processing={aiProcessing}
             drivers={drivers}
-            onBack={() => setAiPreparedLoad(null)}
+            onBack={() => { importFileRef.current = null; setAiPreparedLoad(null); }}
             onRetry={() => aiPreparedLoad.sourceKind === 'broker'
               ? handleBrokerAttachment(
                   { id: aiPreparedLoad.brokerMessageId },
@@ -739,7 +705,6 @@ function Workspace({ auth }) {
                 )
               : handleAiDocument(importFileRef.current, aiPreparedLoad.preferredDriverId)}
             onConfirm={handleSendAiOffer}
-            onCorrect={handleCorrectImport}
           /> : <>
           {activeTab === 'kanban' && (
             <KanbanBoard

@@ -21,8 +21,8 @@ test('source-bound facts preserve the reported load number, price, zero miles an
   assert.deepEqual(result.review.blockingFields,[]);
   const page=buildImportedLoad({documentDetails:result.documentDetails,review:result.review});
   assert.equal(page.number,'25008654'); assert.equal(page.rate,1000); assert.equal(page.distance,0); assert.equal(page.rpm,null);
-  assert.equal(page.stops[0].scheduledDate,'2026-10-01'); assert.equal(page.stops[0].hours,'7:00am-3:30pm M-F');
-  assert.equal(page.stops[1].timingNote,'Any day, anytime, just give notice.'); assert.equal(page.stops[1].reference,null);
+  assert.equal(page.pickup.scheduledDate,'2026-10-01'); assert.equal(page.pickup.hours,'7:00am-3:30pm M-F');
+  assert.equal(page.delivery.reference,null);
 });
 test('all stops preserve order, separate evidence, uncertainty and fields',()=>{
   const wire=sample(); wire.stops.splice(1,0,{role:'delivery',addressLine:fact('2 Main St'),city:fact('Dallas'),region:fact('TX')});

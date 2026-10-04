@@ -51,6 +51,7 @@ function printedTimestampMatches(value: string, quote: string) {
 }
 
 export function singlePassValueSupported(path: string, value: unknown, quote: string) {
+  if (quote.includes('\uFFFD') || (typeof value === 'string' && value.includes('\uFFFD'))) return false;
   const text = normalized(quote);
   if (typeof value === 'number') {
     const numbers = text.replace(/(?<=\d),(?=\d{3}(?:\D|$))/g, '')
@@ -61,6 +62,8 @@ export function singlePassValueSupported(path: string, value: unknown, quote: st
     // Require an explicit HAZMAT yes/no label, not an inferred absence.
     return value
       ? /(?:hazmat|hazardous(?: materials?)?)\s*[:=]?\s*(?:yes|true)\b/.test(text)
+        || /^hazmat\s*[:=]?\s*hazardous$/.test(text)
+        || /\bhazmat\s+(?:un\s*)?\d{4}\b/.test(text)
       : /(?:hazmat|hazardous(?: materials?)?)\s*[:=]?\s*(?:no|false)\b|\bnon[- ]hazardous\b/.test(text);
   }
   if (typeof value !== 'string') return false;

@@ -32,7 +32,7 @@ export default function ImportRouteMap({ pickup, delivery, enabled = true, drive
   return <section className="import-map" aria-label={t('loadImport.route')}>
     <div className="import-map-canvas">
       {current?.points && enabled && token ? <Suspense fallback={placeholder}>
-        <TrackingMap points={current.points} livePosition={livePosition} routeStops={current.stops}
+        <TrackingMap points={current.points} livePosition={livePosition}
           deadheadPoints={current.targets?.find(item => item.driverId === driverId)?.points}
           routeKey={`${key}:${driverId || ''}:${Boolean(livePosition)}`}
           lineColor="#008573" liveMarkerIcon="truck"

@@ -52,11 +52,13 @@ test('numbers, units, phone, email, uncertainty and completeness are checked wit
   assert.equal(singlePassValueSupported('loadNumber', '42', 'Load: 142'), false);
   assert.equal(singlePassValueSupported('broker.email', 'broken@', 'Email broken@'), false);
   assert.equal(singlePassValueSupported('isHazmat', false, 'Not specified'), false);
+  assert.equal(singlePassValueSupported('isHazmat', true, 'HAZMAT UN1993 AND TANKER ENDORSED'), true);
+  assert.equal(singlePassValueSupported('isHazmat', false, 'HAZMAT UN1993 AND TANKER ENDORSED'), false);
   const v = candidate(); v.weightLbs = 1800; v.evidence.push({field:'weightLbs',page:1,quote:'Weight 1800'});
   v.documentReview.documentDetailsComplete = false;
   const result = verify(v);
   assert.ok(result.review.blockingFields.includes('weightLbs'));
-  assert.ok(result.review.blockingFields.includes('documentDetails'));
+  assert.ok(result.review.warningFields.includes('documentDetails'));
 });
 test('timestamp normalization accepts printed US times but rejects invented dates, offsets and impossible dates', () => {
   assert.equal(singlePassValueSupported('pickup.appointmentFrom', '2026-10-01T14:30:00', 'Appointment: 10/01/2026 2:30 PM'), true);

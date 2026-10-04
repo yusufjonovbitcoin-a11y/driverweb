@@ -35,6 +35,24 @@ function addField(candidate, audit, field, value, page = 1) {
   candidate.evidence.push(source); audit.fields.push({ ...source, verdict: 'supported' });
 }
 
+test('AI PDF verification separates a delivery appointment code from its street address', () => {
+  const { candidate } = fixture();
+  candidate.extractionMode = 'ai_pdf_direct';
+  candidate.stops = [
+    { role: 'pickup', addressLine: '777 S 67TH AVE', city: 'PHOENIX', region: 'AZ' },
+    { role: 'delivery', addressLine: '1222MS925 488 PARRIOTT PLACE', city: 'CITY OF INDUSTRY',
+      region: 'CA', appointmentReference: '1222MS925' },
+  ];
+  candidate.documentReview = { documentReadable: true, singleLoad: true, pageCount: 6, allPagesRead: true,
+    operationalRequirementsComplete: true, uncertainFields: [] };
+  const result = verifyLoadExtraction(candidate, null, true);
+  assert.equal(result.safe.stops[1].addressLine, '488 PARRIOTT PLACE');
+  assert.equal(result.safe.delivery.addressLine, '488 PARRIOTT PLACE');
+  assert.equal(result.safe.delivery.appointmentReference, '1222MS925');
+  assert.equal(result.documentDetails.fields.find(field => field.key === 'stops.1.addressLine').value,
+    '488 PARRIOTT PLACE');
+});
+
 test('extended facts preserve printed dates, dimensions, BOL and blank appointment time', () => {
   const { candidate, audit } = fixture();
   for (const [key, value] of Object.entries({ 'pickup.scheduledDate': 'Thu 10/01/2026', 'delivery.scheduledDate': 'Mon 10/05/2026',
@@ -65,7 +83,7 @@ test('payment, legal terms and document-driver identity persist only in staff sn
   }
   assert.equal(result.safe.brokerRate, null);
   audit.documentDetailsComplete = false;
-  assert.ok(verifyLoadExtraction(candidate, audit).review.blockingFields.includes('documentDetails'));
+  assert.ok(verifyLoadExtraction(candidate, audit).review.warningFields.includes('documentDetails'));
 });
 
 test('unsupported extended fields and invalid document-driver phones fail closed', () => {
@@ -76,7 +94,8 @@ test('unsupported extended fields and invalid document-driver phones fail closed
   const result = verifyLoadExtraction(candidate, audit);
   assert.equal(result.safe.billingEmail, null);
   assert.equal(result.safe.documentDriverPhone, null);
-  assert.ok(result.review.blockingFields.includes('billingEmail'));
+  assert.ok(result.review.warningFields.includes('billingEmail'));
+  assert.deepEqual(result.review.blockingFields, []);
 });
 
 test('a positive completeness flag cannot override explicit omitted document clauses', () => {
@@ -84,7 +103,7 @@ test('a positive completeness flag cannot override explicit omitted document cla
   candidate.contractTerms = [];
   audit.documentDetailsComplete = true;
   audit.missingDocumentDetails = [{ page: 7, quote: 'Required payment documents must be submitted within 24 hours.' }];
-  assert.ok(verifyLoadExtraction(candidate, audit).review.blockingFields.includes('documentDetails'));
+  assert.ok(verifyLoadExtraction(candidate, audit).review.warningFields.includes('documentDetails'));
 });
 
 test('BOL evidence cannot become a stop reference even when the audit accepts it', () => {

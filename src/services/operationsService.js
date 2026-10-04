@@ -4,7 +4,6 @@ import { isCloudinaryReference } from './cloudinaryMediaErrors';
 import { loadImportFileError } from './loadImportFile';
 import { fetchBrokerInboxRows, fetchBrokerUnreadCount } from './brokerInboxQueries';
 import { createCoalescedAsyncTrigger } from './realtimeRefresh';
-import { driverPresenceFields } from './driverPresenceModel';
 import { normalizeLocale } from '../i18n/locales';
 import { vehicleRowToModel } from './fleetVehicleModel';
 import { loadBoardStatus } from './loadBoardStatus';
@@ -198,13 +197,20 @@ function toUiLoad(row, offersByLoad, documentsByLoad, warningsByLoad, reviewsByD
 }
 
 function toUiDriver(member, presence, avatar = null) {
+  const online = Boolean(presence?.is_online) && Date.now() - new Date(presence.last_seen_at).getTime() < 120000;
   return {
     id: member.id,
     name: member.full_name,
     email: member.email || null,
     driverNumber: `#${member.id.slice(0, 4).toUpperCase()}`,
     phone: member.phone || null,
-    ...driverPresenceFields(presence),
+    status: online ? 'AVAILABLE' : 'RESTING',
+    dutyStatus: online ? 'ON_DUTY' : 'OFF_DUTY',
+    currentLocation: online && presence?.latitude && presence?.longitude
+      ? `${Number(presence.latitude).toFixed(4)}, ${Number(presence.longitude).toFixed(4)}`
+      : null,
+    lat: online && presence?.latitude ? Number(presence.latitude) : null,
+    lng: online && presence?.longitude ? Number(presence.longitude) : null,
     hos: {
       driveLeft: member.hos_available_minutes == null
         ? '—'
@@ -232,6 +238,8 @@ function toUiDriver(member, presence, avatar = null) {
     completedLoads: 0,
     onTimeRate: '—',
     avatar,
+    isOnline: online,
+    lastSeenAt: presence?.last_seen_at || null,
   };
 }
 
@@ -540,9 +548,9 @@ export async function createManualLoad(newLoad) {
 
 export async function prepareLoadFromDocument(file, { brokerMessageId, brokerAttachmentId, corrections } = {}) {
   if (!(file instanceof File)) throw new Error('PDF yoki surat tanlang.');
-  const client = requireSupabase();
   const formData = new FormData();
   formData.append('file', file, file.name);
+  formData.append('previewOnly', 'true');
   if (corrections) formData.append('corrections', JSON.stringify(corrections));
   if (brokerMessageId && brokerAttachmentId) {
     formData.append('brokerMessageId', brokerMessageId);
@@ -551,24 +559,28 @@ export async function prepareLoadFromDocument(file, { brokerMessageId, brokerAtt
   const { data, error } = await invokeAuthenticatedFunction('parse-load-document', formData);
   if (error) await throwFunctionError(error, 'AI hujjatni tahlil qila olmadi.');
   if (data?.error) throw new Error(data.error);
-  if (!data?.loadId || !data?.preparedLoad) {
-    throw new Error('AI tayyorlagan yuk ma\'lumoti qaytmadi.');
+  if (!data?.previewOnly || !data?.preparedLoad?.previewTicket) throw new Error('IMPORT_RESULT_MISSING');
+  return { preparedLoad: data.preparedLoad, duplicate: false };
+}
+
+export async function sendPreviewDocumentLoad(file, ticket, driverId, { brokerMessageId, brokerAttachmentId } = {}) {
+  if (!(file instanceof File) || !ticket?.payload || !ticket?.signature || !driverId) {
+    throw new Error('PREVIEW_TICKET_INVALID');
   }
-  const { data: lifecycle, error: lifecycleError } = await client
-    .from('load_overview')
-    .select('status,current_assignment_id,driver_id')
-    .eq('id', data.loadId)
-    .single();
-  if (lifecycleError) throw lifecycleError;
-  return {
-    ...data,
-    preparedLoad: {
-      ...data.preparedLoad,
-      lifecycleStatus: lifecycle.status,
-      currentAssignmentId: lifecycle.current_assignment_id,
-      currentDriverId: lifecycle.driver_id,
-    },
-  };
+  const formData = new FormData();
+  formData.append('file', file, file.name);
+  formData.append('previewPayload', ticket.payload);
+  formData.append('previewSignature', ticket.signature);
+  formData.append('confirmDriverId', driverId);
+  if (brokerMessageId && brokerAttachmentId) {
+    formData.append('brokerMessageId', brokerMessageId);
+    formData.append('brokerAttachmentId', brokerAttachmentId);
+  }
+  const { data, error } = await invokeAuthenticatedFunction('parse-load-document', formData);
+  if (error) await throwFunctionError(error, 'Yukni haydovchiga yuborib bo‘lmadi.');
+  if (data?.error) throw new Error(data.error);
+  if (!data?.assigned || !data?.loadId) throw new Error('ASSIGN_RESULT_MISSING');
+  return data;
 }
 
 export async function prepareLoadFromBrokerAttachment({ messageId, attachmentId }) {
@@ -604,7 +616,7 @@ export async function prepareLoadFromBrokerAttachment({ messageId, attachmentId 
     brokerMessageId: messageId,
     brokerAttachmentId: attachmentId,
   });
-  return { ...result, sourceUrl, fileName: attachment.file_name };
+  return { ...result, sourceUrl, fileName: attachment.file_name, file };
 }
 
 export async function fetchImportRoadRoute(loadId, driverId, signal) {
@@ -770,7 +782,7 @@ export async function unassignFleetVehicleDriver(vehicleId) {
   return data;
 }
 
-export function subscribeWorkspace(onChange, onPresenceChange) {
+export function subscribeWorkspace(onChange) {
   const client = requireSupabase();
   const refresh = createCoalescedAsyncTrigger(onChange);
   const channel = client
@@ -780,12 +792,7 @@ export function subscribeWorkspace(onChange, onPresenceChange) {
     .on('postgres_changes', { event: '*', schema: 'public', table: 'assignments' }, refresh)
     .on('postgres_changes', { event: '*', schema: 'public', table: 'document_checks' }, refresh)
     .on('postgres_changes', { event: '*', schema: 'public', table: 'warnings' }, refresh)
-    // GPS heartbeats change a driver, not every load/document in the workspace.
-    .on('postgres_changes', { event: '*', schema: 'public', table: 'driver_presence' }, payload => {
-      if (!onPresenceChange) return refresh();
-      const row = payload.eventType === 'DELETE' ? payload.old : payload.new;
-      if (row?.driver_id) onPresenceChange(row.driver_id, payload.eventType === 'DELETE' ? null : row);
-    })
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'driver_presence' }, refresh)
     .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, refresh)
     .on('postgres_changes', { event: '*', schema: 'public', table: 'driver_profiles' }, refresh)
     .on('postgres_changes', { event: '*', schema: 'public', table: 'vehicles' }, refresh)

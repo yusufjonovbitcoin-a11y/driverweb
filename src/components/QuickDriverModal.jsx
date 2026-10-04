@@ -43,9 +43,10 @@ export default function QuickDriverModal({
   const [selectedDriverIds, setSelectedDriverIds] = useState(() => initialDriverId ? [initialDriverId] : []);
   const [searchQuery, setSearchQuery] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [reviewConfirmed, setReviewConfirmed] = useState(false);
+  const warningFields = [...new Set([
+    ...(loadData?.review?.blockingFields || []), ...(loadData?.review?.warningFields || []),
+  ])];
   const reviewRequired = loadData?.review?.required === true;
-  const reviewBlocked = (loadData?.review?.blockingFields?.length || 0) > 0;
   const missingFields = loadData?.missingFields || [];
   const isReassignment = ['assigned', 'in_progress'].includes(loadData?.lifecycleStatus);
   const isClosed = Boolean(loadData?.lifecycleStatus) && ![
@@ -77,8 +78,7 @@ export default function QuickDriverModal({
 
   const handleSend = async (e) => {
     e.preventDefault();
-    if (selectedDriverIds.length === 0 || isSubmitting || reviewBlocked
-        || (reviewRequired && !reviewConfirmed)) return;
+    if (selectedDriverIds.length === 0 || isSubmitting || isClosed) return;
     setIsSubmitting(true);
     try {
       await onConfirm(selectedDriverIds);
@@ -155,14 +155,10 @@ export default function QuickDriverModal({
           </div>
 
           {loadData.driverBrief && <DriverBriefPreview brief={loadData.driverBrief} sourceUrl={loadData.sourceUrl || loadData.documents?.rateCon} />}
-          {reviewBlocked && <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-800 dark:bg-red-950/30 dark:text-red-200">
-            <p className="font-semibold">{t('driverBrief.blocked')}</p>
-            <p className="mt-1">{loadData.review.blockingFields.map(key => briefFieldLabel(t, key)).join(', ')}</p>
+          {warningFields.length > 0 && <div role="status" className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-200">
+            <p className="font-semibold">{t('driverBrief.warning')}</p>
+            <p className="mt-1">{warningFields.map(key => briefFieldLabel(t, key)).join(', ')}</p>
           </div>}
-          {reviewRequired && !reviewBlocked && <label className="flex items-start gap-3 rounded-xl border border-teal-200 p-3 text-sm">
-            <input type="checkbox" checked={reviewConfirmed} onChange={event => setReviewConfirmed(event.target.checked)} className="mt-1" />
-            <span>{t('driverBrief.confirm')}</span>
-          </label>}
 
           {missingFields.length > 0 && (
             <div className="flex items-start gap-2.5 rounded-xl border border-amber-200 bg-amber-50 px-3.5 py-3 text-xs text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200">
@@ -291,7 +287,7 @@ export default function QuickDriverModal({
               </button>
               <button
                 type="submit"
-                disabled={selectedDriverIds.length === 0 || isSubmitting || isClosed || reviewBlocked || (reviewRequired && !reviewConfirmed)}
+                disabled={selectedDriverIds.length === 0 || isSubmitting || isClosed}
                 className="inline-flex items-center space-x-2 bg-zinc-900 hover:bg-zinc-800 disabled:opacity-50 disabled:cursor-not-allowed text-white dark:bg-zinc-100 dark:hover:bg-white dark:text-zinc-950 px-5 py-2 rounded-xl font-bold text-sm transition-colors shadow-xs"
               >
                 <Send className="w-4 h-4" />
