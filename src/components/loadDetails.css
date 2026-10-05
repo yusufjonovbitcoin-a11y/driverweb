@@ -1,4 +1,13 @@
 .workspace-main:has(> .load-command-page) { position: relative; overflow: hidden; }
+.load-command-trash{display:inline-flex;align-items:center;justify-content:center;gap:8px;padding:10px 12px;border:1px solid var(--line,#dce5e9);border-radius:10px;color:var(--ink,#172c3a);background:var(--surface,#fff);font-size:12px;font-weight:600;white-space:nowrap}
+.load-command-trash:hover{border-color:#ef4444;color:#ef4444}
+.load-trash-confirm{margin:auto;max-width:460px;width:calc(100% - 32px);padding:24px;border:1px solid var(--line,#dce5e9);border-radius:16px;background:var(--surface,#fff);color:var(--ink,#172c3a)}
+.load-trash-confirm::backdrop{background:#0009;backdrop-filter:blur(3px)}
+.load-trash-confirm h3{font-size:18px;font-weight:700;margin-bottom:12px}
+.load-trash-confirm p{font-size:14px;line-height:1.6;margin-bottom:16px}
+.load-trash-confirm .load-trash-confirm-actions{display:flex;justify-content:flex-end;gap:16px;align-items:center}
+.load-trash-confirm button:disabled{opacity:.5;cursor:wait}
+.load-trash-confirm .load-trash-error{color:var(--danger,#e05252)}
 .load-command-page { position: fixed; inset: 0; z-index: 40; background: var(--canvas, #f5f7fa); color: var(--ink, #172c3a); overflow: hidden; }
 .workspace-main > .load-command-page { position: absolute; }
 .load-command-header { display: flex; align-items: center; gap: 20px; padding: 20px 24px; flex-shrink: 0; }

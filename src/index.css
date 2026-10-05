@@ -69,6 +69,10 @@
 }
 
 .workspace-shell { height: 100dvh; }
+/* Native select popups need explicit colors as well as the page color scheme. */
+.dark .workspace-shell select { color-scheme: dark; }
+.dark .workspace-shell select option,
+.dark .workspace-shell select optgroup { color: var(--ink); background-color: var(--surface); }
 .workspace-sidebar { flex-shrink: 0; background: var(--surface); border-color: var(--line); }
 .sidebar-brand { height: 80px; border-bottom: 0; padding-inline: 22px; }
 .sidebar-brand > div > div { background: var(--accent); color: var(--surface); border-radius: 9px; box-shadow: none; }
@@ -340,6 +344,19 @@ html:not(.dark) .workspace-sidebar .sidebar-footer button:hover { color: #fff; b
 .driver-trip-card > .driver-trip-card-route { color: var(--ink); font-size: 11px; font-weight: 650; }
 .driver-trip-route-arrow { flex: 0 0 auto; color: #8094a0; font-size: 15px; }
 .driver-trip-card > .driver-trip-card-date { margin-top: 2px; padding-top: 9px; border-top: 1px solid var(--line); color: #586b7c; }
+.dark .driver-board .driver-board-column { background: var(--canvas); }
+.dark .driver-board .driver-board-stage-header { background: #253540; }
+.dark .driver-board .driver-board-column.stage-unassigned .driver-board-stage-header { background: #253540; }
+.dark .driver-board .driver-board-column.stage-assigned .driver-board-stage-header { background: #20394b; }
+.dark .driver-board .driver-board-column.stage-picked_up .driver-board-stage-header { background: #443d2c; }
+.dark .driver-board .driver-board-column.stage-on_road .driver-board-stage-header { background: #203d32; }
+.dark .driver-board .driver-board-column.stage-delivered .driver-board-stage-header { background: #203e3d; }
+.dark .driver-board .driver-board-column.stage-completed .driver-board-stage-header { background: #323448; }
+.dark .driver-board .driver-board-stage-header > span { color: var(--ink); background: rgba(255,255,255,.08); }
+.dark .driver-board .driver-trip-card { border-color: var(--line); }
+.dark .driver-board .driver-trip-card > p { color: var(--muted); }
+.dark .driver-board .driver-trip-card > .driver-trip-card-route { color: var(--ink); }
+.dark .driver-board .driver-trip-card-top > strong { color: #87c9f3; }
 @media (max-width: 1250px) {
   .driver-trips-view > .driver-trip-summary { flex-wrap: wrap; }
   .driver-trip-identity { flex-basis: 260px; }

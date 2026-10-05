@@ -9,6 +9,7 @@ import { driverPresenceFields } from './driverPresence.js';
 import { normalizeLocale } from '../i18n/locales';
 import { vehicleRowToModel } from './fleetVehicleModel';
 import { loadBoardStatus } from './loadBoardStatus';
+import { loadTrashMetadata } from './loadTrashActions.js';
 import { isCompleteVin, normalizeVin, parseNhtsaVinResult, retryVinLookup } from './nhtsaVin';
 import {
   resolveProfileAvatarUrls,
@@ -118,6 +119,7 @@ function toUiLoad(row, offersByLoad, documentsByLoad, warningsByLoad, reviewsByD
     loadNumber: row.load_number?.startsWith('#') ? row.load_number : `#${row.load_number}`,
     status: loadBoardStatus(row, stagesByAssignment.get(row.current_assignment_id)),
     databaseStatus: row.status,
+    ...loadTrashMetadata(row),
     broker: row.broker_name || null,
     brokerContact: row.broker_contact_name || '',
     brokerPhone: row.broker_phone || '',

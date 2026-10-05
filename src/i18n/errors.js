@@ -1,4 +1,9 @@
 const ERROR_PATTERNS = [
+  [/LOAD_DOCUMENT_STALE/, 'loadTrash.documentStale'],
+  [/LOAD_TRASH_CONFLICT/, 'loadTrash.conflict'],
+  [/LOAD_TRASH_NOT_FOUND/, 'loadTrash.notFound'],
+  [/LOAD_(?:TRASHED|ALREADY_TRASHED|NOT_TRASHED|TRASH_ALREADY_TRASHED|TRASH_NOT_TRASHED)/, 'loadTrash.invalidState'],
+  [/LOAD_TRASH_DRIVER|Driver not found or inactive/, 'loadTrash.driverInvalid'],
   [/CHAT_MEDIA_FILE_TOO_LARGE/, 'chat.fileTooLarge'],
   [/CHAT_MEDIA_FILE_EMPTY/, 'chat.mediaFileEmpty'],
   [/CHAT_MEDIA_OUTBOX_FULL/, 'chat.mediaQueueFull'],

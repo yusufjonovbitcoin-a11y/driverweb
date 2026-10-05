@@ -14,7 +14,6 @@ import {
   sendPreviewDocumentLoad,
   assignLoadDirectly,
   reviewAndAssignDocumentLoad,
-  deleteUnassignedLoad,
   fetchWorkspace,
   fetchWorkspaceAvatar,
   fetchDriverPresence,
@@ -34,6 +33,8 @@ import { chatAccountKey, clearPersistedChatSession } from './services/chatSessio
 import { clearPersistedChatMedia } from './services/chatMediaOutbox';
 import { buildGlobalSearchResults } from './utils/globalSearch';
 import { localizedError } from './i18n/errors';
+import { runLoadTrashAction, loadTrashMetadata, partitionTrashedLoads } from './services/loadTrashActions.js';
+import { loadBoardStatus } from './services/loadBoardStatus.js';
 import { loadImportFileError } from './services/loadImportFile';
 import { createDocumentImportRunner, mergeDocumentImportResult, continueDocumentImport, shouldCancelImportOnNavigation, findExistingFinalizedLoad } from './services/documentImportSession';
 import { setAppLocale } from './i18n';
@@ -102,6 +103,7 @@ function Workspace({ auth }) {
     return tabs.includes(hash) ? hash : 'kanban';
   });
   const [loads, setLoads] = useState([]);
+  const [trashedLoads, setTrashedLoads] = useState([]);
   const [drivers, setDrivers] = useState([]);
   const [members, setMembers] = useState([]);
   const [refreshLoading, setRefreshLoading] = useState(false);
@@ -230,7 +232,7 @@ function Workspace({ auth }) {
       const workspace = await fetchWorkspace();
       if (!isCurrent()) return;
       const querySources = JSON.stringify([
-        workspace.loads.map(load => [load.id, load.status, load.rate, load.distanceMiles, load.driverId]),
+        workspace.loads.map(load => [load.id, load.status, load.rate, load.distanceMiles, load.driverId, load.trashedAt, load.version]),
         workspace.drivers.map(driver => [driver.id, driver.truck, driver.trailer]),
       ]);
       if (querySourcesRef.current && querySourcesRef.current !== querySources) {
@@ -238,7 +240,9 @@ function Workspace({ auth }) {
           || (Array.isArray(key) && ['trip-analytics', 'driver-sessions'].includes(key[0]))).catch(() => {});
       }
       querySourcesRef.current = querySources;
-      setLoads(workspace.loads);
+      const partition = partitionTrashedLoads(workspace.loads);
+      setLoads(partition.active);
+      setTrashedLoads(partition.trash);
       setDrivers(previous => preserveWorkspaceAvatars(
         refreshDriverPresence(workspace.drivers, presenceUpdatesRef.current), previous,
       ));
@@ -606,21 +610,40 @@ function Workspace({ auth }) {
     });
   };
 
-  const handleDeleteLoad = async (load) => {
+  const handleLoadTrashAction = async (action, load, driverId = null) => {
     setOperationLoading(true);
     try {
-      await deleteUnassignedLoad(load.id);
+      const row = await runLoadTrashAction(supabase, action, load, driverId);
+      // Reconcile the confirmed mutation immediately, even if the subsequent
+      // workspace refresh is offline. Never remove anything before RPC success.
+      const saved = row && {
+        ...load, ...loadTrashMetadata(row), version: row.version,
+        databaseStatus: row.status, status: loadBoardStatus(row),
+        driverId: action === 'restore' ? driverId : null,
+        targetDriverIds: action === 'restore' && driverId ? [driverId] : [],
+      };
+      setLoads(current => action === 'restore'
+        ? [saved, ...current.filter(item => item.id !== load.id)]
+        : current.filter(item => item.id !== load.id));
+      setTrashedLoads(current => action === 'trash'
+        ? [saved, ...current.filter(item => item.id !== load.id)]
+        : current.filter(item => item.id !== load.id));
       setAiPreparedLoad((current) => current?.id === load.id ? null : current);
       setSelectedLoadForDocs((current) => current?.id === load.id ? null : current);
       await refreshWorkspace({ quiet: true });
-      showToast(t('toasts.loadDeleted', { number: load.loadNumber }));
+      showToast(t(`loadTrash.${action === 'trash' ? 'moved' : action === 'restore' ? 'restored' : 'deleted'}`, { number: load.loadNumber }));
     } catch (error) {
-      showToast(localizedError(t, error, 'errors.deleteLoad'));
+      // Conflict refresh must not replay the mutation with a new version.
+      if (/LOAD_(?:TRASH_(?:CONFLICT|NOT_FOUND)|ALREADY_TRASHED|NOT_TRASHED|TRASHED)/.test(error?.message || '')) {
+        await refreshWorkspace({ quiet: true });
+      }
       throw error;
     } finally {
       setOperationLoading(false);
     }
   };
+  const canManageLoads = ['company_admin', 'dispatcher'].includes(currentUser?.roleCode);
+  const handleTrashLoad = canManageLoads ? (load) => handleLoadTrashAction('trash', load) : undefined;
 
   const handleSendAiOffer = async (driverIds) => {
     if (!aiPreparedLoad) return;
@@ -818,7 +841,10 @@ function Workspace({ auth }) {
               drivers={drivers}
               onAdvanceStatus={() => showToast(t('toasts.statusFromMobile'))}
               onOpenDocs={handleOpenDocs}
-              onDeleteLoad={handleDeleteLoad}
+              onTrashLoad={handleTrashLoad}
+              trashedLoads={trashedLoads}
+              onRestoreLoad={canManageLoads ? (load, driverId) => handleLoadTrashAction('restore', load, driverId) : undefined}
+              onPermanentlyDeleteLoad={canManageLoads ? (load) => handleLoadTrashAction('delete', load) : undefined}
               onSendOffer={(load) => setAiPreparedLoad({ ...load, lifecycleStatus: load.databaseStatus, source: 'saved' })}
               onDropOnOffer={(file) => handleAiDocument(file, null, null, true)}
               isAiProcessing={aiProcessing}
@@ -832,7 +858,7 @@ function Workspace({ auth }) {
               onAssignLoad={handleOpenCreateLoad}
               onOpenChat={handleOpenDriverChat}
               onOpenDocs={handleOpenDocs}
-              onDeleteLoad={handleDeleteLoad}
+              onTrashLoad={handleTrashLoad}
               onImportDriverDocument={(file, driverId) => handleAiDocument(file, driverId)}
               isAiProcessing={aiProcessing}
               unreadChatsByDriver={unreadChatsByDriver}
@@ -887,7 +913,7 @@ function Workspace({ auth }) {
           {mapWasOpened && <div className={activeTab === 'map' && !importPageVisible ? 'h-full min-h-0' : 'hidden'}>
             <LazyRouteBoundary>
               <React.Suspense fallback={<div className="grid h-full place-items-center"><LoaderCircle className="h-7 w-7 animate-spin" /></div>}>
-                <FleetMap drivers={drivers} loads={loads} isVisible={activeTab === 'map' && !importPageVisible} onOpenDocs={handleOpenDocs} />
+                <FleetMap drivers={drivers} loads={loads} isVisible={activeTab === 'map' && !importPageVisible} onOpenDocs={handleOpenDocs} onTrashLoad={handleTrashLoad} />
               </React.Suspense>
             </LazyRouteBoundary>
           </div>}

@@ -23,6 +23,7 @@ import { formatAppointment, formatCurrency, formatDate } from '../i18n/format';
 import { stopCalendarDate } from '../i18n/stopAppointment.js';
 import { displayBoardStage } from '../services/loadBoardStatus';
 import { filterWorkspaceLoads } from './loadWorkspaceModel';
+import { localizedError } from '../i18n/errors';
 const LoadDetailsModal = React.lazy(() => import('./LoadDetailsModal'));
 
 function getClipboardImage(clipboardData) {
@@ -51,6 +52,7 @@ export default function KanbanBoard({
   drivers, 
   onOpenDocs, 
   onDeleteLoad,
+  onTrashLoad,
   onSendOffer,
   onDropOnOffer,
   onAssignedDocumentUpload,
@@ -101,6 +103,9 @@ export default function KanbanBoard({
   const [isPasteTargetHovered, setIsPasteTargetHovered] = useState(false);
   const [loadPendingDelete, setLoadPendingDelete] = useState(null);
   const [selectedLoadDetails, setSelectedLoadDetails] = useState(null);
+  const closeLoadDetails = useCallback(() => setSelectedLoadDetails(null), []);
+  const detailsLoad = loads.find(load => load.id === selectedLoadDetails?.id);
+  const [deleteError, setDeleteError] = useState('');
   const [isDeleting, setIsDeleting] = useState(false);
   const calendarPopoverRef = useRef(null);
 
@@ -198,13 +203,14 @@ export default function KanbanBoard({
   );
 
   const confirmDelete = async () => {
-    if (!loadPendingDelete || !onDeleteLoad || isDeleting) return;
+    if (!loadPendingDelete || !(onTrashLoad || onDeleteLoad) || isDeleting) return;
     setIsDeleting(true);
+    setDeleteError('');
     try {
-      await onDeleteLoad(loadPendingDelete);
+      await (onTrashLoad || onDeleteLoad)(loadPendingDelete);
       setLoadPendingDelete(null);
-    } catch {
-      // The parent shows the server error and the dialog stays open for retry.
+    } catch (error) {
+      setDeleteError(localizedError(t, error, onTrashLoad ? 'loadTrash.moveError' : 'errors.deleteLoad'));
     } finally {
       setIsDeleting(false);
     }
@@ -528,7 +534,7 @@ export default function KanbanBoard({
                         const driverName = driver?.name || (load.driverId ? t('loadsWorkspace.missingDriver') : t('loads.unassigned'));
                         const canAssign = onSendOffer && ['ready_for_offer', 'offered'].includes(load.databaseStatus);
                         const canOpenDocuments = load.status === 'COMPLETED' && onOpenDocs;
-                        const canDelete = onDeleteLoad && canDeleteLoad(load);
+                        const canDelete = (onTrashLoad || onDeleteLoad) && canDeleteLoad(load);
 
                         return styledWorkspace ? (
                           <div key={load.id} role="button" tabIndex={0} className="driver-trip-card" onClick={() => setSelectedLoadDetails(load)} onKeyDown={(event) => {
@@ -549,7 +555,7 @@ export default function KanbanBoard({
                             {fleetWorkspace && (canAssign || canOpenDocuments || canDelete) && <div className="fleet-load-card-actions">
                               {canAssign && <button type="button" className="fleet-load-assign" onClick={(event) => { event.stopPropagation(); onSendOffer(load); }}>{t('loads.assignToDriver')}</button>}
                               {canOpenDocuments && <button type="button" className="fleet-load-documents" onClick={(event) => { event.stopPropagation(); onOpenDocs(load); }} title={t('nav.documents')} aria-label={t('nav.documents')}><FileText size={15} /></button>}
-                              {canDelete && <button type="button" className="fleet-load-delete" onClick={(event) => { event.stopPropagation(); setLoadPendingDelete(load); }} aria-label={t('loads.deleteNamed', { number: load.loadNumber })} title={t('loads.deleteTitle')}><Trash2 size={15} /></button>}
+                              {canDelete && <button type="button" className="fleet-load-delete" onClick={(event) => { event.stopPropagation(); setLoadPendingDelete(load); }} aria-label={t(onTrashLoad ? 'loadTrash.moveTitle' : 'loads.deleteNamed', { number: load.loadNumber })} title={t(onTrashLoad ? 'loadTrash.move' : 'loads.deleteTitle')}><Trash2 size={15} /></button>}
                             </div>}
                           </div>
                         ) : (
@@ -583,8 +589,8 @@ export default function KanbanBoard({
                                       setLoadPendingDelete(load);
                                     }}
                                     className="inline-flex h-7 w-7 items-center justify-center rounded-lg text-zinc-400 transition-colors hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-950/40 dark:hover:text-red-400"
-                                    aria-label={t('loads.deleteNamed', { number: load.loadNumber })}
-                                    title={t('loads.deleteTitle')}
+                                    aria-label={t(onTrashLoad ? 'loadTrash.moveTitle' : 'loads.deleteNamed', { number: load.loadNumber })}
+                                    title={t(onTrashLoad ? 'loadTrash.move' : 'loads.deleteTitle')}
                                   >
                                     <Trash2 className="h-3.5 w-3.5" />
                                   </button>
@@ -810,8 +816,8 @@ export default function KanbanBoard({
                             type="button"
                             onClick={() => setLoadPendingDelete(load)}
                             className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-zinc-400 transition-colors hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-950/40 dark:hover:text-red-400"
-                            aria-label={t('loads.deleteNamed', { number: load.loadNumber })}
-                            title={t('loads.deleteTitle')}
+                            aria-label={t(onTrashLoad ? 'loadTrash.moveTitle' : 'loads.deleteNamed', { number: load.loadNumber })}
+                            title={t(onTrashLoad ? 'loadTrash.move' : 'loads.deleteTitle')}
                           >
                             <Trash2 className="h-4 w-4" />
                           </button>
@@ -832,12 +838,13 @@ export default function KanbanBoard({
         </div>
       )}
 
-      {selectedLoadDetails && (
+      {detailsLoad && (
         <React.Suspense fallback={<div className="fixed inset-0 z-50 grid place-items-center bg-white/80 dark:bg-zinc-950/80"><LoaderCircle className="h-7 w-7 animate-spin" aria-label={t('common.loading')} /></div>}>
         <LoadDetailsModal
-          load={selectedLoadDetails}
-          driver={getDriver(selectedLoadDetails.driverId)}
-          onClose={() => setSelectedLoadDetails(null)}
+          load={detailsLoad}
+          driver={getDriver(detailsLoad.driverId)}
+          onTrashLoad={onTrashLoad}
+          onClose={closeLoadDetails}
           onOpenDocs={(load, documentId) => {
             setSelectedLoadDetails(null);
             onOpenDocs(load, documentId);
@@ -858,11 +865,12 @@ export default function KanbanBoard({
               <Trash2 className="h-5 w-5" />
             </div>
             <h2 id="delete-load-title" className="text-lg font-extrabold text-zinc-950 dark:text-white">
-              {t('loads.deleteNamed', { number: loadPendingDelete.loadNumber })}
+              {t(onTrashLoad ? 'loadTrash.moveTitle' : 'loads.deleteNamed', { number: loadPendingDelete.loadNumber })}
             </h2>
             <p className="mt-2 text-sm leading-6 text-zinc-600 dark:text-zinc-300">
-              {t('loads.deleteWarning')}
+              {t(onTrashLoad ? 'loadTrash.moveWarning' : 'loads.deleteWarning')}
             </p>
+            {deleteError && <p role="alert" className="mt-2 text-sm text-red-600 dark:text-red-400">{deleteError}</p>}
             <div className="mt-6 flex items-center justify-end gap-2">
               <button
                 type="button"
@@ -879,7 +887,7 @@ export default function KanbanBoard({
                 className="inline-flex min-w-36 items-center justify-center gap-2 rounded-xl bg-red-600 px-4 py-2.5 text-sm font-bold text-white transition-colors hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {isDeleting && <LoaderCircle className="h-4 w-4 animate-spin" />}
-                <span>{isDeleting ? t('loads.deleting') : t('loads.deleteTitle')}</span>
+                <span>{t(onTrashLoad ? (isDeleting ? 'loadTrash.moving' : 'loadTrash.move') : (isDeleting ? 'loads.deleting' : 'loads.deleteTitle'))}</span>
               </button>
             </div>
           </div>

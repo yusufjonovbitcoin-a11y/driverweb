@@ -42,18 +42,6 @@
 .fleet-load-documents:hover { color: var(--accent); background: var(--accent-soft); }
 .fleet-loads-filter-feedback { display: flex; flex-shrink: 0; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; padding: 8px 11px; margin-bottom: 10px; border-radius: 7px; background: var(--canvas); color: var(--muted); font-size: 12px; }
 .fleet-loads-filter-feedback button { color: var(--accent); font-weight: 600; }
-.dark .fleet-loads-board .driver-board-column { background: var(--canvas); }
-.dark .fleet-loads-board .driver-board-stage-header { background: #253540; }
-.dark .fleet-loads-board .driver-board-column.stage-assigned .driver-board-stage-header { background: #20394b; }
-.dark .fleet-loads-board .driver-board-column.stage-picked_up .driver-board-stage-header { background: #443d2c; }
-.dark .fleet-loads-board .driver-board-column.stage-on_road .driver-board-stage-header { background: #203d32; }
-.dark .fleet-loads-board .driver-board-column.stage-delivered .driver-board-stage-header { background: #203e3d; }
-.dark .fleet-loads-board .driver-board-column.stage-completed .driver-board-stage-header { background: #323448; }
-.dark .fleet-loads-board .driver-board-stage-header > span { color: var(--ink); background: rgba(255,255,255,.08); }
-.dark .fleet-loads-board .driver-trip-card { border-color: var(--line); }
-.dark .fleet-loads-board .driver-trip-card > p { color: var(--muted); }
-.dark .fleet-loads-board .driver-trip-card > .driver-trip-card-route { color: var(--ink); }
-.dark .fleet-loads-board .driver-trip-card-top > strong { color: #87c9f3; }
 .dark .fleet-loads-stats > div:nth-child(2) strong { color: #65c9bb; }
 .dark .fleet-loads-stats > div:nth-child(3) strong { color: #e4b967; }
 @media (max-width: 1150px) {

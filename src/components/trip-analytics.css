@@ -121,6 +121,12 @@
 .analytics-dashboard .trip-editor { flex: 1; min-height: 0; overflow-y: auto; padding: 16px 20px; }
 .analytics-dashboard .trip-editor .trip-basis { margin: 12px 0; }
 .analytics-dashboard .trip-editor .trip-preview { margin: 12px 0; }
+.dark .trip-analytics th { background: var(--canvas); }
+.dark .trip-status-active { background: var(--accent-soft); color: var(--accent); }
+.dark .trip-status-completed { background: #213e34; color: #9cddba; }
+.dark .trip-negative, .dark .trip-error { color: #f2a5b2; }
+.dark .trip-success { color: #9cddba; background: #213e34; }
+.dark .trip-basis { background: var(--accent-soft); }
 @media (max-width: 1250px) {
   .trip-metrics .ad-metric-icon { width: 32px; height: 32px; flex-basis: 32px; }
   .trip-metrics .ad-metric-icon svg { width: 20px; }

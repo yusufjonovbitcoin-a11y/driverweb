@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { unstable_serialize, useSWRConfig } from 'swr';
 import { useTranslation } from 'react-i18next';
 import { ArrowRight, CalendarDays, ChevronDown, ChevronRight, ChevronUp, History, LocateFixed, Route, Search, Truck, X } from 'lucide-react';
@@ -49,7 +49,7 @@ function useMapOverlays(isVisible) {
   return { canvasRef, paletteRef, dockRef, padding };
 }
 
-export default function FleetMap({ drivers, loads, isVisible = true, onOpenDocs }) {
+export default function FleetMap({ drivers, loads, isVisible = true, onOpenDocs, onTrashLoad }) {
   const { t } = useTranslation();
   const [selectedTruckId, setSelectedTruckId] = useWorkspaceView('map.driver', drivers[0]?.id || null);
   const [selectedLoadId, setSelectedLoadId] = useWorkspaceView('map.load', null);
@@ -119,6 +119,7 @@ export default function FleetMap({ drivers, loads, isVisible = true, onOpenDocs 
   const roadUnavailable = Boolean(roadRoute?.error || roadRoute?.data?.routingFailed);
   const statistics = knownLoadStatistics(selectedTrip);
   const detailsLoad = trips.find(load => load.id === detailsId);
+  const closeDetails = useCallback(() => setDetailsId(null), []);
   const trackMessage = trackLoading ? t('map.trackLoading') : trackError ? t('map.trackError')
     : points.length ? t('map.trackPoints', { count: points.length }) : t('map.noTrack');
   const chooseDriver = (event) => {
@@ -243,7 +244,7 @@ export default function FleetMap({ drivers, loads, isVisible = true, onOpenDocs 
         </div>
       </section>
       {detailsLoad && <React.Suspense fallback={<div className="fleet-map-details-loading" role="status">{t('common.loading')}</div>}>
-        <LoadDetailsModal load={detailsLoad} driver={selectedDriver} onClose={() => setDetailsId(null)}
+        <LoadDetailsModal load={detailsLoad} driver={selectedDriver} onClose={closeDetails} onTrashLoad={onTrashLoad}
           onOpenDocs={(load, documentId) => { setDetailsId(null); onOpenDocs?.(load, documentId); }} />
       </React.Suspense>}
     </div>

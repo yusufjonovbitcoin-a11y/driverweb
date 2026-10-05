@@ -6,6 +6,7 @@ import { formatAppointment, formatCurrency, formatNumber } from '../i18n/format'
 import { loadStatusLabel } from '../i18n/labels';
 import { buildLoadDetails } from './loadDetailsModel';
 import DraggableLoadDocument from './DraggableLoadDocument.jsx';
+import LoadTrashAction from './LoadTrashAction.jsx';
 import './loadDetails.css';
 
 const LoadDetailsMap = lazy(() => import('./LoadDetailsMap.jsx'));
@@ -14,7 +15,7 @@ const loadPdfTools = () => import('../services/loadDocumentPdf');
 
 const value = (content) => content ?? '—';
 
-export default function LoadDetailsModal({ load, driver, onClose, onOpenDocs }) {
+export default function LoadDetailsModal({ load, driver, onClose, onOpenDocs, onTrashLoad }) {
   const { t } = useTranslation();
   const closeRef = useRef(null);
   const pdfAssetRef = useRef(null);
@@ -83,7 +84,9 @@ export default function LoadDetailsModal({ load, driver, onClose, onOpenDocs }) 
     const inertState = background.map(element => element.inert);
     background.forEach(element => { element.inert = true; });
     closeRef.current?.focus();
-    const closeOnEscape = (event) => { if (event.key === 'Escape') onClose(); };
+    const closeOnEscape = (event) => {
+      if (event.key === 'Escape' && !event.defaultPrevented && !event.target?.closest?.('dialog[open]')) onClose();
+    };
     window.addEventListener('keydown', closeOnEscape);
     return () => {
       window.removeEventListener('keydown', closeOnEscape);
@@ -170,6 +173,7 @@ export default function LoadDetailsModal({ load, driver, onClose, onOpenDocs }) 
             <Metric label={t('loads.distance')} content={details.distanceMiles == null ? '—' : `${formatNumber(details.distanceMiles)} mi`} />
             <Metric label="RPM" content={details.ratePerMile == null ? '—' : `${formatCurrency(details.ratePerMile)}/mi`} />
           </div>
+          <LoadTrashAction load={load} onTrashLoad={onTrashLoad} />
           <button ref={closeRef} type="button" onClick={onClose} aria-label={t('common.close')} className="rounded-lg p-2 text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800"><X className="h-5 w-5" /></button>
         </header>
 

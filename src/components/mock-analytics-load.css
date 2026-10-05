@@ -101,6 +101,28 @@
 .ml-list-open { display:inline-flex; align-items:center; gap:3px; border:1px solid var(--line); border-radius:6px; background:var(--surface); padding:6px 8px; white-space:nowrap; font-size:11px!important; }
 .ml-list-open:hover,.ml-list-real:hover { border-color:#0e7167; }
 .ml-list-footnote { color:var(--muted); font-size:10px; }
+.dark .ml-list-table th { background:var(--canvas); }
+.dark .ml-list-table tbody tr:hover,.dark .ml-list-table tbody tr:focus-visible { background:var(--accent-soft); }
+.dark .ml-list-table tbody tr:focus-visible { outline-color:var(--accent); }
+.dark .ml-list-id { color:var(--accent); }
+.dark .ml-list-tabs button[aria-pressed="true"] { color:var(--accent); border-color:var(--accent); }
+.dark .ml-list-tabs span { background:var(--accent-soft); color:var(--accent); }
+.dark .ml-list-open:hover,.dark .ml-list-real:hover { border-color:var(--accent); }
+.dark .ml-list-status,.dark .ml-delivered { background:#213e34; color:#9cddba; }
+.dark .ml-list-status.is-active,.dark .ml-delivered.is-active { background:#20394b; color:#9bcefa; }
+.dark .ml-demo-tag { background:#443b27; color:#f0ce83; }
+.dark .mock-load-page { --ml-blue:#9bcefa; --ml-green:#9cddba; }
+.dark .ml-back,.dark .ml-refs,.dark .ml-stop span:not(.ml-stop-mark),.dark .ml-stop small,
+.dark .ml-tabs button,.dark .ml-fact-row span,.dark .ml-card-note { color:var(--muted); }
+.dark .ml-tabs button[aria-current=page],.dark .ml-tabs button:hover { color:var(--ml-green); }
+.dark .ml-distance span { color:var(--ml-blue); }
+.dark .ml-badges span,.dark .ml-card-blue .ml-card-icon { background:#20394b; color:var(--ml-blue); }
+.dark .ml-badges .ml-cold,.dark .ml-card-red .ml-card-icon { background:#482e39; color:#f2a5b2; }
+.dark .ml-card-icon,.dark .ml-notice { background:#213e34; color:var(--ml-green); }
+.dark .ml-fact-total { background:linear-gradient(90deg,#203a34,#234239); }
+.dark .ml-fact-total strong { color:var(--ml-green); }
+.dark .ml-card-red .ml-fact-total { background:linear-gradient(90deg,#392b33,#482e39); }
+.dark .ml-card-red .ml-fact-total strong { color:var(--ink); }
 @media (max-height:820px) {
   .mock-load-page { gap:7px; }
   .ml-hero { height:160px; flex-basis:160px; }
