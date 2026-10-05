@@ -72,7 +72,7 @@ try {
   await migration('20261003090135_trip_analytics_read_only_actor.sql');
   await migration('202609240010_driver_analytics.sql');
   sql('alter function public.get_driver_analytics(timestamptz,timestamptz) volatile;');
-  await migration('20261005203020_load_trash_restore.sql');
+  await migration('20261005205741_load_trash_restore.sql');
   sql(await readFile(path.join(root, 'scripts/load-trash-test-fixtures/checks.sql'), 'utf8'));
 
   // Same load, separate sessions: the losing stale action must fail after waiting.
