@@ -30,9 +30,9 @@ export async function issueLoadPreviewTicket(
   return { payload, signature };
 }
 
-export async function verifyLoadPreviewTicket(
+async function verifyBoundPreviewTicket(
   ticket: { payload: unknown; signature: unknown },
-  binding: { actorId: string; companyId: string; checksum: string; fileName: string; mimeType: string; version: number },
+  binding: Record<string, unknown>,
   secret: string,
   now = Date.now(),
 ) {
@@ -50,4 +50,24 @@ export async function verifyLoadPreviewTicket(
     throw Error('PREVIEW_TICKET_EXPIRED_OR_MISMATCHED');
   }
   return parsed.candidate;
+}
+
+export async function verifyLoadPreviewTicket(
+  ticket: { payload: unknown; signature: unknown },
+  binding: { actorId: string; companyId: string; checksum: string; fileName: string; mimeType: string; version: number },
+  secret: string,
+  now = Date.now(),
+) {
+  return verifyBoundPreviewTicket(ticket, binding, secret, now);
+}
+
+// Read-only enrichment needs no file re-upload. Finalizing a load must still use
+// the full file/checksum/version binding in verifyLoadPreviewTicket above.
+export async function verifyLoadPreviewContactsTicket(
+  ticket: { payload: unknown; signature: unknown },
+  binding: { actorId: string; companyId: string },
+  secret: string,
+  now = Date.now(),
+) {
+  return verifyBoundPreviewTicket(ticket, binding, secret, now);
 }

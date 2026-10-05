@@ -115,23 +115,7 @@ export default function TopHeader({
             <ArrowLeft size={18} aria-hidden="true" />
           </button>
         )}
-        {selectedDriver ? (
-          <div className="header-driver-identity">
-            <span className="header-driver-avatar">
-              {selectedDriver.name.charAt(0)}{selectedDriver.name.split(' ')[1]?.charAt(0) || ''}
-              {selectedDriver.avatar && (
-                <img
-                  src={selectedDriver.avatar}
-                  alt=""
-                  onError={(event) => { event.currentTarget.style.display = 'none'; }}
-                />
-              )}
-            </span>
-            <h1>{selectedDriver.name}</h1>
-          </div>
-        ) : (
-          <h1>{t(titleKeys[activeTab] || 'nav.management')}</h1>
-        )}
+        {!selectedDriver && <h1>{t(titleKeys[activeTab] || 'nav.management')}</h1>}
       </div>
       <div className="header-actions">
         <div

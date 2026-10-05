@@ -140,6 +140,11 @@ ketma-ketlik bo‘yicha alohida tekshiriladi.
 
 ## Push worker scheduler runbook
 
+Cron ulanishi uchun yangi alohida `PUSH_CRON_TOKEN` va
+`MEDIA_CLEANUP_CRON_TOKEN` qo‘llab-quvvatlanadi; eski worker tokenlari saqlanadi.
+Vault, jadval, HTTP natijalari va ishga tushirish tartibi:
+[Chat Cron runbook](../docs/chat-cron.md).
+
 `process-push-notifications` o‘z-o‘zidan ishga tushmaydi. Supabase Cron yoki tashqi scheduler har daqiqada function endpoint’iga `POST` yuborishi, `X-Worker-Token` headerida Supabase secret sifatida saqlangan `PUSH_WORKER_TOKEN`ni berishi kerak. Body sifatida `{ "batchSize": 3 }` yetarli. Scheduler faqat HTTP statusni emas, javobdagi `claimed`, `completed`, `failed`, `transitionFailures` va `deadlineReached` maydonlarini ham kuzatishi kerak; non-2xx yoki nol bo‘lmagan failure qiymati alert yaratadi. `FIREBASE_SERVICE_ACCOUNT_JSON` to‘liq service-account JSON bo‘lib, faqat server-side Supabase secret sifatida saqlanadi; uni Vite yoki mobil environment’ga yozish mumkin emas.
 
 Worker `claim_push_deliveries` bilan har notification/qurilma juftligini atomik egallaydi. Muvaffaqiyat `complete_push_delivery` bilan `sent` bo‘ladi; vaqtinchalik xato `fail_push_delivery` orqali qayta navbatga tushadi, doimiy provider xatosi esa terminal `cancelled` holatiga o‘tadi. `(notification_id, device_id)` queue dublikatini oldini oladi. FCM qabul qilganidan keyin DB acknowledgement yo‘qolsa external delivery at-least-once bo‘lib, qayta yuborilishi mumkin; klient `notificationId` bo‘yicha dublikatni yutishi shart. Worker ko‘pi bilan 9 ta delivery claim qiladi, ularni uchta parallel so‘rov bilan yuboradi va deadline oldidan ishlanmagan claimlarni qayta navbatga bo‘shatadi. Worker crashidan keyin besh daqiqadan eski `processing` lease keyingi claimda qayta egallanadi. FCM `UNREGISTERED` javobini qaytargan device token bazadan o‘chiriladi; har user uchun 10 ta faol qurilma limiti bor.

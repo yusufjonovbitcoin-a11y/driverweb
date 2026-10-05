@@ -31,6 +31,14 @@ export function createAuthStateController({ loadUser, onChange, defer = () => ne
         throw error;
       }
     },
+    applyProfileUpdate(userId, data) {
+      if (disposed || state.session?.user?.id !== userId || state.currentUser?.id !== userId) return;
+      // Invalidate older profile reads, without accepting role/email changes.
+      version += 1;
+      publish({ currentUser: { ...state.currentUser, name: data.full_name, phone: data.phone || '',
+        company: data.company_name ?? state.currentUser.company,
+        avatarInitial: data.full_name?.charAt(0)?.toUpperCase() || 'U' }, loading: false });
+    },
     dispose() {
       disposed = true;
       version += 1;

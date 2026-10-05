@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import vm from 'node:vm';
+import { readFileSync } from 'node:fs';
 import { rolldown } from 'rolldown';
 import { DOCUMENT_EXTRACTION_VERSION } from '../supabase/functions/_shared/load-document-fields.ts';
 
@@ -135,6 +136,87 @@ test('selecting a PDF returns a browser-only preview without import, load or med
   assert.ok(result.preparedLoad.previewTicket?.signature);
   assert.equal(h.requests.length,1);
   assert.deepEqual(h.tables,['profiles']);
+});
+
+test('confirm upload stores one Rate Con in private Supabase Storage, not Cloudinary',()=>{
+  const source = readFileSync(new URL('../supabase/functions/parse-load-document/index.ts',import.meta.url),'utf8');
+  const begin = source.indexOf('"begin_document_upload"');
+  const upload = source.indexOf('.upload(storagePath, file, { contentType: file.type, upsert: false })');
+  const complete = source.indexOf('"complete_document_upload"');
+  const link = source.indexOf(".update({ storage_path: storagePath })");
+  assert.ok(begin > 0 && upload > begin && complete > upload && link > complete);
+  assert.match(source,/uploadPlan\?\.bucket !== 'load-documents'/);
+  assert.equal(source.match(/\.upload\(storagePath, file,/g)?.length,1);
+  assert.doesNotMatch(source,/uploadPrivateMedia|bind_document_version_media/);
+});
+
+test('real persist path uploads the original PDF once, completes its version, and links the same path',async()=>{
+  let handler;
+  const events=[];
+  const storagePath='company/load/document/version/rate.pdf';
+  const query=table=>{
+    let action='read';
+    const builder={
+      select(_fields,options){if(options?.head) action='count';return this;},
+      eq(){return this;},gte(){return this;},not(){return this;},order(){return this;},limit(){return this;},
+      insert(value){action='insert';events.push(['insert',table,value]);return this;},
+      update(value){action='update';events.push(['update',table,value]);return this;},
+      async maybeSingle(){return {data:table==='profiles'
+        ? {id:'test-user',company_id:'company',role:'dispatcher',status:'active'} : null,error:null};},
+      async single(){return {data:action==='insert' && table==='manual_load_imports'
+        ? {id:'import-id'} : null,error:null};},
+      then(resolve,reject){return Promise.resolve({count:action==='count'?0:null,data:null,error:null}).then(resolve,reject);},
+    };
+    return builder;
+  };
+  const client={
+    auth:{getUser:async()=>({data:{user:{id:'test-user'}}})},
+    from:query,
+    rpc:async(name,args)=>{
+      events.push(['rpc',name,args]);
+      if(name==='consume_edge_rate_limit') return {data:true,error:null};
+      if(name==='create_load_draft') return {data:'load-id',error:null};
+      if(name==='begin_document_upload') return {data:{bucket:'load-documents',storagePath,versionId:'version-id'},error:null};
+      return {data:null,error:null};
+    },
+    storage:{from(bucket){assert.equal(bucket,'load-documents');return {upload:async(path,file,options)=>{
+      events.push(['upload',path,{name:file.name,type:file.type,size:file.size},options]);
+      return {data:{path},error:null};
+    }};}},
+  };
+  const environment={SUPABASE_URL:'https://test.invalid',SUPABASE_ANON_KEY:'test',SUPABASE_SERVICE_ROLE_KEY:'test',OPENAI_API_KEY:'test'};
+  vm.runInNewContext(output[0].code,{testClient:client,
+    Deno:{env:{get:name=>environment[name]},serve:fn=>{handler=fn;}},
+    console:{info(){},error(){}},performance,AbortSignal,Response,Request,File,FormData,Headers,
+    URL,crypto,TextEncoder,TextDecoder,Uint8Array,btoa,Intl,structuredClone,
+    fetch:async()=>{
+      const candidate=extraction();
+      const fact=(value,path)=>({value,page:1,quote:candidate.evidence.find(e=>e.field===path)?.quote??null});
+      const wire={loadNumber:fact(candidate.loadNumber,'loadNumber'),requirements:[],contractTerms:[],
+        documentReview:candidate.documentReview,
+        stops:['pickup','delivery'].map(role=>({role,...Object.fromEntries(Object.entries(candidate[role])
+          .map(([key,value])=>[key,fact(value,`${role}.${key}`)]))}))};
+      return Response.json({status:'completed',output:[{content:[{type:'output_text',text:JSON.stringify(wire)}]}]});
+    },
+  });
+  const form=new FormData();
+  form.set('file',new File(['%PDF-1.7\nTest'],'rate.pdf',{type:'application/pdf'}));
+  const response=await handler(new Request('https://test.invalid/parse-load-document',{
+    method:'POST',headers:{Authorization:'Bearer test'},body:form,
+  }));
+  const result=await response.json();
+  assert.equal(response.status,200,JSON.stringify(result));
+  assert.equal(result.loadId,'load-id');
+  assert.deepEqual(JSON.parse(JSON.stringify(events.filter(event=>event[0]==='upload'))),[
+    ['upload',storagePath,{name:'rate.pdf',type:'application/pdf',size:13},
+      {contentType:'application/pdf',upsert:false}],
+  ]);
+  const begin=events.findIndex(event=>event[1]==='begin_document_upload');
+  const upload=events.findIndex(event=>event[0]==='upload');
+  const complete=events.findIndex(event=>event[1]==='complete_document_upload');
+  const link=events.findIndex(event=>event[0]==='update' && event[1]==='manual_load_imports'
+    && event[2].storage_path===storagePath);
+  assert.ok(begin>=0 && upload>begin && complete>upload && link>complete);
 });
 
 test('review warnings do not produce a document-review rejection on Send',async()=>{

@@ -1,19 +1,26 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import mapboxgl from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
+import { mapFailureState } from './mapHealth.js';
 import {
   buildMapboxGeometry,
   DEFAULT_MAP_CENTER,
+  mapboxFocusPoints,
+  mapboxLineFeatures,
   shouldFitMapbox,
   validMapCoordinate,
+  validMapStops,
 } from './mapboxMapModel';
 
 const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_ACCESS_TOKEN?.trim();
 const MAPBOX_STYLE = import.meta.env.VITE_MAPBOX_STYLE_URL?.trim()
   || 'mapbox://styles/mapbox/streets-v12';
+const EMPTY_FEATURES = [];
 
-function markerElement(color, label, title = label, icon = null) {
-  const element = document.createElement('span');
+function markerElement(color, label, title = label, icon = null, interactive = false) {
+  const element = document.createElement(interactive ? 'button' : 'span');
+  if (interactive) element.type = 'button';
   element.title = title;
   element.setAttribute('aria-label', title);
   if (icon === 'truck') {
@@ -36,9 +43,23 @@ function markerElement(color, label, title = label, icon = null) {
     element.append(svg);
   } else {
     element.textContent = label;
-    element.style.cssText = `display:grid;place-items:center;width:25px;height:25px;border:3px solid white;border-radius:50%;background:${color};color:white;font:700 11px/1 system-ui;box-shadow:0 2px 9px #0006`;
+    element.style.cssText = `display:grid;place-items:center;width:32px;height:32px;padding:0;border:3px solid white;border-radius:50%;background:${color};color:white;font:700 10px/1 system-ui;box-shadow:0 2px 9px #0006`;
   }
   return element;
+}
+
+function stopPopup(stop, title) {
+  const content = document.createElement('div');
+  content.style.cssText = 'color:#172c3a;font:12px/1.5 system-ui;max-width:240px';
+  const heading = document.createElement('strong');
+  heading.textContent = title;
+  content.append(heading);
+  for (const text of [stop.facility, stop.address, [stop.city, stop.state, stop.postalCode].filter(Boolean).join(', ')].filter(Boolean)) {
+    const line = document.createElement('div');
+    line.textContent = text;
+    content.append(line);
+  }
+  return content;
 }
 
 function clearMarkers(markers) {
@@ -48,7 +69,10 @@ function clearMarkers(markers) {
 
 export default function TrackingMap({ points, deadheadPoints, livePosition, routeKey, title, routeStops,
   lineColor = '#2563eb', liveMarkerText = 'D', liveMarkerIcon = null,
-  pickupLabel = 'A', deliveryLabel = 'B', liveLabel = 'D', isVisible = true }) {
+  pickupLabel = 'A', deliveryLabel = 'B', liveLabel = 'D', isVisible = true,
+  viewportPadding = 70, focusRequest = 0, recordedLine = false,
+  fitToStops = false, locatingStops = false, recordedFeatures = EMPTY_FEATURES, mapStyle = MAPBOX_STYLE }) {
+  const { t } = useTranslation();
   const containerRef = useRef(null);
   const mapRef = useRef(null);
   const markersRef = useRef([]);
@@ -56,13 +80,19 @@ export default function TrackingMap({ points, deadheadPoints, livePosition, rout
   const liveMarkerStyleRef = useRef(null);
   const fittedRouteRef = useRef(null);
   const [status, setStatus] = useState('loading');
+  const [resourceError, setResourceError] = useState(false);
+  const [retry, setRetry] = useState(0);
   const liveLatitude = livePosition?.lat;
   const liveLongitude = livePosition?.lng;
   const geometry = useMemo(() => buildMapboxGeometry(points), [points]);
+  const lineFeatures = useMemo(() => mapboxLineFeatures(points, recordedLine), [points, recordedLine]);
   const deadhead = useMemo(() => buildMapboxGeometry(deadheadPoints || []), [deadheadPoints]);
+  const stops = useMemo(() => validMapStops(routeStops), [routeStops]);
+  const paddingKey = JSON.stringify(viewportPadding);
   const live = useMemo(() => validMapCoordinate(liveLatitude, liveLongitude)
     ? { lat: Number(liveLatitude), lng: Number(liveLongitude) }
     : null, [liveLatitude, liveLongitude]);
+  const waitingForStops = fitToStops && locatingStops && stops.length === 0;
 
   useEffect(() => {
     const markers = markersRef.current;
@@ -73,14 +103,22 @@ export default function TrackingMap({ points, deadheadPoints, livePosition, rout
 
     mapboxgl.accessToken = MAPBOX_TOKEN;
     fittedRouteRef.current = null;
-    const map = new mapboxgl.Map({
+    setStatus('loading');
+    setResourceError(false);
+    let loaded = false;
+    let map;
+    try { map = new mapboxgl.Map({
       container: containerRef.current,
-      style: MAPBOX_STYLE,
+      style: mapStyle,
       projection: 'mercator',
       center: [DEFAULT_MAP_CENTER.lng, DEFAULT_MAP_CENTER.lat],
       zoom: 5,
       attributionControl: true,
-    });
+    }); } catch {
+      // oxlint-disable-next-line react/set-state-in-effect -- reflect external WebGL initialization failure.
+      setStatus('error');
+      return undefined;
+    }
     map.addControl(new mapboxgl.NavigationControl(), 'bottom-right');
     map.on('load', () => {
       map.addSource('driver-track', {
@@ -97,9 +135,20 @@ export default function TrackingMap({ points, deadheadPoints, livePosition, rout
       map.addSource('driver-deadhead', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
       map.addLayer({ id: 'driver-deadhead-line', type: 'line', source: 'driver-deadhead',
         paint: { 'line-color': '#2563eb', 'line-width': 4, 'line-dasharray': [2, 2] } });
+      map.addSource('driver-recorded', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+      map.addLayer({ id: 'driver-recorded-line', type: 'line', source: 'driver-recorded',
+        layout: { 'line-join': 'round', 'line-cap': 'round' },
+        paint: { 'line-color': '#2563eb', 'line-width': 4, 'line-dasharray': [2, 1.5], 'line-opacity': 0.95 } });
+      loaded = true;
+      setResourceError(false);
       setStatus('ready');
     });
-    map.on('error', () => setStatus('error'));
+    map.on('error', () => {
+      const next = mapFailureState(loaded);
+      setStatus(next.status);
+      setResourceError(next.resourceError);
+    });
+    map.on('idle', () => { if (loaded) setResourceError(false); });
     mapRef.current = map;
 
     return () => {
@@ -110,13 +159,14 @@ export default function TrackingMap({ points, deadheadPoints, livePosition, rout
       map.remove();
       mapRef.current = null;
     };
-  }, []);
+  }, [retry, mapStyle]);
 
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return undefined;
     if (!isVisible) {
       map.stop();
+      fittedRouteRef.current = null;
       return undefined;
     }
     let frame;
@@ -142,30 +192,28 @@ export default function TrackingMap({ points, deadheadPoints, livePosition, rout
     map.setPaintProperty('driver-track-line', 'line-color', lineColor);
     map.getSource('driver-track')?.setData({
       type: 'FeatureCollection',
-      features: geometry.lineCoordinates.length < 2 ? [] : [{
-        type: 'Feature',
-        geometry: { type: 'LineString', coordinates: geometry.lineCoordinates },
-        properties: {},
-      }],
+      features: lineFeatures,
     });
+    map.getSource('driver-recorded')?.setData({ type: 'FeatureCollection', features: recordedFeatures });
     clearMarkers(markersRef.current);
 
-    if (routeStops?.length > 2) {
-      routeStops.forEach(stop => {
-        if (!validMapCoordinate(stop.latitude, stop.longitude)) return;
-        const title = `${stop.sequence} · ${stop.role === 'pickup' ? pickupLabel : deliveryLabel}`;
-        markersRef.current.push(new mapboxgl.Marker({ element: markerElement(stop.role === 'pickup' ? '#008573' : '#ef4444', String(stop.sequence), title) })
-          .setLngLat([stop.longitude, stop.latitude]).addTo(map));
+    if (routeStops?.length) {
+      stops.forEach(stop => {
+        const label = stop.markerLabel || (routeStops.length > 2 ? String(stop.sequence) : stop.role === 'pickup' ? 'A' : 'B');
+        const title = `${label} · ${stop.role === 'pickup' ? pickupLabel : deliveryLabel}`;
+        markersRef.current.push(new mapboxgl.Marker({ element: markerElement(stop.role === 'pickup' ? '#008573' : '#ef4444', label, title, null, true) })
+          .setLngLat([stop.longitude, stop.latitude])
+          .setPopup(new mapboxgl.Popup({ offset: 18 }).setDOMContent(stopPopup(stop, title))).addTo(map));
       });
     } else if (geometry.start) {
       markersRef.current.push(new mapboxgl.Marker({ element: markerElement('#008573', 'A', pickupLabel) })
         .setLngLat([geometry.start.lng, geometry.start.lat]).addTo(map));
     }
-    if (!(routeStops?.length > 2) && geometry.end && geometry.path.length > 1) {
+    if (!routeStops?.length && geometry.end && geometry.path.length > 1) {
       markersRef.current.push(new mapboxgl.Marker({ element: markerElement('#ef4444', 'B', deliveryLabel) })
         .setLngLat([geometry.end.lng, geometry.end.lat]).addTo(map));
     }
-  }, [geometry, deadhead, status, isVisible, lineColor, pickupLabel, deliveryLabel, routeStops]);
+  }, [geometry, lineFeatures, recordedFeatures, deadhead, status, isVisible, lineColor, pickupLabel, deliveryLabel, routeStops, stops]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -179,8 +227,9 @@ export default function TrackingMap({ points, deadheadPoints, livePosition, rout
     const markerStyle = JSON.stringify([liveMarkerText, liveLabel, liveMarkerIcon]);
     if (!liveMarkerRef.current || liveMarkerStyleRef.current !== markerStyle) {
       liveMarkerRef.current?.remove();
-      liveMarkerRef.current = new mapboxgl.Marker({ element: markerElement('#1d4ed8', liveMarkerText, liveLabel, liveMarkerIcon) })
-        .setLngLat([live.lng, live.lat]).addTo(map);
+      liveMarkerRef.current = new mapboxgl.Marker({ element: markerElement('#1d4ed8', liveMarkerText, liveLabel, liveMarkerIcon, true) })
+        .setLngLat([live.lng, live.lat])
+        .setPopup(new mapboxgl.Popup({ offset: 18 }).setText(liveLabel)).addTo(map);
       liveMarkerStyleRef.current = markerStyle;
     } else {
       liveMarkerRef.current.setLngLat([live.lng, live.lat]);
@@ -189,15 +238,23 @@ export default function TrackingMap({ points, deadheadPoints, livePosition, rout
 
   useEffect(() => {
     const map = mapRef.current;
-    if (!isVisible || status !== 'ready' || !map) return;
-    const hasRoute = geometry.path.length > 0;
-    if (shouldFitMapbox(fittedRouteRef.current, routeKey, hasRoute)) {
-      fittedRouteRef.current = { routeKey, hasRoute };
-      const focusPoints = [...geometry.path, ...deadhead.path, ...(live ? [live] : [])];
+    if (!isVisible || status !== 'ready' || !map || waitingForStops) return;
+    const path = geometry.path.length ? geometry.path : recordedFeatures.flatMap(feature =>
+      feature.geometry.coordinates.map(([lng, lat]) => ({ lng, lat })));
+    const focusPoints = mapboxFocusPoints({ path, deadheadPath: deadhead.path, stops, live, fitToStops });
+    const hasRoute = focusPoints.length > 0;
+    const cameraKey = `${routeKey}:${paddingKey}:${focusRequest}:${fitToStops}:${!fitToStops && Boolean(live)}:${JSON.stringify(stops.map(stop => [stop.lat, stop.lng]))}`;
+    if (shouldFitMapbox(fittedRouteRef.current, cameraKey, hasRoute)) {
+      // The page stays mounted while hidden. Resize before fitting on re-entry.
+      if (!containerRef.current?.clientWidth || !containerRef.current?.clientHeight) return;
+      map.resize();
+      fittedRouteRef.current = { routeKey: cameraKey, hasRoute };
+      const padding = JSON.parse(paddingKey);
       if (focusPoints.length === 1) {
         map.jumpTo({
           center: [focusPoints[0].lng, focusPoints[0].lat],
           zoom: 14,
+          padding, retainPadding: false,
         });
       } else if (focusPoints.length > 1) {
         const first = focusPoints[0];
@@ -205,26 +262,29 @@ export default function TrackingMap({ points, deadheadPoints, livePosition, rout
           (current, point) => current.extend([point.lng, point.lat]),
           new mapboxgl.LngLatBounds([first.lng, first.lat], [first.lng, first.lat]),
         );
-        map.fitBounds(bounds, { padding: 70, maxZoom: 14, duration: 0 });
+        map.fitBounds(bounds, { padding, retainPadding: false, maxZoom: 14, duration: 0 });
       } else {
         map.jumpTo({ center: [DEFAULT_MAP_CENTER.lng, DEFAULT_MAP_CENTER.lat], zoom: 5 });
       }
     }
-  }, [geometry, deadhead, live, routeKey, status, isVisible]);
+  }, [geometry, recordedFeatures, deadhead, live, routeKey, status, isVisible, paddingKey, focusRequest, stops, fitToStops, waitingForStops]);
 
   return (
     <div className="relative h-full w-full">
       <div ref={containerRef} role="img" aria-label={title} className="h-full w-full" />
-      {status === 'loading' && (
+      {(status === 'loading' || (status === 'ready' && waitingForStops)) && (
         <div className="absolute inset-0 grid place-items-center bg-zinc-100 text-sm text-zinc-500 dark:bg-zinc-900">
           Mapbox…
         </div>
       )}
       {status === 'error' && (
         <div className="absolute inset-0 grid place-items-center bg-zinc-100 px-6 text-center text-sm font-semibold text-red-600 dark:bg-zinc-900 dark:text-red-400">
-          Mapbox token sozlanmagan yoki ishlamayapti
+          <div role="alert"><p>{t('map.displayError')}</p><button type="button" className="mt-3 rounded border px-3 py-2" onClick={() => setRetry(value => value + 1)}>{t('map.retry')}</button></div>
         </div>
       )}
+      {status === 'ready' && resourceError && <div role="status" className="absolute left-3 top-3 z-10 max-w-xs rounded-lg bg-white px-3 py-2 text-xs text-amber-800 shadow dark:bg-zinc-900 dark:text-amber-200">
+        {t('map.resourceError')} <button type="button" className="font-bold underline" onClick={() => setRetry(value => value + 1)}>{t('map.retry')}</button>
+      </div>}
     </div>
   );
 }

@@ -3,21 +3,29 @@ import { useTranslation } from 'react-i18next';
 import { OperationScope, acquireCallMedia, stopMediaStream } from '../services/chatAsyncSafety';
 import React, { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
-  CheckCheck, Download, FileText, Image as ImageIcon, Link2, LoaderCircle,
+  Check, CheckCheck, Clock3, Download, FileText, Image as ImageIcon, Link2, LoaderCircle,
   Mail, Maximize2, Mic, MicOff, MonitorUp, Music2, PanelRight, Paperclip, Pencil, Phone, PhoneOff,
   Search, Send, ShieldCheck, Smile, Square, Trash2, UserRound, Video, VideoOff, X,
 } from 'lucide-react';
 import {
-  deleteChatMessage, editChatMessage, fetchCallSignals, fetchChatMessages, fetchChatPreviews, fetchRingingCalls, fetchRtcIceServers, fetchUnreadChatCountsByDriver, heartbeatCall, markChatUnread, openChat, refreshChatMessageMedia, syncChatHistory, searchChatMessages, fetchChatMediaCounts,
+  clearChatUnread, deleteChatMessage, editChatMessage, fetchCallSignals, fetchChatMessages, fetchChatPreviews, fetchRingingCalls, fetchRtcIceServers, fetchUnreadChatCountsByDriver, heartbeatCall, hydrateChatMessageMedia, markChatUnread, openChat, refreshChatMessageMedia, syncChatHistory, searchChatMessages, fetchChatMediaCounts,
   publishSignal, respondCall, sendMediaMessage, sendTextMessage, startCall, subscribeCalls, subscribeChat, subscribeChatPreviews,
 } from '../services/chatService';
 import { buildChatCursor, mergeChatMessages } from '../services/chatReliability';
 import { RtcSignalQueue } from '../services/rtcSignalQueue';
 import { formatDate, formatDateTime, formatTime } from '../i18n/format';
+import { displayDayKey, relativeDisplayDay } from '../i18n/timeZone.js';
 import { localizedError } from '../i18n/errors';
 import { positionChatContextMenu } from './chatContextMenu';
 import ChatTimeline, { ChatReadBoundary } from './ChatTimeline';
 import { useChatReadReceipts } from '../hooks/useChatReadReceipts';
+import { chatAccountKey, ChatOutbox, ChatSessionCache } from '../services/chatSession';
+import { ChatSearchScope } from '../services/chatSubscription';
+import { ChatMediaOutbox } from '../services/chatMediaOutbox';
+import { openChatAttachment } from '../services/openChatAttachment';
+import { createChatRecovery } from '../services/chatRecovery';
+import { ChatPaginationScope } from '../services/chatPaginationScope';
+import { Virtuoso } from 'react-virtuoso';
 
 const terminalCallStates = new Set(['declined', 'missed', 'ended']);
 
@@ -26,17 +34,14 @@ function messageTime(value) {
 }
 
 function messageDayKey(value) {
-  return new Date(value).toDateString();
+  return displayDayKey(value);
 }
 
 function messageDayLabel(value, t) {
-  const date = new Date(value);
-  const today = new Date();
-  const yesterday = new Date();
-  yesterday.setDate(today.getDate() - 1);
-  if (date.toDateString() === today.toDateString()) return t('common.today');
-  if (date.toDateString() === yesterday.toDateString()) return t('common.yesterday');
-  return formatDate(date, { day: 'numeric', month: 'long' });
+  const relative = relativeDisplayDay(value);
+  if (relative === 'today') return t('common.today');
+  if (relative === 'yesterday') return t('common.yesterday');
+  return formatDate(value, { day: 'numeric', month: 'long' });
 }
 
 function messagePreview(message, t) {
@@ -112,6 +117,14 @@ function MediaMessage({ message, onRefresh }) {
   const attemptsRef = useRef(0);
   const [failed, setFailed] = useState(false);
   const [recovering, setRecovering] = useState(false);
+  useEffect(() => {
+    if (message.kind === 'file' || message.mediaUrl) return;
+    let active = true;
+    // oxlint-disable-next-line react/set-state-in-effect -- begin an external media URL request for a newly mounted viewport row.
+    setRecovering(true);
+    onRefresh(message, false).catch(() => { if (active) setFailed(true); }).finally(() => { if (active) setRecovering(false); });
+    return () => { active = false; };
+  }, [message, onRefresh]);
   const retry = async (manual = false) => {
     if (recovering || (!manual && attemptsRef.current >= 1)) { setFailed(true); return; }
     attemptsRef.current += 1;
@@ -125,6 +138,18 @@ function MediaMessage({ message, onRefresh }) {
       setRecovering(false);
     }
   };
+  if (message.kind === 'file') {
+    return <button type="button" disabled={recovering} onClick={async () => {
+      setRecovering(true); setFailed(false);
+      try { await openChatAttachment(message, (row) => onRefresh(row, true)); }
+      catch { setFailed(true); }
+      finally { setRecovering(false); }
+    }} className="flex items-center gap-2 font-semibold underline disabled:opacity-60">
+      <FileText className="w-5 h-5 shrink-0" />
+      <span className="truncate">{recovering ? t('chat.mediaRefreshing') : failed ? t('chat.reloadMedia') : message.file_name || t('common.file')}</span>
+      <Download className="w-4 h-4 shrink-0" />
+    </button>;
+  }
   if (!message.mediaUrl || failed) {
     return <button type="button" onClick={() => retry(true)} disabled={recovering} className="font-bold underline disabled:opacity-60">{recovering ? t('chat.mediaRefreshing') : t('chat.reloadMedia')}</button>;
   }
@@ -160,11 +185,23 @@ export default function DispatchChat({
   const [selectedDriverId, setSelectedDriverId] = useState(activeChatDriver?.id || drivers[0]?.id || null);
   const [conversationId, setConversationId] = useState(null);
   const [messages, setMessages] = useState([]);
+  const [chatCache] = useState(() => new ChatSessionCache(chatAccountKey(currentUser)));
+  const [outbox] = useState(() => new ChatOutbox(chatAccountKey(currentUser)));
+  const [pendingTexts, setPendingTexts] = useState(() => outbox.list());
+  const [mediaOutbox] = useState(() => new ChatMediaOutbox(chatAccountKey(currentUser)));
+  const [pendingMedia, setPendingMedia] = useState([]);
+  const [searchScope] = useState(() => new ChatSearchScope());
+  const [paginationScope] = useState(() => new ChatPaginationScope());
+  const [searchRevision, setSearchRevision] = useState(0);
+  const cacheDriverRef = useRef(null);
+  const conversationIdRef = useRef(null);
+  const [scrollSnapshot, setScrollSnapshot] = useState(null);
+  const [hasNewerMessages, setHasNewerMessages] = useState(false);
   const [inputMessage, setInputMessage] = useState('');
   const [loading, setLoading] = useState(false);
+  const [historyError, setHistoryError] = useState('');
   const [sending, setSending] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(null);
-  const [failedUpload, setFailedUpload] = useState(null);
   const [hasOlderMessages, setHasOlderMessages] = useState(false);
   const [loadingOlder, setLoadingOlder] = useState(false);
   const [connectionStatus, setConnectionStatus] = useState('connecting');
@@ -238,13 +275,58 @@ export default function DispatchChat({
     translationRef.current = t;
   }, [isVisible, onUnreadChange, drivers, t]);
 
-  useLayoutEffect(() => { messagesRef.current = messages; }, [messages]);
+  useLayoutEffect(() => { messagesRef.current = messages; conversationIdRef.current = conversationId; }, [messages, conversationId]);
+  useLayoutEffect(() => {
+    if (cacheDriverRef.current) chatCache.setDraft(cacheDriverRef.current, inputMessage);
+  }, [chatCache, inputMessage]);
+  const applyMessages = useCallback((rows, options) => {
+    if (!cacheDriverRef.current) return;
+    for (const row of rows) if (row.client_id && row.sender_id === currentUser.id) {
+      outbox.acknowledge(row.client_id);
+      if (row.kind !== 'text') void mediaOutbox.acknowledge(row.client_id).catch(() => {});
+    }
+    setPendingTexts(outbox.list());
+    const next = chatCache.merge(cacheDriverRef.current, rows, options);
+    setHasNewerMessages(Boolean(chatCache.get(cacheDriverRef.current).detached));
+    messagesRef.current = next;
+    setMessages(next);
+  }, [chatCache, currentUser.id, outbox, mediaOutbox]);
+  const saveScroll = useCallback((snapshot) => {
+    for (const entry of chatCache.entries.values()) if (entry.conversationId === conversationId) entry.scroll = snapshot;
+  }, [chatCache, conversationId]);
+  useEffect(() => {
+    const flush = () => chatCache.flush();
+    const clear = ({ detail }) => { if (detail === chatAccountKey(currentUser)) { outbox.clear(); chatCache.close(); void mediaOutbox.clear().catch(() => {}); } };
+    const otherTabLogout = () => {
+      if (outbox.isCurrent()) return;
+      outbox.closed = true; outbox.rows.clear(); chatCache.close(); mediaOutbox.close();
+      setMessages([]); setPendingTexts([]); setInputMessage('');
+    };
+    window.addEventListener('pagehide', flush);
+    window.addEventListener('drivex-chat-logout', clear);
+    window.addEventListener('storage', otherTabLogout);
+    return () => { window.removeEventListener('pagehide', flush); window.removeEventListener('drivex-chat-logout', clear); window.removeEventListener('storage', otherTabLogout); chatCache.flush(); };
+  }, [chatCache, currentUser, outbox, mediaOutbox]);
+  useEffect(() => {
+    const off = mediaOutbox.subscribe(() => setPendingMedia(mediaOutbox.list()));
+    const restore = async () => {
+      try {
+        await mediaOutbox.restore();
+        for (const entry of chatCache.entries.values()) for (const row of entry.messages) {
+          if (row.client_id && row.sender_id === currentUser.id && row.kind !== 'text') await mediaOutbox.acknowledge(row.client_id);
+        }
+      } catch { /* A new upload reports unavailable durable storage explicitly. */ }
+    };
+    void restore();
+    window.addEventListener('focus', restore);
+    return () => { off(); window.removeEventListener('focus', restore); };
+  }, [mediaOutbox, chatCache, currentUser.id]);
   const onMessagesRead = useCallback((ids) => {
     const read = new Set(ids);
-    setMessages((rows) => rows.map((row) => read.has(row.id) ? { ...row, read_at: new Date().toISOString() } : row));
+    if (cacheDriverRef.current) setMessages(chatCache.patch(cacheDriverRef.current, ids, { read_at: new Date().toISOString() }));
     setSearchPage((page) => ({ ...page, messages: page.messages.map((row) => read.has(row.id) ? { ...row, read_at: new Date().toISOString() } : row) }));
     unreadChangeRef.current?.();
-  }, []);
+  }, [chatCache]);
   const readVisibleMessage = useChatReadReceipts(conversationId, isVisible && !readPaused, onMessagesRead);
 
   useEffect(() => {
@@ -282,14 +364,14 @@ export default function DispatchChat({
 
   const filteredDrivers = useMemo(() => {
     const query = driverSearch.trim().toLowerCase();
-    if (!query) return drivers;
-    return drivers.filter((driver) => (
+    const matching = query ? drivers.filter((driver) => (
       driver.name?.toLowerCase().includes(query)
       || driver.driverNumber?.toLowerCase().includes(query)
       || driver.phone?.toLowerCase().includes(query)
       || driver.truck?.toLowerCase().includes(query)
-    ));
-  }, [driverSearch, drivers]);
+    )) : [...drivers];
+    return matching.sort((left, right) => (Date.parse(driverPreviews[right.id]?.created_at) || 0) - (Date.parse(driverPreviews[left.id]?.created_at) || 0));
+  }, [driverSearch, drivers, driverPreviews]);
 
   useEffect(() => {
     if (!isVisible) return undefined;
@@ -338,19 +420,30 @@ export default function DispatchChat({
   }, [currentUser.id, isVisible]);
 
   const searching = Boolean(messageSearch.trim()) || mediaFilter !== 'all';
-  const visibleMessages = searching ? searchPage.messages : messages;
+  const historyMessages = mergeChatMessages(messages, [...pendingTexts, ...pendingMedia].filter((row) => row.conversation_id === conversationId));
+  const visibleMessages = searching ? searchPage.messages : historyMessages;
+  const searchKey = JSON.stringify([conversationId, messageSearch.trim(), mediaFilter, isVisible, searchRevision]);
+  useLayoutEffect(() => { searchScope.select(searchKey); }, [searchScope, searchKey]);
+  useLayoutEffect(() => { paginationScope.select(searchKey); }, [paginationScope, searchKey]);
   useEffect(() => {
+    // oxlint-disable-next-line react/set-state-in-effect -- a new query owns a separate pagination request.
+    setLoadingOlder(false);
+  }, [searchKey]);
+  useEffect(() => {
+    // oxlint-disable-next-line react/set-state-in-effect -- invalidate loading state owned by the previous external search request.
+    setSearchLoading(false);
     if (!isVisible || !conversationId || !searching) return;
     let active = true;
+    const isCurrent = searchScope.capture();
     const timer = setTimeout(() => {
       setSearchLoading(true);
       searchChatMessages(conversationId, messageSearch, mediaFilter)
-        .then((page) => { if (active) setSearchPage(page); })
-        .catch((cause) => { if (active) setError(localizedError(t, cause, 'errors.chatOpen')); })
-        .finally(() => { if (active) setSearchLoading(false); });
+        .then((page) => { if (active && isCurrent()) setSearchPage({ ...page, messages: page.messages.filter((row) => !chatCache.isDeleted(cacheDriverRef.current, row.id)) }); })
+        .catch((cause) => { if (active && isCurrent()) setError(localizedError(t, cause, 'errors.chatOpen')); })
+        .finally(() => { if (active && isCurrent()) setSearchLoading(false); });
     }, 300);
     return () => { active = false; clearTimeout(timer); };
-  }, [conversationId, messageSearch, mediaFilter, searching, isVisible, t]);
+  }, [conversationId, messageSearch, mediaFilter, searching, isVisible, t, searchKey, searchScope, chatCache]);
 
   useEffect(() => {
     if (!conversationId || !isVisible || !showProfile) return;
@@ -581,32 +674,45 @@ export default function DispatchChat({
 
   useEffect(() => {
     let cancelled = false;
+    let refreshing = false;
+    const refreshCalls = async () => {
+      if (refreshing || cancelled) return;
+      refreshing = true;
+      try {
+        const calls = await fetchRingingCalls();
+        if (!cancelled) {
+          calls.forEach(processCall);
+          const ringing = incomingCallRef.current;
+          if (ringing && !calls.some((call) => call.id === ringing.id)) {
+            incomingCallRef.current = null;
+            setIncomingCall(null);
+          }
+        }
+      } catch { /* Realtime remains available; foreground/reconnect retries. */ }
+      finally { refreshing = false; }
+    };
     const unsubscribe = subscribeCalls({
       onCall: processCall,
       onSignal: (signal) => handleSignal(signal).catch((signalError) => setError(localizedError(translationRef.current, signalError, 'errors.call'))),
+      onReconnect: refreshCalls,
     });
-    fetchRingingCalls()
-      .then((calls) => {
-        if (cancelled) return;
-        calls.forEach(processCall);
-      })
-      .catch((callError) => {
-        if (!cancelled) setError(localizedError(translationRef.current, callError, 'errors.call'));
-      });
+    void refreshCalls();
+    const onVisible = () => { if (document.visibilityState === 'visible') void refreshCalls(); };
+    window.addEventListener('online', onVisible);
+    document.addEventListener('visibilitychange', onVisible);
+    const timer = window.setInterval(() => { if (incomingCallRef.current) void refreshCalls(); }, 15_000);
     return () => {
       cancelled = true;
       unsubscribe();
+      window.removeEventListener('online', onVisible);
+      document.removeEventListener('visibilitychange', onVisible);
+      window.clearInterval(timer);
     };
   }, [handleSignal, processCall]);
 
   useEffect(() => {
-    fetchRtcIceServers().catch(() => {});
-  }, []);
-
-  useEffect(() => {
     // Keep the selected conversation connected across workspace navigation.
     // Visibility controls read receipts and recording, not cached history.
-    let cancelled = false;
     let subscription = null;
     const isCurrent = conversationScope.begin();
     conversationCurrentRef.current = isCurrent;
@@ -619,43 +725,44 @@ export default function DispatchChat({
     setRecording(false);
     setSending(false);
     setLoadingOlder(false);
-    setInputMessage('');
-    setFailedUpload(null);
     setUploadProgress(null);
     if (!selectedDriver?.id) return undefined;
+    const entry = chatCache.get(selectedDriver.id);
+    for (const row of entry.messages) if (row.sender_id === currentUser.id && row.client_id) outbox.acknowledge(row.client_id);
+    setPendingTexts(outbox.list());
+    cacheDriverRef.current = selectedDriver.id;
+    setInputMessage(entry.draft);
+    setScrollSnapshot(entry.scroll);
+    setHasNewerMessages(Boolean(entry.detached));
     // oxlint-disable-next-line react/set-state-in-effect -- selection starts a new external conversation request.
-    setLoading(true);
+    setLoading(!entry.conversationId);
+    setHistoryError('');
     setError('');
-    setMessages([]);
+    setMessages(entry.messages);
     setReadPaused(false);
-    messagesRef.current = [];
+    messagesRef.current = entry.messages;
     setMessageSearch('');
     setMediaFilter('all');
     setSearchPage({ messages: [], hasMore: false });
-    setHasOlderMessages(false);
-    setConversationId(null);
+    setHasOlderMessages(entry.hasMore);
+    setConversationId(entry.conversationId);
     setConnectionStatus('connecting');
-    (async () => {
-      try {
-        const id = await openChat(selectedDriver.id);
-        if (cancelled) return;
+    let syncEvents = null;
+    const recovery = createChatRecovery({
+      onState: ({ loading: busy, error: cause }) => {
+        if (!isCurrent()) return;
+        setLoading(busy && messagesRef.current.length === 0);
+        setHistoryError(cause ? localizedError(translationRef.current, cause, 'errors.chatOpen') : '');
+      },
+      load: async (attemptCurrent) => {
+        const current = () => isCurrent() && attemptCurrent();
+        if (!current()) return;
+        const id = entry.conversationId || await openChat(selectedDriver.id);
+        if (!current()) return;
+        entry.conversationId = id;
         setConversationId(id);
-        let syncRequest = null;
-        let syncEvents = [];
-        const reconcileLatest = () => {
-          if (syncRequest) return syncRequest;
-          syncEvents = [];
-          syncRequest = (async () => {
-          const page = await syncChatHistory(id, buildChatCursor(messagesRef.current), isCurrent);
-          if (cancelled || !isCurrent()) return;
-          const buffered = syncEvents;
-          setMessages((previous) => mergeChatMessages(mergeChatMessages(previous, page.messages), buffered));
-          setHasOlderMessages(page.hasMore);
-          })().finally(() => { syncRequest = null; });
-          return syncRequest;
-        };
-        syncRef.current = reconcileLatest;
-        subscription = subscribeChat({
+        if (!subscription) {
+          subscription = subscribeChat({
           conversationId: id,
           onStatus: (status) => {
             if (!isCurrent()) return;
@@ -663,36 +770,57 @@ export default function DispatchChat({
             else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') setConnectionStatus('offline');
             else if (status === 'CLOSED') setConnectionStatus('offline');
           },
-          onReconnect: () => reconcileLatest().catch(() => { if (isCurrent()) setConnectionStatus('offline'); }),
+          onReconnect: () => recovery.run(),
           onMessage: (message) => {
             if (!isCurrent()) return;
-            if (syncRequest) syncEvents.push(message);
-            setMessages((previous) => mergeChatMessages(previous, [message]));
+            syncEvents?.push(message);
+            applyMessages([message]);
+            searchScope.cancel();
+            setSearchRevision((value) => value + 1);
           },
           onMessageUpdated: (message) => {
             if (!isCurrent()) return;
-            if (syncRequest) syncEvents.push(message);
-            setMessages((previous) => mergeChatMessages(previous, [message]));
-            setSearchPage((page) => ({ ...page, messages: page.messages.filter((row) => row.id !== message.id || !message.deleted_at).map((row) => row.id === message.id ? { ...row, ...message } : row) }));
+            syncEvents?.push(message);
+            const previous = messagesRef.current.find((row) => row.id === message.id);
+            applyMessages([message]);
+            if (message.deleted_at || previous?.body !== message.body) { searchScope.cancel(); setSearchRevision((value) => value + 1); }
+            setSearchPage((page) => ({ ...page, messages: mergeChatMessages(page.messages, page.messages.some((row) => row.id === message.id) ? [message] : []) }));
           },
-        });
-        // REST history works even when the WebSocket cannot connect.
-        subscription.ready.then(reconcileLatest).catch(() => { if (isCurrent()) setConnectionStatus('offline'); });
-        await reconcileLatest();
-      } catch (loadError) {
-        if (!cancelled) {
-          setConnectionStatus('offline');
-          setError(localizedError(translationRef.current, loadError, 'errors.chatOpen'));
+          });
+          subscription.ready.then(() => recovery.run()).catch(() => { if (isCurrent()) setConnectionStatus('offline'); });
         }
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    })();
-    const refresh = () => { if (document.visibilityState === 'visible') syncRef.current?.().catch(() => { if (isCurrent()) setConnectionStatus('offline'); }); };
+        // REST history works even when the WebSocket cannot connect.
+        const buffered = [];
+        syncEvents = buffered;
+        try {
+          const page = await syncChatHistory(id, buildChatCursor(messagesRef.current), current);
+          if (!current()) return;
+          applyMessages([...page.messages, ...buffered], { replaceWindow: page.truncated });
+          setHasOlderMessages(page.hasMore);
+          entry.hasMore = page.hasMore;
+        } finally { if (syncEvents === buffered) syncEvents = null; }
+      },
+    });
+    syncRef.current = recovery.run;
+    void recovery.run();
+    const refresh = () => { if (document.visibilityState === 'visible') void recovery.run(); };
     window.addEventListener('online', refresh);
+    window.addEventListener('focus', refresh);
     document.addEventListener('visibilitychange', refresh);
-    return () => { cancelled = true; syncRef.current = null; conversationScope.cancel(); subscription?.unsubscribe(); window.removeEventListener('online', refresh); document.removeEventListener('visibilitychange', refresh); };
-  }, [selectedDriver?.id, currentUser.id, conversationScope]);
+    return () => { recovery.dispose(); syncRef.current = null; conversationScope.cancel(); subscription?.unsubscribe(); window.removeEventListener('online', refresh); window.removeEventListener('focus', refresh); document.removeEventListener('visibilitychange', refresh); };
+  }, [selectedDriver?.id, currentUser.id, conversationScope, chatCache, applyMessages, searchScope, outbox]);
+
+  useEffect(() => {
+    if (isVisible) void syncRef.current?.();
+  }, [isVisible, selectionRequestKey]);
+
+  // Explicit reopening resumes manual unread mode, including the same selected driver.
+  useEffect(() => {
+    if (!isVisible || !conversationId) return;
+    // oxlint-disable-next-line react/set-state-in-effect -- explicitly reopening synchronizes the server manual-unread preference.
+    setReadPaused(false);
+    void clearChatUnread(conversationId).catch(() => {});
+  }, [isVisible, conversationId, selectionRequestKey]);
 
   useEffect(() => {
     if (isVisible) return;
@@ -745,51 +873,77 @@ export default function DispatchChat({
     stopMediaStream(recordingStreamRef.current);
   }, [cleanupCall, conversationScope]);
 
-  const sendMessage = async (event) => {
-    event?.preventDefault();
-    if (!conversationId || !inputMessage.trim() || sending) return;
-    const isCurrent = conversationCurrentRef.current;
-    const text = inputMessage.trim();
-    setInputMessage('');
-    setSending(true);
+  const deliverText = useCallback(async (pending) => {
+    const request = outbox.send(pending, (row) => sendTextMessage(row.conversation_id, row.body, { clientId: row.client_id, senderId: row.sender_id }));
+    setPendingTexts(outbox.list());
     try {
-      const message = await sendTextMessage(conversationId, text);
-      if (isCurrent()) setMessages((previous) => mergeChatMessages(previous, [message]));
+      const message = await request;
+      if (message && conversationIdRef.current === pending.conversation_id) applyMessages([message]);
+      else if (message) {
+        for (const [driverId, entry] of chatCache.entries) {
+          if (entry.conversationId === pending.conversation_id) { chatCache.merge(driverId, [message]); break; }
+        }
+      }
+    } catch (cause) {
+      if (outbox.rows.has(pending.client_id) && conversationIdRef.current === pending.conversation_id) setError(localizedError(translationRef.current, cause, 'errors.messageSend'));
+    } finally { setPendingTexts(outbox.list()); }
+  }, [outbox, applyMessages, chatCache]);
+
+  useEffect(() => {
+    const off = outbox.subscribe(() => setPendingTexts(outbox.list()));
+    const flush = () => {
+      if (navigator.onLine === false) return;
+      outbox.refresh();
+      setPendingTexts(outbox.list());
+      for (const row of outbox.list()) if (['queued', 'sending'].includes(row.status) && outbox.canAutoSend(row)) void deliverText(row);
+    };
+    flush();
+    window.addEventListener('online', flush);
+    const onStorage = () => { outbox.refresh(); setPendingTexts(outbox.list()); };
+    window.addEventListener('storage', onStorage);
+    return () => { off(); window.removeEventListener('online', flush); window.removeEventListener('storage', onStorage); };
+  }, [outbox, deliverText]);
+
+  const sendMessage = (event) => {
+    event?.preventDefault();
+    if (!conversationId || !inputMessage.trim()) return;
+    try {
+      const pending = outbox.enqueue(conversationId, currentUser.id, inputMessage);
+      setInputMessage('');
+      setPendingTexts(outbox.list());
+      setError('');
+      if (navigator.onLine !== false) void deliverText(pending);
     } catch (sendError) {
-      if (!isCurrent()) return;
-      setInputMessage((draft) => draft ? `${text}\n${draft}` : text);
       setError(localizedError(t, sendError, 'errors.messageSend'));
-    } finally {
-      if (isCurrent()) setSending(false);
     }
   };
 
-  const uploadFile = async (file, durationMs = null) => {
-    if (!file || !conversationId || uploadAbortRef.current) return;
+  const deliverMedia = async (pending) => {
+    if (uploadAbortRef.current) return;
     const isCurrent = conversationCurrentRef.current;
-    if (file.size > 50 * 1024 * 1024) {
-      setError(t('chat.fileTooLarge'));
-      return;
-    }
-    const controller = new AbortController();
+    const controller = { abort: () => mediaOutbox.cancel(pending.client_id) };
     uploadAbortRef.current = controller;
     setSending(true);
     setUploadProgress(0);
-    setFailedUpload(null);
     setError('');
     try {
-      const message = await sendMediaMessage({
-        conversationId,
-        file,
-        durationMs,
-        signal: controller.signal,
+      const message = await mediaOutbox.send(pending, (row, signal) => sendMediaMessage({
+        conversationId: row.conversation_id,
+        companyId: row.company_id,
+        senderId: row.sender_id,
+        clientId: row.client_id,
+        file: new File([row.blob], row.file_name, { type: row.mime_type }),
+        durationMs: row.duration_ms,
+        signal,
         onProgress: (progress) => { if (isCurrent()) setUploadProgress(progress); },
-      });
-      if (isCurrent()) setMessages((previous) => mergeChatMessages(previous, [message]));
+      }));
+      if (message && isCurrent()) applyMessages([message]);
+      else if (message) for (const [driverId, entry] of chatCache.entries) {
+        if (entry.conversationId === pending.conversation_id) { chatCache.merge(driverId, [message]); break; }
+      }
     } catch (uploadError) {
       if (isCurrent() && uploadError.name !== 'AbortError') {
-        setFailedUpload({ file, durationMs, conversationId });
-        setError(localizedError(t, uploadError, 'errors.mediaSend'));
+        if (mediaOutbox.rows.has(pending.client_id)) setError(localizedError(t, uploadError, 'errors.mediaSend'));
       }
     } finally {
       if (uploadAbortRef.current === controller) uploadAbortRef.current = null;
@@ -797,49 +951,80 @@ export default function DispatchChat({
     }
   };
 
-  const loadOlderMessages = async () => {
-    if (!conversationId || loadingOlder || !(searching ? searchPage.hasMore : hasOlderMessages)) return;
+  const uploadFile = async (file, durationMs = null) => {
+    if (!file || !conversationId || uploadAbortRef.current) return;
     const isCurrent = conversationCurrentRef.current;
+    try {
+      const pending = await mediaOutbox.enqueue({ file, durationMs, conversationId, senderId: currentUser.id, companyId: currentUser.companyId });
+      if (isCurrent() && navigator.onLine !== false) await deliverMedia(pending);
+    } catch (cause) { if (isCurrent()) setError(localizedError(t, cause, 'errors.mediaSend')); }
+  };
+
+  const loadOlderMessages = async () => {
+    if (!conversationId || loadingOlder || searchLoading || !(searching ? searchPage.hasMore : hasOlderMessages)) return;
+    const request = paginationScope.begin();
+    if (!request) return;
+    const conversationCurrent = conversationCurrentRef.current;
+    const isCurrent = () => conversationCurrent() && request.isCurrent();
+    const isSearchCurrent = searchScope.capture();
     setLoadingOlder(true);
     try {
       const page = searching
         ? await searchChatMessages(conversationId, messageSearch, mediaFilter, searchPage.cursor)
         : await fetchChatMessages(conversationId, { before: buildChatCursor(messages) });
-      if (!isCurrent()) return;
-      if (searching) { setSearchPage((previous) => ({ ...page, messages: mergeChatMessages(previous.messages, page.messages) })); return; }
-      setMessages((previous) => mergeChatMessages(previous, page.messages));
+      if (!isCurrent() || (searching && !isSearchCurrent())) return;
+      if (searching) {
+        setSearchPage((previous) => {
+          const merged = mergeChatMessages(previous.messages, page.messages.filter((row) => !chatCache.isDeleted(cacheDriverRef.current, row.id)));
+          return { ...page, messages: merged.slice(0, 500), detached: previous.detached || merged.length > 500 };
+        });
+        return;
+      }
+      applyMessages(page.messages, { older: true });
       setHasOlderMessages(page.hasMore);
+      chatCache.get(cacheDriverRef.current).hasMore = page.hasMore;
     } catch (loadError) {
-      if (!isCurrent()) return;
+      if (!isCurrent() || (searching && !isSearchCurrent())) return;
       setError(localizedError(t, loadError, 'errors.oldMessages'));
     } finally {
-      if (isCurrent()) setLoadingOlder(false);
+      if (isCurrent() && (!searching || isSearchCurrent())) setLoadingOlder(false);
+      request.finish();
     }
   };
 
-  const refreshMedia = async (message) => {
+  const refreshMedia = useCallback(async (message, force = true) => {
     const isCurrent = conversationCurrentRef.current;
     try {
-      const refreshed = await refreshChatMessageMedia(message);
-      if (isCurrent()) {
-        setMessages((current) => mergeChatMessages(current, [refreshed]));
-        setSearchPage((page) => ({ ...page, messages: page.messages.map((row) => row.id === refreshed.id ? refreshed : row) }));
+      const refreshed = await (force ? refreshChatMessageMedia(message) : hydrateChatMessageMedia(message));
+      if (!refreshed.mediaUrl) throw new Error(refreshed.mediaError || 'CHAT_MEDIA_UNAVAILABLE');
+      if (isCurrent() && !chatCache.isDeleted(cacheDriverRef.current, message.id)) {
+        const patch = { mediaUrl: refreshed.mediaUrl, mediaError: null };
+        setMessages(chatCache.patch(cacheDriverRef.current, [message.id], patch));
+        setSearchPage((page) => ({ ...page, messages: page.messages.map((row) => row.id === message.id ? { ...row, ...patch } : row) }));
+        return refreshed;
       }
+      throw new Error('CHAT_MEDIA_UNAVAILABLE');
     } catch (refreshError) {
       if (isCurrent()) setError(localizedError(t, refreshError, 'errors.mediaReload'));
       throw refreshError;
     }
-  };
+  }, [chatCache, t]);
 
   const removeMessage = async (message) => {
     if (message.sender_id !== currentUser.id) return;
+    if (message.status === 'sending') return;
+    if (message.status) {
+      if (message.kind === 'text') { outbox.acknowledge(message.client_id); setPendingTexts(outbox.list()); }
+      else await mediaOutbox.acknowledge(message.client_id).catch((cause) => setError(localizedError(t, cause, 'errors.mediaSend')));
+      return;
+    }
     if (!window.confirm(t('chat.deleteForEveryoneConfirm'))) return;
     const isCurrent = conversationCurrentRef.current;
     setError('');
     try {
       await deleteChatMessage(message);
       if (isCurrent()) {
-        setMessages((previous) => previous.filter((item) => item.id !== message.id));
+        applyMessages([{ ...message, deleted_at: new Date().toISOString() }]);
         setSearchPage((page) => ({ ...page, messages: page.messages.filter((row) => row.id !== message.id) }));
       }
       unreadChangeRef.current?.();
@@ -858,7 +1043,8 @@ export default function DispatchChat({
     try {
       const updated = await editChatMessage(editingMessageId, body);
       if (isCurrent()) {
-        setMessages((previous) => mergeChatMessages(previous, [updated]));
+        applyMessages([updated]);
+        setSearchRevision((value) => value + 1);
         setSearchPage((page) => ({ ...page, messages: page.messages.map((row) => row.id === updated.id ? updated : row) }));
         setEditingMessageId(null);
         setEditDraft('');
@@ -871,7 +1057,7 @@ export default function DispatchChat({
   };
 
   const openMessageContextMenu = (event, message) => {
-    if (message.sender_id !== currentUser.id || message.kind !== 'text') return;
+    if (message.status || message.sender_id !== currentUser.id || message.kind !== 'text') return;
     event.preventDefault();
     setChatContextMenu(null);
     setMessageContextMenu({ message, ...positionChatContextMenu({
@@ -1068,6 +1254,7 @@ export default function DispatchChat({
       ) || driverConversationIds[driverId] || await openChat(driverId);
       if (driverId === selectedDriver?.id) setReadPaused(true);
       const messageId = await markChatUnread(targetConversationId);
+      if (!messageId && driverId === selectedDriver?.id) setReadPaused(false);
       if (messageId) {
         setDriverUnreadCounts((current) => ({
           ...current,
@@ -1109,7 +1296,7 @@ export default function DispatchChat({
           </label>
         </div>
         <div className="flex-1 overflow-y-auto">
-          {filteredDrivers.map((driver) => {
+          {filteredDrivers.length > 0 && <Virtuoso style={{ height: '100%' }} data={filteredDrivers} computeItemKey={(_, driver) => driver.id} itemContent={(_, driver) => {
             const selected = driver.id === selectedDriver.id;
             const unreadCount = driverUnreadCounts[driver.id] || 0;
             return (
@@ -1123,6 +1310,8 @@ export default function DispatchChat({
                   setEditingMessageId(null);
                   setSavingEdit(false);
                   setSelectedDriverId(driver.id);
+                  setReadPaused(false);
+                  if (driver.id === selectedDriver.id && conversationId) void clearChatUnread(conversationId).catch(() => {});
                   setShowProfile(false);
                   setMessageSearch('');
                   setMediaFilter('all');
@@ -1144,7 +1333,7 @@ export default function DispatchChat({
                 )}
               </button>
             );
-          })}
+          }} />}
           {filteredDrivers.length === 0 && (
             <div className="px-4 py-10 text-center text-sm text-zinc-500">{t('chat.noChats')}</div>
           )}
@@ -1196,7 +1385,13 @@ export default function DispatchChat({
         {error && (
           <div className="mx-4 mt-3 flex items-center justify-between gap-3 rounded-xl bg-red-50 px-3 py-2 text-xs text-red-700 dark:bg-red-950/30 dark:text-red-300" role="alert">
             <span>{error}</span>
-            {failedUpload?.conversationId === conversationId && <button type="button" onClick={() => uploadFile(failedUpload.file, failedUpload.durationMs)} className="shrink-0 font-black underline">{t('chat.resend')}</button>}
+          </div>
+        )}
+
+        {historyError && (
+          <div role="alert" className="mx-4 mt-3 flex items-center justify-between gap-3 rounded-xl bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:bg-amber-950/30 dark:text-amber-200">
+            <span>{historyError}</span>
+            <button type="button" onClick={() => { void syncRef.current?.(); }} className="shrink-0 font-bold underline">{t('common.retry')}</button>
           </div>
         )}
 
@@ -1209,18 +1404,37 @@ export default function DispatchChat({
               </button>
             </div>
           )}
-          {!loading && messages.length === 0 && (
+          {!loading && !historyError && historyMessages.length === 0 && (
             <div className="h-full grid place-items-center text-center text-zinc-500">
               <div><div className="text-5xl mb-3">👋</div><p className="font-black text-zinc-800 dark:text-zinc-100">{t('chat.start')}</p><p className="text-sm">{t('chat.startHint')}</p></div>
             </div>
           )}
-          {!loading && messages.length > 0 && visibleMessages.length === 0 && (
+          {!loading && historyMessages.length > 0 && visibleMessages.length === 0 && (
             <div className="h-full grid place-items-center text-center text-zinc-500">
               <div><Search className="mx-auto mb-3 h-8 w-8" /><p className="font-bold">{t('chat.noMatches')}</p></div>
             </div>
           )}
           {searchLoading && <div className="text-center text-xs text-zinc-500">{t('common.loading')}</div>}
-          {!loading && visibleMessages.length > 0 && <ChatTimeline key={`${conversationId}:${searching ? `${messageSearch}:${mediaFilter}` : 'history'}`} messages={visibleMessages}>{(message, index) => {
+          {!loading && visibleMessages.length > 0 && <ChatTimeline key={`${conversationId}:${searching ? `${messageSearch}:${mediaFilter}` : 'history'}`} isVisible={isVisible} messages={visibleMessages} hasOlderMessages={searching ? searchPage.hasMore : hasOlderMessages} loadingOlder={loadingOlder || searchLoading} onLoadOlder={loadOlderMessages} hasNewerMessages={searching ? searchPage.detached : hasNewerMessages} restoreState={searching ? null : scrollSnapshot} onSaveState={searching ? undefined : saveScroll} onLatest={async () => {
+            paginationScope.invalidate();
+            setLoadingOlder(false);
+            const request = paginationScope.begin();
+            const conversationCurrent = conversationCurrentRef.current;
+            const isCurrent = () => conversationCurrent() && request.isCurrent();
+            try {
+              if (searching) {
+                const isSearchCurrent = searchScope.capture();
+                const page = await searchChatMessages(conversationId, messageSearch, mediaFilter);
+                if (isCurrent() && isSearchCurrent()) setSearchPage({ ...page, messages: page.messages.filter((row) => !chatCache.isDeleted(cacheDriverRef.current, row.id)) });
+                return;
+              }
+              const page = await fetchChatMessages(conversationId, { pageSize: 100 });
+              if (!isCurrent()) return;
+              applyMessages(page.messages, { replaceWindow: true });
+              setHasOlderMessages(page.hasMore);
+              chatCache.get(cacheDriverRef.current).hasMore = page.hasMore;
+            } finally { request.finish(); }
+          }}>{(message, index) => {
             const mine = message.sender_id === currentUser.id;
             const showDate = index === 0 || messageDayKey(message.created_at) !== messageDayKey(visibleMessages[index - 1].created_at);
             return (
@@ -1231,16 +1445,18 @@ export default function DispatchChat({
                   </div>
                 )}
                 <div className={`group flex items-center gap-1 ${mine ? 'justify-end' : 'justify-start'}`} onContextMenu={(event) => openMessageContextMenu(event, message)}>
-                  {mine && <button type="button" onClick={() => removeMessage(message)} title={t('chat.deleteMessage')} className="p-1.5 rounded-full text-zinc-400 opacity-0 group-hover:opacity-100 focus:opacity-100 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30 transition"><Trash2 className="w-4 h-4" /></button>}
+                  {mine && message.status !== 'sending' && <button type="button" onClick={() => removeMessage(message)} title={t('chat.deleteMessage')} className="p-1.5 rounded-full text-zinc-400 opacity-0 group-hover:opacity-100 focus:opacity-100 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30 transition"><Trash2 className="w-4 h-4" /></button>}
                   <div className={`max-w-[82%] rounded-2xl px-3.5 py-2 shadow-sm ${mine ? 'bg-blue-600 text-white rounded-br-md' : 'bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-bl-md'}`}>
                     {editingMessageId === message.id ? <form onSubmit={saveEditedMessage} className="min-w-48 space-y-2">
                       <textarea autoFocus value={editDraft} onChange={(event) => setEditDraft(event.target.value)} onKeyDown={(event) => { if (event.key === 'Escape') { setEditingMessageId(null); setEditDraft(''); } else if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); saveEditedMessage(); } }} rows={2} maxLength={4000} aria-label={t('chat.editMessage')} className="w-full resize-y rounded-lg bg-white px-2 py-1 text-sm text-zinc-900 outline-none" />
                       <div className="flex justify-end gap-2 text-xs font-bold"><button type="button" onClick={() => { setEditingMessageId(null); setEditDraft(''); }} disabled={savingEdit}>{t('common.cancel')}</button><button type="submit" disabled={savingEdit || !editDraft.trim()}>{savingEdit ? t('common.loading') : t('common.save')}</button></div>
-                    </form> : message.kind === 'text' ? <p className="text-sm whitespace-pre-wrap break-words">{message.body}</p> : <MediaMessage message={message} onRefresh={refreshMedia} />}
+                    </form> : message.kind === 'text' ? <p className="text-sm whitespace-pre-wrap break-words">{message.body}</p> : message.status ? <p className="flex items-center gap-2 break-all text-sm"><FileText className="h-5 w-5 shrink-0" />{message.file_name}</p> : <MediaMessage message={message} onRefresh={refreshMedia} />}
                     <div className={`mt-1 text-[10px] flex items-center justify-end gap-1 ${mine ? 'text-blue-100' : 'text-zinc-400'}`}>
                       {message.edited_at && <span>{t('chat.edited')}</span>}
                       <span>{messageTime(message.created_at)}</span>
-                      {mine && <CheckCheck className={`w-3.5 h-3.5 ${message.read_at ? 'text-cyan-200' : ''}`} />}
+                      {mine && (message.status ? <span className="inline-flex items-center gap-1">
+                        {message.status === 'failed' || (message.kind !== 'text' && message.status === 'queued') ? <button type="button" disabled={message.kind !== 'text' && sending} onClick={() => message.kind === 'text' ? deliverText(message) : deliverMedia(message)} className="font-bold underline disabled:opacity-50">{t(message.status === 'failed' ? 'chat.sendFailed' : 'chat.queued')} · {t('chat.resend')}</button> : <><Clock3 className="h-3.5 w-3.5" />{t(message.status === 'sending' ? 'chat.sending' : 'chat.queued')}</>}
+                      </span> : message.read_at ? <CheckCheck aria-label={t('chat.read')} className="w-3.5 h-3.5 text-cyan-200" /> : <Check aria-label={t('chat.sent')} className="w-3.5 h-3.5" />)}
                     </div>
                   </div>
                 </div>
@@ -1263,7 +1479,7 @@ export default function DispatchChat({
           </div>
           <button type="button" onClick={() => setShowEmojiPicker((current) => !current)} title={t('chat.emoji')} className="p-2.5 rounded-full text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800"><Smile className="w-5 h-5" /></button>
           {inputMessage.trim() ? (
-            <button type="submit" disabled={sending} className="p-2.5 rounded-full bg-blue-600 text-white hover:bg-blue-500 disabled:opacity-50">{sending ? <LoaderCircle className="w-5 h-5 animate-spin" /> : <Send className="w-5 h-5" />}</button>
+            <button type="submit" className="p-2.5 rounded-full bg-blue-600 text-white hover:bg-blue-500"><Send className="w-5 h-5" /></button>
           ) : (
             <button type="button" onClick={toggleRecording} title={t('common.audio')} className={`p-2.5 rounded-full text-white ${recording ? 'bg-red-600 animate-pulse' : 'bg-blue-600'}`}>{recording ? <Square className="w-5 h-5" /> : <Mic className="w-5 h-5" />}</button>
           )}

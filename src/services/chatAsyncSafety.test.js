@@ -34,3 +34,21 @@ test('successful acquisition retains live tracks', async () => {
   assert.deepEqual(result, [tracks.stream, servers]);
   assert.equal(tracks.stops(), 0);
 });
+test('a first call obtains ICE credentials alongside media permission without prefetch', async () => {
+  const permission = deferred();
+  const credentials = deferred();
+  const tracks = media();
+  const servers = [{ urls: 'turn:example.invalid', username: 'call', credential: 'test' }];
+  const started = [];
+  const result = acquireCallMedia(
+    () => { started.push('media'); return permission.promise; },
+    () => { started.push('ice'); return credentials.promise; },
+    () => true,
+  );
+  await Promise.resolve();
+  assert.deepEqual(started, ['media', 'ice']);
+  credentials.resolve(servers);
+  permission.resolve(tracks.stream);
+  assert.deepEqual(await result, [tracks.stream, servers]);
+  assert.equal(tracks.stops(), 0);
+});

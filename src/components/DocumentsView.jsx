@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import { formatCurrency } from '../i18n/format';
 import { loadStatusLabel } from '../i18n/labels';
+import { hasLoadDocument } from '../services/loadDocumentAvailability.js';
 
 export default function DocumentsView({ loads, drivers, onOpenDocs }) {
   const { t } = useTranslation();
@@ -169,10 +170,10 @@ export default function DocumentsView({ loads, drivers, onOpenDocs }) {
               ) : (
                 filteredLoads.map((load) => {
                   const driver = getDriver(load.driverId);
-                  const hasRateCon = !!load.documents?.rateCon;
-                  const hasBol = !!load.documents?.shipperBol;
-                  const hasPod = !!load.documents?.receiverPod;
-                  const hasReceipt = !!load.documents?.receipt;
+                  const hasRateCon = hasLoadDocument(load, 'rateCon');
+                  const hasBol = hasLoadDocument(load, 'shipperBol');
+                  const hasPod = hasLoadDocument(load, 'receiverPod');
+                  const hasReceipt = hasLoadDocument(load, 'receipt');
                   const hasDocumentWarning = Object.values(load.documentChecks || {})
                     .some((review) => ['warning', 'failed_to_read'].includes(review?.check_status));
                   const documentIssueCount = Object.values(load.documentChecks || {})
@@ -331,17 +332,17 @@ export default function DocumentsView({ loads, drivers, onOpenDocs }) {
                 {/* Document Status Pills */}
                 <div className="flex items-center space-x-1.5 pt-1">
                   <span className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold ${
-                    load.documents?.rateCon ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800/40' : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-400'
+                    hasLoadDocument(load, 'rateCon') ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800/40' : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-400'
                   }`}>
                     RateCon
                   </span>
                   <span className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold ${
-                    load.documents?.shipperBol ? 'bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400 border border-blue-200 dark:border-blue-800/40' : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-400'
+                    hasLoadDocument(load, 'shipperBol') ? 'bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400 border border-blue-200 dark:border-blue-800/40' : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-400'
                   }`}>
                     BOL
                   </span>
                   <span className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold ${
-                    load.documents?.receiverPod ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800/40' : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-400'
+                    hasLoadDocument(load, 'receiverPod') ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800/40' : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-400'
                   }`}>
                     POD
                   </span>

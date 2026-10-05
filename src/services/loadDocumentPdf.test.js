@@ -87,6 +87,34 @@ test('each section header identifies its document and page position', () => {
   );
 });
 
+test('merge re-signs every version and includes documents without snapshot URLs', async () => {
+  const resolved = [];
+  const fetched = [];
+  const result = await mergeLoadDocumentsPdf({
+    documents: { rateCon: 'https://example.test/expired' },
+    documentMeta: {
+      rateCon: { current_version_id: 'rate' },
+      shipperBol: { current_version_id: 'bol' },
+      receiverPod: { current_version_id: 'pod' },
+      receipt: { current_version_id: 'receipt' },
+    },
+  }, {
+    resolveSource: async document => { resolved.push(document.versionId); return { mediaUrl: `https://example.test/fresh-${document.versionId}`, mimeType: 'application/pdf' }; },
+    fetchDocument: async url => { fetched.push(url); return pdfResponse([200]); },
+  });
+  assert.deepEqual(resolved, ['rate', 'bol', 'pod', 'receipt']);
+  assert.ok(fetched.every(url => url.includes('/fresh-')));
+  assert.equal(result.documentCount, 4);
+  assert.equal(result.pageCount, 4);
+});
+
+test('merge fails closed when one document loses access, never downloads cached URL', async () => {
+  await assert.rejects(mergeLoadDocumentsPdf({ documents: { rateCon: 'https://example.test/expired' }, documentMeta: { rateCon: { current_version_id: 'rate' } } }, {
+    resolveSource: async () => { throw Error('denied'); },
+    fetchDocument: async () => assert.fail('must not use old URL'),
+  }), /denied/);
+});
+
 test('merged PDF preserves document order, internal pages, and receipt image', async () => {
   const sources = new Map([
     ['/rate.pdf', await pdfResponse([101, 102])],

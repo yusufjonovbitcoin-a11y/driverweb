@@ -3,6 +3,28 @@ import assert from 'node:assert/strict';
 import { createAuthStateController } from './authStateController.js';
 
 const session = (id) => ({ user: { id } });
+
+test('saved profile invalidates old reads and cannot change email, role or another account', async () => {
+  let state;
+  let resolve;
+  let calls = 0;
+  const controller = createAuthStateController({ defer: async () => {}, onChange: next => { state = next; },
+    loadUser: async id => ++calls === 1 ? { id, name: 'Old', email: 'a@mail.test', roleCode: 'dispatcher' } : new Promise(done => { resolve = done; }) });
+  await controller.setSession(session('a'));
+  const pending = controller.setSession(session('a'));
+  await Promise.resolve();
+  controller.applyProfileUpdate('a', { full_name: 'New', phone: '+123', email: 'evil', roleCode: 'super_admin' });
+  resolve({ id: 'a', name: 'Old' });
+  await pending;
+  assert.equal(state.currentUser.name, 'New');
+  assert.equal(state.currentUser.email, 'a@mail.test');
+  assert.equal(state.currentUser.roleCode, 'dispatcher');
+  controller.applyProfileUpdate('b', { full_name: 'Wrong' });
+  assert.equal(state.currentUser.name, 'New');
+  await controller.setSession(null);
+  controller.applyProfileUpdate('a', { full_name: 'After logout' });
+  assert.equal(state.currentUser, null);
+});
 const deferred = () => {
   let resolve;
   let reject;

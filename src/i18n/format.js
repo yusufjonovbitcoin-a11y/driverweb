@@ -1,10 +1,11 @@
 import i18n from './index';
 import { localeTag } from './locales';
 import { createFormatterCache } from './formatterCache.js';
+import { formatStopAppointment } from './stopAppointment.js';
+import { formatDisplayDate } from './timeZone.js';
 
 const tag = () => localeTag(i18n.resolvedLanguage || i18n.language);
 const numberFormatter = createFormatterCache((locale, options) => new Intl.NumberFormat(locale, options));
-const dateFormatter = createFormatterCache((locale, options) => new Intl.DateTimeFormat(locale, options));
 
 export function formatNumber(value, options = {}) {
   if (value == null || Number.isNaN(Number(value))) return '—';
@@ -21,9 +22,7 @@ export function formatCurrency(value, currency = 'USD') {
 }
 
 export function formatDate(value, options = {}) {
-  const date = value instanceof Date ? value : new Date(value);
-  if (Number.isNaN(date.getTime())) return '—';
-  return dateFormatter(tag(), options).format(date);
+  return formatDisplayDate(value, tag(), options);
 }
 
 export function formatDateTime(value, options = {}) {
@@ -36,4 +35,8 @@ export function formatDateTime(value, options = {}) {
 
 export function formatTime(value, options = {}) {
   return formatDate(value, { hour: '2-digit', minute: '2-digit', ...options });
+}
+
+export function formatAppointment(value, timeZone, options = {}) {
+  return formatStopAppointment(value, timeZone, tag(), options);
 }

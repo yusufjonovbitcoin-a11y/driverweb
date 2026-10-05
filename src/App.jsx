@@ -5,6 +5,7 @@ import Sidebar from './components/Sidebar';
 import TopHeader from './components/TopHeader';
 import LazyRouteBoundary from './components/LazyRouteBoundary';
 import { useAuth } from './hooks/useAuth';
+import { useTimeZonePreference } from './hooks/useTimeZonePreference.js';
 import { WorkspaceCache, useWorkspaceInvalidation } from './hooks/WorkspaceCache';
 import {
   createManualLoad,
@@ -15,6 +16,8 @@ import {
   reviewAndAssignDocumentLoad,
   deleteUnassignedLoad,
   fetchWorkspace,
+  fetchWorkspaceAvatar,
+  fetchDriverPresence,
   createMember,
   deleteCompanyMember,
   fetchBrokerInboxUnreadCount,
@@ -22,17 +25,24 @@ import {
   updateMyLocale,
 } from './services/operationsService';
 import {
+  fetchRingingCalls,
   fetchUnreadChatCountsByDriver,
+  subscribeCalls,
   subscribeUnreadChats,
 } from './services/chatService';
+import { chatAccountKey, clearPersistedChatSession } from './services/chatSession';
+import { clearPersistedChatMedia } from './services/chatMediaOutbox';
 import { buildGlobalSearchResults } from './utils/globalSearch';
 import { localizedError } from './i18n/errors';
 import { loadImportFileError } from './services/loadImportFile';
+import { createDocumentImportRunner, mergeDocumentImportResult, continueDocumentImport, shouldCancelImportOnNavigation, findExistingFinalizedLoad } from './services/documentImportSession';
 import { setAppLocale } from './i18n';
 import { changeLocaleWithProfileSync } from './i18n/localeSync';
 import { supabase } from './lib/supabase';
 import { createCoalescedAsyncTrigger } from './services/realtimeRefresh';
 import { createSerializedRefresh } from './services/serializedRefresh';
+import { preserveWorkspaceAvatars, applyWorkspaceAvatar, hydrateWorkspaceAvatars } from './services/workspaceAvatars.js';
+import { refreshDriverPresence, presenceTimestamp, mergePresenceSnapshot } from './services/driverPresence.js';
 import {
   clearPendingLocaleOverride,
   persistPendingLocaleOverride,
@@ -43,7 +53,7 @@ const tabs = ['kanban', 'drivers', 'map', 'analytics', 'docs', 'inbox', 'chat', 
 const routeLoaders = {
   analytics: () => import('./components/AnalyticsOverview'),
   chat: () => import('./components/DispatchChat'),
-  kanban: () => import('./components/KanbanBoard'),
+  kanban: () => import('./components/LoadsWorkspace'),
   map: () => import('./components/FleetMap'),
   drivers: () => import('./components/DriversPage'),
   profile: () => import('./components/ProfileView'),
@@ -57,11 +67,12 @@ function prefetchRoute(tab) {
 const AnalyticsOverview = React.lazy(routeLoaders.analytics);
 const DispatchChat = React.lazy(routeLoaders.chat);
 const AuthView = React.lazy(() => import('./components/AuthView'));
-const KanbanBoard = React.lazy(routeLoaders.kanban);
+const LoadsWorkspace = React.lazy(routeLoaders.kanban);
 const FleetMap = React.lazy(routeLoaders.map);
 const DriverRoster = React.lazy(routeLoaders.drivers);
 const CreateLoadModal = React.lazy(() => import('./components/CreateLoadModal'));
 const QuickDriverModal = React.lazy(() => import('./components/QuickDriverModal'));
+const ImportDriverPicker = React.lazy(() => import('./components/ImportDriverPicker'));
 const ImportedLoadPage = React.lazy(() => import('./components/ImportedLoadPage'));
 const DocumentViewerModal = React.lazy(() => import('./components/DocumentViewerModal'));
 const ProfileView = React.lazy(routeLoaders.profile);
@@ -79,7 +90,13 @@ function Workspace({ auth }) {
   const { t, i18n } = useTranslation();
   const invalidate = useWorkspaceInvalidation();
   const querySourcesRef = useRef('');
-  const { currentUser, loading: authLoading, configured, authError, login, logout } = auth;
+  const { currentUser, loading: authLoading, configured, authError, login, logout: authLogout } = auth;
+  const [displayTimeZone, setDisplayTimeZone] = useTimeZonePreference(currentUser?.id);
+  const logout = useCallback(async () => {
+    clearPersistedChatSession(chatAccountKey(currentUser));
+    await clearPersistedChatMedia(chatAccountKey(currentUser)).catch(() => {});
+    return authLogout();
+  }, [currentUser, authLogout]);
   const [activeTab, setActiveTab] = useState(() => {
     const hash = typeof window !== 'undefined' ? window.location.hash.replace('#', '') : '';
     return tabs.includes(hash) ? hash : 'kanban';
@@ -103,13 +120,24 @@ function Workspace({ auth }) {
   const [inlineChatDriverId, setInlineChatDriverId] = useState(null);
   const [aiPreparedLoad, setAiPreparedLoad] = useState(null);
   const importFileRef = useRef(null);
-  const importBusyRef = useRef(false);
-  const importPageVisible = aiPreparedLoad?.source === 'document';
+  const importTabRef = useRef(null);
+  const importRunnerRef = useRef(null);
+  if (!importRunnerRef.current) importRunnerRef.current = createDocumentImportRunner();
+  const importDriverPickerVisible = aiPreparedLoad?.source === 'document' && aiPreparedLoad.awaitingDriverSelection;
+  const importPageVisible = aiPreparedLoad?.source === 'document' && !importDriverPickerVisible;
   const importSourceUrl = aiPreparedLoad?.sourceUrl;
   useEffect(() => () => {
     if (importSourceUrl?.startsWith('blob:')) URL.revokeObjectURL(importSourceUrl);
   }, [importSourceUrl]);
   const [aiProcessing, setAiProcessing] = useState(false);
+  const cancelDocumentImport = useCallback(() => {
+    importRunnerRef.current.cancel();
+    importFileRef.current = null;
+    importTabRef.current = null;
+    setAiPreparedLoad(null);
+    setAiProcessing(false);
+  }, []);
+  useEffect(() => () => importRunnerRef.current.cancel(), []);
   const [selectedLoadForDocs, setSelectedLoadForDocs] = useState(null);
   const [selectedDocumentTab, setSelectedDocumentTab] = useState('rateCon');
   const [toast, setToast] = useState({ show: false, message: '' });
@@ -119,6 +147,8 @@ function Workspace({ auth }) {
   const [unreadInboxCount, setUnreadInboxCount] = useState(0);
   const inboxRefreshRef = useRef(null);
   const workspaceActiveRef = useRef(true);
+  const workspaceGenerationRef = useRef(0);
+  const presenceUpdatesRef = useRef(new Map());
   const foregroundRefreshCountRef = useRef(0);
   const inlineChatVisible = activeTab === 'drivers' && Boolean(inlineChatDriverId);
   const selectedDriver = useMemo(
@@ -194,9 +224,11 @@ function Workspace({ auth }) {
   const readWorkspaceRef = useRef(null);
   readWorkspaceRef.current = async () => {
     if (!workspaceActiveRef.current) return;
+    const generation = ++workspaceGenerationRef.current;
+    const isCurrent = () => workspaceActiveRef.current && generation === workspaceGenerationRef.current;
     try {
       const workspace = await fetchWorkspace();
-      if (!workspaceActiveRef.current) return;
+      if (!isCurrent()) return;
       const querySources = JSON.stringify([
         workspace.loads.map(load => [load.id, load.status, load.rate, load.distanceMiles, load.driverId]),
         workspace.drivers.map(driver => [driver.id, driver.truck, driver.trailer]),
@@ -207,11 +239,18 @@ function Workspace({ auth }) {
       }
       querySourcesRef.current = querySources;
       setLoads(workspace.loads);
-      setDrivers(workspace.drivers);
-      setMembers(workspace.members);
+      setDrivers(previous => preserveWorkspaceAvatars(
+        refreshDriverPresence(workspace.drivers, presenceUpdatesRef.current), previous,
+      ));
+      setMembers(previous => preserveWorkspaceAvatars(workspace.members, previous));
+      setWorkspaceReady(true);
       setWorkspaceError('');
+      void hydrateWorkspaceAvatars(workspace.members, fetchWorkspaceAvatar, (member, avatar) => {
+        setDrivers(previous => applyWorkspaceAvatar(previous, member, avatar));
+        setMembers(previous => applyWorkspaceAvatar(previous, member, avatar));
+      }, isCurrent);
     } catch (error) {
-      if (workspaceActiveRef.current) setWorkspaceError(localizedError(t, error, 'errors.workspace'));
+      if (isCurrent()) setWorkspaceError(localizedError(t, error, 'errors.workspace'));
     }
   };
   const serializedWorkspaceRefresh = useMemo(() => createSerializedRefresh(() => readWorkspaceRef.current()), []);
@@ -231,7 +270,6 @@ function Workspace({ auth }) {
         );
         if (foregroundRefreshCountRef.current === 0) {
           setRefreshLoading(false);
-          setWorkspaceReady(true);
         }
       }
     }
@@ -255,13 +293,15 @@ function Workspace({ auth }) {
 
   useEffect(() => {
     const handleHash = () => {
+      const hash = window.location.hash.replace('#', '');
+      const nextTab = currentUser?.roleCode === 'super_admin' ? 'profile' : tabs.includes(hash) ? hash : 'kanban';
+      if (shouldCancelImportOnNavigation(importTabRef.current, nextTab)) cancelDocumentImport();
       if (currentUser?.roleCode === 'super_admin') {
         setInlineChatDriverId(null);
         setActiveTab('profile');
         window.history.replaceState(null, '', '#profile');
         return;
       }
-      const hash = window.location.hash.replace('#', '');
       if (tabs.includes(hash)) {
         setInlineChatDriverId(null);
         if (hash === 'chat') setChatWasOpened(true);
@@ -276,17 +316,56 @@ function Workspace({ auth }) {
     handleHash();
     window.addEventListener('hashchange', handleHash);
     return () => window.removeEventListener('hashchange', handleHash);
-  }, [currentUser?.roleCode]);
+  }, [currentUser?.roleCode, cancelDocumentImport]);
 
   useEffect(() => {
     if (!currentUserId || ['driver', 'super_admin'].includes(currentUserRoleCode)) return undefined;
     workspaceActiveRef.current = true;
     // oxlint-disable-next-line react/set-state-in-effect -- synchronize the authenticated workspace with remote data.
     refreshWorkspace();
-    const unsubscribe = subscribeWorkspace(() => refreshWorkspace({ quiet: true }));
+    let active = true;
+    const updatePresence = payload => {
+      if (!active) return;
+      const row = payload?.new;
+      const id = row?.driver_id || payload?.old?.driver_id;
+      if (!id) return;
+      const latest = presenceUpdatesRef.current.get(id);
+      if (payload.eventType !== 'DELETE' && latest && presenceTimestamp(latest) > presenceTimestamp(row)) return;
+      presenceUpdatesRef.current.set(id, payload.eventType === 'DELETE' ? null : row);
+      setDrivers(previous => refreshDriverPresence(previous, presenceUpdatesRef.current));
+    };
+    const refreshPresence = createCoalescedAsyncTrigger(async () => {
+      try {
+        const atStart = new Map(presenceUpdatesRef.current);
+        const rows = await fetchDriverPresence();
+        if (!active) return;
+        // Realtime events during an HTTP read win, including DELETE and offline
+        // writes which retained the same last_seen_at value.
+        presenceUpdatesRef.current = mergePresenceSnapshot(presenceUpdatesRef.current, atStart, rows);
+        setDrivers(previous => refreshDriverPresence(previous, presenceUpdatesRef.current));
+      } catch { /* Keep last known data; the local TTL still expires online state. */ }
+    });
+    const unsubscribe = subscribeWorkspace(() => refreshWorkspace({ quiet: true }), updatePresence);
+    // Presence expires without a database event. A foreground wake also handles
+    // suspended background timers; the occasional small read repairs missed events.
+    const expirePresence = () => setDrivers(previous => refreshDriverPresence(previous));
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') { expirePresence(); refreshPresence(); }
+    };
+    const expiryTimer = window.setInterval(expirePresence, 15_000);
+    const reconcileTimer = window.setInterval(refreshPresence, 120_000);
+    document.addEventListener('visibilitychange', onVisible);
+    window.addEventListener('online', onVisible);
     return () => {
+      active = false;
       workspaceActiveRef.current = false;
+      workspaceGenerationRef.current += 1;
       unsubscribe();
+      refreshPresence.dispose();
+      window.clearInterval(expiryTimer);
+      window.clearInterval(reconcileTimer);
+      document.removeEventListener('visibilitychange', onVisible);
+      window.removeEventListener('online', onVisible);
     };
   }, [currentUserId, currentUserRoleCode, refreshWorkspace]);
 
@@ -296,6 +375,26 @@ function Workspace({ auth }) {
     refreshUnreadChats();
     return subscribeUnreadChats(refreshUnreadChats);
   }, [currentUserId, currentUserRoleCode, refreshUnreadChats]);
+
+  // A lightweight call listener exists before the heavier chat UI is first opened.
+  useEffect(() => {
+    if (!currentUserId || chatWasOpened || ['driver', 'super_admin'].includes(currentUserRoleCode)) return;
+    let active = true;
+    let pending = false;
+    const wake = (call) => { if (active && call?.recipient_id === currentUserId && call.status === 'ringing') setChatWasOpened(true); };
+    const refresh = async () => {
+      if (!active || pending) return;
+      pending = true;
+      try { (await fetchRingingCalls()).forEach(wake); } catch { /* Reconnect and foreground retry. */ }
+      finally { pending = false; }
+    };
+    const off = subscribeCalls({ onCall: wake, onReconnect: refresh });
+    void refresh();
+    const visible = () => { if (document.visibilityState === 'visible') void refresh(); };
+    window.addEventListener('online', visible);
+    document.addEventListener('visibilitychange', visible);
+    return () => { active = false; off(); window.removeEventListener('online', visible); document.removeEventListener('visibilitychange', visible); };
+  }, [currentUserId, currentUserRoleCode, chatWasOpened]);
 
   useEffect(() => {
     if (!currentUserId || ['driver', 'super_admin'].includes(currentUserRoleCode)) return undefined;
@@ -337,12 +436,12 @@ function Workspace({ auth }) {
     if (tab === 'chat') setChatWasOpened(true);
     if (tab === 'map') setMapWasOpened(true);
     setInlineChatDriverId(null);
-    setAiPreparedLoad(null);
+    cancelDocumentImport();
     if (tab !== 'profile') setProfileEditDriverId(null);
     if (tab !== 'profile') setSelectedDriverId(null);
     setActiveTab(tab);
     window.location.hash = tab;
-  }, [currentUser]);
+  }, [currentUser, cancelDocumentImport]);
 
   const handleOpenDriverProfile = useCallback((driverOrId) => {
     const driverId = typeof driverOrId === 'string' ? driverOrId : driverOrId?.id;
@@ -421,6 +520,7 @@ function Workspace({ auth }) {
       fullName: member.name,
       phone: member.phone,
       role: member.role || 'driver',
+      gmailLabel: member.gmailLabel,
       companyId: currentUser.companyId,
     });
     await refreshWorkspace({ quiet: true });
@@ -441,19 +541,20 @@ function Workspace({ auth }) {
     }
   };
 
-  const handleAiDocument = async (file, preferredDriverId = null, brokerSource = null) => {
-    if ((!file && !brokerSource) || importBusyRef.current) return;
+  const handleAiDocument = async (file, preferredDriverId = null, brokerSource = null, selectDriverFirst = false) => {
+    if ((!file && !brokerSource) || importRunnerRef.current.busy) return;
     const fileError = brokerSource ? null : loadImportFileError(file);
     if (fileError) {
       showToast(t(`errors.${fileError}`));
       return;
     }
-    importBusyRef.current = true;
     importFileRef.current = file;
+    importTabRef.current = brokerSource ? 'drivers' : activeTab;
     const importRequestId = crypto.randomUUID();
     const sourceUrl = file ? URL.createObjectURL(file) : null;
     const importContext = {
       source: 'document', importRequestId, preferredDriverId, sourceUrl,
+      awaitingDriverSelection: selectDriverFirst,
       fileName: file?.name || brokerSource.fileName,
       ...(brokerSource ? {
         sourceKind: 'broker', brokerMessageId: brokerSource.messageId,
@@ -462,36 +563,40 @@ function Workspace({ auth }) {
     };
     setAiPreparedLoad(importContext);
     setAiProcessing(true);
-    setOperationLoading(true);
-    try {
-      const result = brokerSource
-        ? await prepareLoadFromBrokerAttachment(brokerSource)
-        : await prepareLoadFromDocument(file);
-      importFileRef.current = result.file || file;
-      setAiPreparedLoad(current => current?.importRequestId === importRequestId
-        ? { ...result.preparedLoad, ...importContext, sourceUrl: result.sourceUrl || sourceUrl } : current);
-      // A preview has no database/media write, so there is nothing to refresh.
-      const warningCount = result.preparedLoad.missingFields?.length || 0;
-      showToast(
-        result.duplicate
-          ? t('toasts.duplicateDocument')
-          : warningCount
-            ? t('toasts.aiPreparedWarnings', { count: warningCount })
-            : t('toasts.aiPrepared'),
-      );
-    } catch (error) {
-      const importError = localizedError(t, error, 'errors.documentAnalysis');
-      setAiPreparedLoad(current => current?.importRequestId === importRequestId ? { ...current, importError } : current);
-      showToast(importError);
-    } finally {
-      importBusyRef.current = false;
-      setAiProcessing(false);
-      setOperationLoading(false);
-    }
+    return importRunnerRef.current.run({
+      prepare: () => brokerSource
+        ? prepareLoadFromBrokerAttachment(brokerSource)
+        : prepareLoadFromDocument(file),
+      onResult: (result) => {
+        importFileRef.current = result.file || file;
+        const existingLoad = findExistingFinalizedLoad(loads, result.preparedLoad.loadNumber);
+        const preparedResult = existingLoad
+          ? { ...result, preparedLoad: { ...result.preparedLoad, existingFinalizedLoadId: existingLoad.id } }
+          : result;
+        setAiPreparedLoad(current => mergeDocumentImportResult(current, importRequestId, preparedResult));
+        // A preview has no database/media write, so there is nothing to refresh.
+        const warningCount = result.preparedLoad.missingFields?.length || 0;
+        showToast(
+          existingLoad
+            ? t('importReview.duplicateLoad')
+            : result.duplicate
+            ? t('toasts.duplicateDocument')
+            : warningCount
+              ? t('toasts.aiPreparedWarnings', { count: warningCount })
+              : t('toasts.aiPrepared'),
+        );
+      },
+      onError: (error) => {
+        const importError = localizedError(t, error, 'errors.documentAnalysis');
+        setAiPreparedLoad(current => current?.importRequestId === importRequestId ? { ...current, importError } : current);
+        showToast(importError);
+      },
+      onFinish: () => setAiProcessing(false),
+    });
   };
 
   const handleBrokerAttachment = async (message, attachment, preferredDriverId) => {
-    if (!message?.id || !attachment?.id || !preferredDriverId || importBusyRef.current) return;
+    if (!message?.id || !attachment?.id || !preferredDriverId || importRunnerRef.current.busy) return;
     setInlineChatDriverId(null);
     setSelectedDriverId(preferredDriverId);
     setActiveTab('drivers');
@@ -534,6 +639,7 @@ function Workspace({ auth }) {
       }
       await refreshWorkspace({ quiet: true });
       importFileRef.current = null;
+      importTabRef.current = null;
       setAiPreparedLoad(null);
       showToast(t('loads.assignedDirectly'));
       return true;
@@ -684,7 +790,7 @@ function Workspace({ auth }) {
         )}
 
         <main className={`workspace-main min-h-0 flex-1 relative ${activeTab === 'chat' || inlineChatVisible ? 'workspace-main-chat' : activeTab === 'map' ? 'workspace-main-map' : importPageVisible ? 'workspace-main-import' : activeTab === 'analytics' ? 'workspace-main-analytics' : activeTab === 'drivers' && !selectedDriverId ? 'workspace-main-drivers' : 'overflow-y-auto p-5 space-y-4'}`}>
-          {(refreshLoading || operationLoading) && !importPageVisible && (
+          {((refreshLoading && !workspaceReady) || operationLoading) && !importPageVisible && (
             <div className="absolute inset-0 z-30 bg-white/60 dark:bg-zinc-950/60 backdrop-blur-[1px] flex items-center justify-center">
               <LoaderCircle className="w-7 h-7 animate-spin text-zinc-700 dark:text-zinc-300" />
             </div>
@@ -696,7 +802,7 @@ function Workspace({ auth }) {
             load={aiPreparedLoad}
             processing={aiProcessing}
             drivers={drivers}
-            onBack={() => { importFileRef.current = null; setAiPreparedLoad(null); }}
+            onBack={cancelDocumentImport}
             onRetry={() => aiPreparedLoad.sourceKind === 'broker'
               ? handleBrokerAttachment(
                   { id: aiPreparedLoad.brokerMessageId },
@@ -707,14 +813,14 @@ function Workspace({ auth }) {
             onConfirm={handleSendAiOffer}
           /> : <>
           {activeTab === 'kanban' && (
-            <KanbanBoard
+            <LoadsWorkspace
               loads={filteredLoads}
               drivers={drivers}
               onAdvanceStatus={() => showToast(t('toasts.statusFromMobile'))}
               onOpenDocs={handleOpenDocs}
               onDeleteLoad={handleDeleteLoad}
               onSendOffer={(load) => setAiPreparedLoad({ ...load, lifecycleStatus: load.databaseStatus, source: 'saved' })}
-              onDropOnOffer={handleAiDocument}
+              onDropOnOffer={(file) => handleAiDocument(file, null, null, true)}
               isAiProcessing={aiProcessing}
             />
           )}
@@ -744,7 +850,8 @@ function Workspace({ auth }) {
           )}
           {activeTab === 'profile' && (
             currentUser.roleCode === 'super_admin' ? <PlatformAdminPanel onLogout={logout} /> : (
-              <ProfileView
+          <ProfileView
+            onSaveProfile={auth.updateProfile}
                 drivers={drivers}
                 members={members}
                 loads={loads}
@@ -763,6 +870,11 @@ function Workspace({ auth }) {
                 unreadInboxCount={unreadInboxCount}
                 locale={i18n.resolvedLanguage || i18n.language}
                 onLocaleChange={handleLocaleChange}
+                timeZone={displayTimeZone}
+                onTimeZoneChange={(zone) => {
+                  const saved = setDisplayTimeZone(zone);
+                  showToast(t(saved ? 'profile.timeZoneSaved' : 'profile.timeZoneSessionOnly'));
+                }}
                 onWorkspaceRefresh={() => refreshWorkspace({ quiet: true })}
                 initialDriverToEditId={profileEditDriverId}
                 onEditDriverClosed={() => setProfileEditDriverId(null)}
@@ -775,7 +887,7 @@ function Workspace({ auth }) {
           {mapWasOpened && <div className={activeTab === 'map' && !importPageVisible ? 'h-full min-h-0' : 'hidden'}>
             <LazyRouteBoundary>
               <React.Suspense fallback={<div className="grid h-full place-items-center"><LoaderCircle className="h-7 w-7 animate-spin" /></div>}>
-                <FleetMap drivers={drivers} loads={loads} isVisible={activeTab === 'map' && !importPageVisible} />
+                <FleetMap drivers={drivers} loads={loads} isVisible={activeTab === 'map' && !importPageVisible} onOpenDocs={handleOpenDocs} />
               </React.Suspense>
             </LazyRouteBoundary>
           </div>}
@@ -806,16 +918,29 @@ function Workspace({ auth }) {
             onClose={handleCloseCreateLoad}
             drivers={drivers}
             onCreateLoad={handleCreateLoad}
-            onDocument={(file, driverId) => { handleCloseCreateLoad(); return handleAiDocument(file, driverId); }}
+            onDocument={(file, driverId) => { handleCloseCreateLoad(); return handleAiDocument(file, driverId, null, activeTab === 'kanban' && !driverId); }}
             initialDriverId={selectedDriverForLoad?.id || null}
           />}
-          {aiPreparedLoad && !importPageVisible && <QuickDriverModal
+          {importDriverPickerVisible && <ImportDriverPicker
+            key={aiPreparedLoad.importRequestId}
+            drivers={drivers}
+            fileName={aiPreparedLoad.fileName}
+            processing={aiProcessing}
+            error={aiPreparedLoad.importError}
+            selectedDriverId={aiPreparedLoad.preferredDriverId}
+            onSelectDriver={(driverId) => setAiPreparedLoad(current => current?.source === 'document'
+              ? continueDocumentImport({ ...current, preferredDriverId: driverId }, drivers) : current)}
+            onCancel={cancelDocumentImport}
+            onRetry={() => handleAiDocument(importFileRef.current, aiPreparedLoad.preferredDriverId, null, true)}
+          />}
+          {aiPreparedLoad?.source === 'saved' && <QuickDriverModal
             key={aiPreparedLoad?.id || aiPreparedLoad?.brokerMessageId || 'closed'}
             isOpen
             onClose={() => setAiPreparedLoad(null)}
             loadData={aiPreparedLoad}
             drivers={drivers}
             initialDriverId={aiPreparedLoad.preferredDriverId}
+            onOpenDocs={handleOpenDocs}
             onConfirm={handleSendAiOffer}
           />}
           {selectedLoadForDocs && <DocumentViewerModal

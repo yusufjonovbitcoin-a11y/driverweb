@@ -1,0 +1,11 @@
+.drivex-pdf-container {
+  --page-margin: 14px auto;
+  --page-border: 0;
+  --pdfViewer-padding-bottom: 14px;
+  background: #262626;
+  user-select: text;
+}
+
+.drivex-pdf-container .pdfViewer .page {
+  box-shadow: 0 4px 18px rgb(0 0 0 / 30%);
+}

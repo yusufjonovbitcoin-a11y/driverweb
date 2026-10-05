@@ -1,5 +1,5 @@
 // Transport primitives are framework-independent so failure/reconnect paths can be tested.
-export async function reconcileHistory(fetchPage, oldest, isCurrent = () => true) {
+export async function reconcileHistory(fetchPage, oldest, isCurrent = () => true, maxMessages = 500) {
   let before = null;
   const rows = [];
   let page;
@@ -9,10 +9,10 @@ export async function reconcileHistory(fetchPage, oldest, isCurrent = () => true
     rows.push(...page.messages);
     before = page.cursor;
     if (!before) break;
-  } while (page.hasMore && oldest && (
+  } while (rows.length < maxMessages && page.hasMore && oldest && (
     before.createdAt > oldest.createdAt || (before.createdAt === oldest.createdAt && before.id > oldest.id)
   ));
-  return { messages: rows, hasMore: page.hasMore, cursor: before };
+  return { messages: rows, hasMore: page.hasMore, cursor: before, truncated: rows.length >= maxMessages && page.hasMore };
 }
 
 export function createBatchedNotifier(delay = 200) {
@@ -49,7 +49,7 @@ export class MediaSends {
       operation = { owner, id: this.uuid(), reference: null };
       this.pending.set(file, operation);
     }
-    if (!operation.reference) operation.reference = (await upload()).reference;
+    if (!operation.reference) operation.reference = (await upload(operation.id)).reference;
     const message = await commit(operation.id, operation.reference);
     this.pending.delete(file);
     return message;

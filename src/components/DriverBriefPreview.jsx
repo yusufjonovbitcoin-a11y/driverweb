@@ -2,14 +2,16 @@ import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { briefFieldLabel } from '../services/driverBrief';
 
-export default function DriverBriefPreview({ brief, sourceUrl }) {
+export default function DriverBriefPreview({ brief, sourceUrl, onOpenSource }) {
   const { t } = useTranslation();
   const original = sourceUrl;
   return (
     <section className="space-y-3 rounded-xl border border-zinc-200 p-4 dark:border-zinc-800">
       <div className="flex items-center justify-between gap-3">
         <h3 className="font-semibold">{t('driverBrief.title')}</h3>
-        {original && <a href={original} target="_blank" rel="noreferrer" className="text-sm font-semibold text-teal-700 dark:text-teal-300">{t('driverBrief.original')}</a>}
+        {onOpenSource
+          ? <button type="button" onClick={onOpenSource} className="text-sm font-semibold text-teal-700 dark:text-teal-300">{t('driverBrief.original')}</button>
+          : original && <a href={original} target="_blank" rel="noreferrer" className="text-sm font-semibold text-teal-700 dark:text-teal-300">{t('driverBrief.original')}</a>}
       </div>
       <p className="text-xs text-zinc-500">{t(brief.aiDirect ? 'driverBrief.aiDirectHint' : 'driverBrief.hint')}</p>
       <dl className="divide-y divide-zinc-100 dark:divide-zinc-800">

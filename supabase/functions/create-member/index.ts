@@ -54,6 +54,9 @@ Deno.serve((request) => withCors(request, async () => {
   const fullName = String(payload.fullName ?? '').trim();
   const phone = String(payload.phone ?? '').trim() || null;
   const role = String(payload.role ?? 'driver');
+  const gmailLabel = role === 'driver'
+    ? String(payload.gmailLabel || fullName).trim()
+    : null;
   const companyId = String(payload.companyId ?? requester.company_id ?? '');
 
   if (!email.includes('@') || !fullName || !companyId) {
@@ -61,6 +64,11 @@ Deno.serve((request) => withCors(request, async () => {
   }
   const passwordError = accountPasswordError(password);
   if (passwordError) return json({ error: passwordError }, 400);
+  if (gmailLabel && (
+    gmailLabel.length > 100
+    || /[\u0000-\u001f\u007f]/.test(gmailLabel)
+    || /^(inbox|\[gmail\]|\[googlemail\])(\/|$)/i.test(gmailLabel)
+  )) return json({ error: 'Invalid Gmail label name' }, 400);
 
   const allowed = requester.role === 'super_admin'
     ? ['company_admin', 'dispatcher', 'driver'].includes(role)
@@ -99,6 +107,17 @@ Deno.serve((request) => withCors(request, async () => {
   if (registerError) {
     await adminClient.auth.admin.deleteUser(created.user.id);
     return json({ error: registerError.message }, 400);
+  }
+
+  if (role === 'driver') {
+    const { error: labelError } = await adminClient.from('driver_profiles')
+      .update({ gmail_label: gmailLabel })
+      .eq('user_id', created.user.id)
+      .eq('company_id', companyId);
+    if (labelError) {
+      await adminClient.auth.admin.deleteUser(created.user.id);
+      return json({ error: labelError.message }, 400);
+    }
   }
 
   return json({ profile }, 201);

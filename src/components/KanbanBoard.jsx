@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { 
   Columns3,
@@ -11,9 +11,18 @@ import {
   UploadCloud,
   Trash2,
   LoaderCircle,
+  Search,
+  MapPin,
+  CircleDollarSign,
+  Building2,
+  Truck,
+  UsersRound,
+  FileText,
 } from 'lucide-react';
-import { formatCurrency, formatDate } from '../i18n/format';
+import { formatAppointment, formatCurrency, formatDate } from '../i18n/format';
+import { stopCalendarDate } from '../i18n/stopAppointment.js';
 import { displayBoardStage } from '../services/loadBoardStatus';
+import { filterWorkspaceLoads } from './loadWorkspaceModel';
 const LoadDetailsModal = React.lazy(() => import('./LoadDetailsModal'));
 
 function getClipboardImage(clipboardData) {
@@ -48,10 +57,15 @@ export default function KanbanBoard({
   isAiProcessing = false,
   includeUnassigned = true,
   hideStageFilters = false,
+  boardOnly = false,
+  driverWorkspace = false,
+  fleetWorkspace = false,
   groupDeliveredWithOnRoad = false,
   hideCompletedCardFooter = false,
 }) {
   const { t } = useTranslation();
+  const styledWorkspace = driverWorkspace || fleetWorkspace;
+  const driversById = useMemo(() => new Map(drivers.map((driver) => [driver.id, driver])), [drivers]);
   const allStages = [
     { id: 'UNASSIGNED', title: t('loadStatus.unassigned'), dot: 'bg-zinc-400' },
     { id: 'ASSIGNED', title: t('loadStatus.assigned'), dot: 'bg-blue-500' },
@@ -70,9 +84,12 @@ export default function KanbanBoard({
     { weekday: 'short' },
   ));
   const [viewMode, setViewMode] = useState(() => (
-    localStorage.getItem('drivex_load_view_mode') === 'kanban' ? 'kanban' : 'table'
+    boardOnly || typeof localStorage === 'undefined' || localStorage.getItem('drivex_load_view_mode') === 'kanban' ? 'kanban' : 'table'
   ));
+  const activeView = boardOnly ? 'kanban' : viewMode;
   const [stageFilter, setStageFilter] = useState('ALL');
+  const [tripSearch, setTripSearch] = useState('');
+  const [driverFilter, setDriverFilter] = useState('ALL');
   const [isDateFilterOpen, setIsDateFilterOpen] = useState(false);
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
@@ -132,13 +149,19 @@ export default function KanbanBoard({
   const filterEnd = dateTo || dateFrom;
   const hasDateFilter = Boolean(filterStart);
   const boardLoads = includeUnassigned ? loads : loads.filter((load) => load.status !== 'UNASSIGNED');
+  const searchedLoads = fleetWorkspace
+    ? filterWorkspaceLoads(boardLoads, { query: tripSearch, driverId: driverFilter, driversById })
+    : driverWorkspace && tripSearch.trim()
+    ? boardLoads.filter((load) => [load.loadNumber, load.origin?.city, load.origin?.state, load.destination?.city, load.destination?.state, load.broker]
+      .some((value) => String(value || '').toLowerCase().includes(tripSearch.trim().toLowerCase())))
+    : boardLoads;
   const dateFilteredLoads = hasDateFilter
-    ? boardLoads.filter((load) => {
-      const pickupDate = load.origin?.date?.slice(0, 10);
-      const deliveryDate = load.destination?.date?.slice(0, 10) || pickupDate;
+    ? searchedLoads.filter((load) => {
+      const pickupDate = stopCalendarDate(load.origin?.date, load.origin?.timezone);
+      const deliveryDate = stopCalendarDate(load.destination?.date, load.destination?.timezone) || pickupDate;
       return pickupDate && pickupDate <= filterEnd && deliveryDate >= filterStart;
     })
-    : boardLoads;
+    : searchedLoads;
   const visibleLoads = stageFilter === 'ALL'
     ? dateFilteredLoads
     : dateFilteredLoads.filter((load) => stageForLoad(load) === stageFilter);
@@ -164,7 +187,11 @@ export default function KanbanBoard({
     if (day !== dateFrom) setDateTo(day);
   };
 
-  const getDriver = (driverId) => drivers.find(d => d.id === driverId);
+  const getDriver = (driverId) => driversById.get(driverId);
+  const hasWorkspaceFilters = Boolean(tripSearch.trim() || driverFilter !== 'ALL' || stageFilter !== 'ALL' || hasDateFilter);
+  const clearWorkspaceFilters = () => {
+    setTripSearch(''); setDriverFilter('ALL'); setStageFilter('ALL'); setDateFrom(''); setDateTo('');
+  };
   const canDeleteLoad = (load) => (
     ['draft', 'review', 'ready_for_offer', 'offered'].includes(load.databaseStatus)
     && !load.currentAssignmentId
@@ -184,7 +211,7 @@ export default function KanbanBoard({
   };
 
   return (
-    <div className="loads-workspace space-y-4" style={{ '--board-stage-count': stages.length + 1 }}>
+    <div className={`loads-workspace space-y-4 ${styledWorkspace ? 'driver-board' : ''} ${fleetWorkspace ? 'fleet-loads-board' : ''}`} style={{ '--board-stage-count': stages.length + 1 }}>
       {!hideStageFilters && <div className="stage-filters" aria-label={t('loads.statusFilter')}>
         {[{ id: 'ALL', title: t('loads.all'), dot: 'bg-zinc-400' }, ...stages].map(stage => (
           <button
@@ -201,22 +228,38 @@ export default function KanbanBoard({
       </div>}
       <div className="board-toolbar">
         <div className="flex min-w-0 items-center gap-2 text-sm text-zinc-500">
+          {driverWorkspace && <h2 className="driver-board-title">{t('drivers.tripHistory')}</h2>}
+          {fleetWorkspace && <h2 className="driver-board-title">{t('loadsWorkspace.boardTitle')} <span className="toolbar-count" aria-live="polite">{visibleLoads.length}</span></h2>}
+          {!styledWorkspace && <>
           <span>{stageFilter === 'ALL' ? t('loads.allTrips') : stages.find(stage => stage.id === stageFilter)?.title} <span className="toolbar-count">{visibleLoads.length}</span></span>
           {hasDateFilter && (
             <span className="truncate text-xs text-zinc-400" title={`Reys sanasi: ${filterStart}${filterStart !== filterEnd ? ` — ${filterEnd}` : ''}`}>
               {filterStart}{filterStart !== filterEnd ? ` — ${filterEnd}` : ''}
             </span>
           )}
+          </>}
         </div>
 
         <div ref={calendarPopoverRef} className="relative flex items-center gap-2">
+          {styledWorkspace && <>
+            <label className="driver-board-search"><Search size={17} /><input type="search" value={tripSearch} onChange={(event) => setTripSearch(event.target.value)} aria-label={t(fleetWorkspace ? 'loadsWorkspace.searchPlaceholder' : 'drivers.tripSearchPlaceholder')} placeholder={t(fleetWorkspace ? 'loadsWorkspace.searchPlaceholder' : 'drivers.tripSearchPlaceholder')} /></label>
+            {fleetWorkspace && <label className="fleet-driver-filter"><UsersRound size={16} aria-hidden="true" /><select value={driverFilter} onChange={(event) => setDriverFilter(event.target.value)} aria-label={t('loadsWorkspace.driverFilter')}>
+              <option value="ALL">{t('loadsWorkspace.allDrivers')}</option>
+              <option value="UNASSIGNED">{t('loadsWorkspace.unassignedDriver')}</option>
+              {drivers.map((driver) => <option key={driver.id} value={driver.id}>{[driver.name || t('loadsWorkspace.missingDriver'), driver.driverNumber].filter(Boolean).join(' · ')}</option>)}
+            </select></label>}
+            <select className="driver-board-status" value={stageFilter} onChange={(event) => setStageFilter(event.target.value)} aria-label={t('loads.statusFilter')}>
+              <option value="ALL">{t('drivers.allStatuses')}</option>
+              {stages.map((stage) => <option key={stage.id} value={stage.id}>{stage.title}</option>)}
+            </select>
+          </>}
           {/* View Toggle */}
-          <div className="flex items-center bg-zinc-100 dark:bg-zinc-900 rounded-lg p-1">
+          {!styledWorkspace && <div className="flex items-center bg-zinc-100 dark:bg-zinc-900 rounded-lg p-1">
             <button
               onClick={() => selectViewMode('kanban')}
-              aria-pressed={viewMode === 'kanban'}
+              aria-pressed={activeView === 'kanban'}
               className={`flex items-center space-x-2 px-4 py-1.5 rounded-lg text-sm font-bold transition-colors ${
-                viewMode === 'kanban'
+                activeView === 'kanban'
                   ? 'bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 shadow-xs'
                   : 'text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-200'
               }`}
@@ -224,19 +267,19 @@ export default function KanbanBoard({
               <Columns3 className="w-4 h-4" />
               <span>{t('loads.board')}</span>
             </button>
-            <button
+            {!boardOnly && <button
               onClick={() => selectViewMode('table')}
-              aria-pressed={viewMode === 'table'}
+              aria-pressed={activeView === 'table'}
               className={`flex items-center space-x-2 px-4 py-1.5 rounded-lg text-sm font-bold transition-colors ${
-                viewMode === 'table'
+                activeView === 'table'
                   ? 'bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 shadow-xs'
                   : 'text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-200'
               }`}
             >
               <TableIcon className="w-4 h-4" />
               <span>{t('loads.table')}</span>
-            </button>
-          </div>
+            </button>}
+          </div>}
 
           <button
             type="button"
@@ -251,6 +294,7 @@ export default function KanbanBoard({
             title={t('loads.dateFilter')}
           >
             <CalendarDays className="h-5 w-5" />
+            {styledWorkspace && <span>{hasDateFilter ? `${filterStart}${filterStart !== filterEnd ? ` — ${filterEnd}` : ''}` : t('drivers.allDates')}</span>}
           </button>
 
           {isDateFilterOpen && (
@@ -344,8 +388,13 @@ export default function KanbanBoard({
         </div>
       </div>
 
+      {fleetWorkspace && hasWorkspaceFilters && <div className="fleet-loads-filter-feedback">
+        <span role="status">{visibleLoads.length === 0 ? t('loadsWorkspace.noResults') : t('loadsWorkspace.totalLoads', { count: visibleLoads.length }) + ': ' + visibleLoads.length}</span>
+        <button type="button" onClick={clearWorkspaceFilters}>{t('loadsWorkspace.clearFilters')}</button>
+      </div>}
+
       {/* 1. Kanban View */}
-      {viewMode === 'kanban' && (
+      {activeView === 'kanban' && (
         <div className="kanban-columns" style={{ '--board-column-count': stageFilter === 'ALL' ? stages.length : 1 }}>
           {stages.filter(col => stageFilter === 'ALL' || col.id === stageFilter).map((col) => {
             const colLoads = dateFilteredLoads.filter((load) => stageForLoad(load) === col.id);
@@ -356,6 +405,7 @@ export default function KanbanBoard({
             return (
               <div 
                 key={col.id} 
+                {...(styledWorkspace && isUploadCol ? pasteTargetProps : {})}
                 onDragOver={(e) => {
                   if (isUploadCol && !isAiProcessing) {
                     e.preventDefault();
@@ -375,7 +425,7 @@ export default function KanbanBoard({
                     submitDocumentFile(e.dataTransfer.files?.[0]);
                   }
                 }}
-                className={`kanban-column relative bg-zinc-50/50 dark:bg-zinc-900/20 border border-zinc-200/50 dark:border-zinc-800/50 rounded-2xl p-3 flex flex-col min-w-[240px] min-h-[560px] transition-all ${
+                className={`kanban-column ${styledWorkspace ? `driver-board-column stage-${col.id.toLowerCase()}` : ''} relative bg-zinc-50/50 dark:bg-zinc-900/20 border border-zinc-200/50 dark:border-zinc-800/50 rounded-2xl p-3 flex flex-col min-w-[240px] min-h-[560px] transition-all ${
                   isUploadCol && isDraggingOverOffer
                     ? 'border-blue-500 ring-4 ring-blue-500/20 bg-blue-50/30 dark:bg-blue-950/40'
                     : ''
@@ -397,7 +447,7 @@ export default function KanbanBoard({
                 )}
 
                 {/* Stage Title */}
-                <div className="flex items-center justify-between pb-3 mb-3 border-b border-zinc-200 dark:border-zinc-800/60">
+                <div className={`flex items-center justify-between pb-3 mb-3 border-b border-zinc-200 dark:border-zinc-800/60 ${styledWorkspace ? 'driver-board-stage-header' : ''}`}>
                   <div className="flex items-center space-x-2.5">
                     <span className={`w-3 h-3 rounded-full ${col.dot}`} />
                     <span className="text-base font-bold text-zinc-900 dark:text-zinc-100 tracking-tight">{col.title}</span>
@@ -410,6 +460,9 @@ export default function KanbanBoard({
                 {/* Cards / compact upload card when the offer column is empty */}
                 <div className="kanban-card-list space-y-3 flex-1 flex flex-col overflow-y-auto">
                   {colLoads.length === 0 ? (
+                    styledWorkspace ? (
+                      <div className="driver-board-empty"><Truck size={40} strokeWidth={1.4} /><strong>{t('drivers.noTripsInStage')}</strong></div>
+                    ) :
                     isUploadCol ? (
                       /* Keep the upload target aligned with a normal load card. */
                       <label 
@@ -448,7 +501,7 @@ export default function KanbanBoard({
                   ) : (
                     <>
                       {/* Keep import available even when the column already contains loads. */}
-                      {isUploadCol && (
+                      {isUploadCol && !styledWorkspace && (
                         <label 
                           {...pasteTargetProps}
                           tabIndex={0}
@@ -472,8 +525,34 @@ export default function KanbanBoard({
 
                       {colLoads.map((load) => {
                         const driver = getDriver(load.driverId);
+                        const driverName = driver?.name || (load.driverId ? t('loadsWorkspace.missingDriver') : t('loads.unassigned'));
+                        const canAssign = onSendOffer && ['ready_for_offer', 'offered'].includes(load.databaseStatus);
+                        const canOpenDocuments = load.status === 'COMPLETED' && onOpenDocs;
+                        const canDelete = onDeleteLoad && canDeleteLoad(load);
 
-                        return (
+                        return styledWorkspace ? (
+                          <div key={load.id} role="button" tabIndex={0} className="driver-trip-card" onClick={() => setSelectedLoadDetails(load)} onKeyDown={(event) => {
+                            if (event.target === event.currentTarget && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); setSelectedLoadDetails(load); }
+                          }}>
+                            <div className="driver-trip-card-top"><strong>#{String(load.loadNumber || '').replace(/^#/, '')}</strong><span className={`driver-trip-stage stage-${col.id.toLowerCase()}`}>{load.status === 'DELIVERED' ? t('loads.awaitingCompletion') : col.title}</span></div>
+                            <p className="driver-trip-card-route"><MapPin size={15} /><span>{[load.origin?.city, load.origin?.state].filter(Boolean).join(', ') || t('common.notProvided')}</span><span className="driver-trip-route-arrow">→</span><span>{[load.destination?.city, load.destination?.state].filter(Boolean).join(', ') || t('common.notProvided')}</span></p>
+                            <p><CircleDollarSign size={15} /><strong>{formatCurrency(load.rate)}</strong></p>
+                            <p><Building2 size={15} /><span>{load.broker || t('inbox.brokerMissing')}</span></p>
+                            {load.equipment && <p><Truck size={15} /><span>{load.equipment}</span></p>}
+                            {fleetWorkspace && <p className="fleet-load-driver" title={driverName}>
+                              <UsersRound size={15} aria-hidden="true" />
+                              <span>{driverName}
+                                {load.status === 'UNASSIGNED' && load.targetDriverIds?.length > 1 && <small>{t('loads.offeredDrivers', { count: load.targetDriverIds.length })}</small>}
+                              </span>
+                            </p>}
+                            {(load.origin?.date || load.destination?.date) && <p className="driver-trip-card-date"><CalendarDays size={15} /><span>{formatAppointment(load.origin?.date || load.destination?.date, load.origin?.date ? load.origin.timezone : load.destination?.timezone, { dateOnly: true })}</span></p>}
+                            {fleetWorkspace && (canAssign || canOpenDocuments || canDelete) && <div className="fleet-load-card-actions">
+                              {canAssign && <button type="button" className="fleet-load-assign" onClick={(event) => { event.stopPropagation(); onSendOffer(load); }}>{t('loads.assignToDriver')}</button>}
+                              {canOpenDocuments && <button type="button" className="fleet-load-documents" onClick={(event) => { event.stopPropagation(); onOpenDocs(load); }} title={t('nav.documents')} aria-label={t('nav.documents')}><FileText size={15} /></button>}
+                              {canDelete && <button type="button" className="fleet-load-delete" onClick={(event) => { event.stopPropagation(); setLoadPendingDelete(load); }} aria-label={t('loads.deleteNamed', { number: load.loadNumber })} title={t('loads.deleteTitle')}><Trash2 size={15} /></button>}
+                            </div>}
+                          </div>
+                        ) : (
                           <div
                             key={load.id}
                             role="button"
@@ -598,7 +677,7 @@ export default function KanbanBoard({
       )}
 
       {/* 2. Professional Clean Table View */}
-      {viewMode === 'table' && (
+      {activeView === 'table' && (
         <div className="space-y-4">
           
           {/* Rate Con AI Drag & Drop Banner */}

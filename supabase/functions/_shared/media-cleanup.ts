@@ -1,13 +1,15 @@
 export type MediaCleanupPayload = {
   provider: "cloudinary" | "supabase_storage";
-  documentVersionId: string;
+  documentVersionId?: string;
+  messageId?: string;
+  chatUploadId?: string;
   mediaRef?: string;
   mediaAssetId?: string | null;
   assetId?: string | null;
   publicId?: string;
   resourceType?: "image" | "video" | "raw";
   deliveryType?: "authenticated";
-  bucket?: "load-documents";
+  bucket?: "load-documents" | "chat-media";
   storagePath?: string;
 };
 
@@ -34,13 +36,21 @@ export function parseMediaCleanupPayload(value: unknown): MediaCleanupPayload {
   }
   const payload = value as Record<string, unknown>;
   const provider = requiredString(payload.provider, "provider", 40);
-  const documentVersionId = requiredString(
-    payload.documentVersionId,
-    "documentVersionId",
-    100,
-  );
+  // Jobs are created by checked database functions, never by the client. Keep
+  // their resource identity explicit so chat jobs cannot delete load documents.
+  const isUpload = payload.chatUploadId != null;
+  const isChat = payload.messageId != null || isUpload;
+  if ([payload.messageId, payload.chatUploadId, payload.documentVersionId].filter((id) => id != null).length !== 1) {
+    throw new MediaCleanupError("Ambiguous cleanup resource", false);
+  }
+  const identity = isUpload
+    ? { chatUploadId: requiredString(payload.chatUploadId, "chatUploadId", 100) }
+    : isChat
+    ? { messageId: requiredString(payload.messageId, "messageId", 100) }
+    : { documentVersionId: requiredString(payload.documentVersionId, "documentVersionId", 100) };
 
   if (provider === "cloudinary") {
+    if (isUpload) throw new MediaCleanupError("Unsupported upload cleanup provider", false);
     const resourceType = requiredString(
       payload.resourceType,
       "resourceType",
@@ -65,7 +75,7 @@ export function parseMediaCleanupPayload(value: unknown): MediaCleanupPayload {
     }
     return {
       provider,
-      documentVersionId,
+      ...identity,
       mediaRef: requiredString(payload.mediaRef, "mediaRef", 120),
       mediaAssetId: typeof payload.mediaAssetId === "string"
         ? requiredString(payload.mediaAssetId, "mediaAssetId", 100)
@@ -80,16 +90,17 @@ export function parseMediaCleanupPayload(value: unknown): MediaCleanupPayload {
   if (provider === "supabase_storage") {
     const bucket = requiredString(payload.bucket, "bucket", 100);
     const storagePath = requiredString(payload.storagePath, "storagePath");
-    if (bucket !== "load-documents") {
+    if (bucket !== (isChat ? "chat-media" : "load-documents")) {
       throw new MediaCleanupError("Unsupported storage bucket", false);
     }
-    if (storagePath.includes("\0") || storagePath.split("/").includes("..")) {
+    if (storagePath.includes("\0") || storagePath.startsWith("/") ||
+        storagePath.split("/").some((part) => !part || part === ".." || part === ".")) {
       throw new MediaCleanupError("Unsafe storage path", false);
     }
     return {
       provider,
-      documentVersionId,
-      bucket,
+      ...identity,
+      bucket: bucket as "load-documents" | "chat-media",
       storagePath,
     };
   }

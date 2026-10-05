@@ -1,9 +1,14 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { CalendarClock, ChevronLeft, ChevronRight, FileDown, FileText, LoaderCircle, MapPin, Truck, X } from 'lucide-react';
+import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
+import { CalendarClock, ChevronLeft, ChevronRight, FileDown, LoaderCircle, MapPin, Truck, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { formatCurrency, formatDateTime, formatNumber } from '../i18n/format';
+import { formatAppointment, formatCurrency, formatNumber } from '../i18n/format';
 import { loadStatusLabel } from '../i18n/labels';
 import { buildLoadDetails } from './loadDetailsModel';
+import DraggableLoadDocument from './DraggableLoadDocument.jsx';
+import './loadDetails.css';
+
+const LoadDetailsMap = lazy(() => import('./LoadDetailsMap.jsx'));
 
 const loadPdfTools = () => import('../services/loadDocumentPdf');
 
@@ -24,6 +29,9 @@ export default function LoadDetailsModal({ load, driver, onClose, onOpenDocs }) 
   const details = buildLoadDetails(load, driver);
   const documents = details.documents.map((document) => ({
     ...document,
+    versionId: load.documentMeta?.[document.id]?.current_version_id,
+    mimeType: load.documentMeta?.[document.id]?.mimeType,
+    fileName: load.documentMeta?.[document.id]?.fileName,
     title: {
       rateCon: t('documents.brokerRateCon'),
       shipperBol: t('documents.shipperBol'),
@@ -31,7 +39,7 @@ export default function LoadDetailsModal({ load, driver, onClose, onOpenDocs }) 
       receipt: t('documents.paymentReceipt'),
     }[document.id],
   }));
-  const documentsSignature = documents.map((document) => `${document.id}:${document.url || ''}`).join('|');
+  const documentsSignature = documents.map((document) => `${document.id}:${document.versionId || document.url || ''}`).join('|');
 
   const prepareCombinedPdf = useCallback(async () => {
     if (pdfAssetRef.current) return pdfAssetRef.current;
@@ -69,10 +77,19 @@ export default function LoadDetailsModal({ load, driver, onClose, onOpenDocs }) 
   }, [load]);
 
   useEffect(() => {
+    const previousFocus = document.activeElement;
+    const host = document.querySelector('.workspace-main');
+    const background = [...(host?.children || [])].filter(element => !element.classList.contains('load-command-page'));
+    const inertState = background.map(element => element.inert);
+    background.forEach(element => { element.inert = true; });
     closeRef.current?.focus();
     const closeOnEscape = (event) => { if (event.key === 'Escape') onClose(); };
     window.addEventListener('keydown', closeOnEscape);
-    return () => window.removeEventListener('keydown', closeOnEscape);
+    return () => {
+      window.removeEventListener('keydown', closeOnEscape);
+      background.forEach((element, index) => { element.inert = inertState[index]; });
+      if (previousFocus?.isConnected) previousFocus.focus();
+    };
   }, [onClose]);
 
   useEffect(() => {
@@ -137,41 +154,42 @@ export default function LoadDetailsModal({ load, driver, onClose, onOpenDocs }) 
     pdfToolsRef.current.setLoadDocumentsPdfDragData(event.dataTransfer, asset.file, asset.dragUrl);
   };
 
-  return (
-    <div className="load-details-page fixed inset-0 z-50 overflow-hidden bg-white dark:bg-zinc-950">
-      <section role="dialog" aria-modal="true" aria-labelledby="load-details-title" className="flex h-full min-h-0 w-full flex-col">
-        <header className="flex shrink-0 items-center justify-between border-b border-zinc-200 px-5 py-3 dark:border-zinc-800">
+  const page = (
+    <div className="load-details-page load-command-page">
+      <section role="dialog" aria-labelledby="load-details-title" className="flex h-full min-h-0 w-full flex-col">
+        <header className="load-command-header">
           <div>
             <div className="flex flex-wrap items-center gap-2">
               <h2 id="load-details-title" className="text-lg font-bold text-zinc-900 dark:text-white">{t('loads.detailsTitle')}</h2>
               <span className="rounded-lg bg-zinc-100 px-2 py-1 font-mono text-sm font-bold text-zinc-700 dark:bg-zinc-800 dark:text-zinc-200">{details.number}</span>
             </div>
-            <p className="mt-1 text-xs font-semibold text-zinc-500">{loadStatusLabel(t, details.status)}</p>
+            <p className="load-command-status">{loadStatusLabel(t, details.status)}</p>
+          </div>
+          <div className="load-command-metrics">
+            <Metric label={t('loads.rate')} content={formatCurrency(details.rate)} />
+            <Metric label={t('loads.distance')} content={details.distanceMiles == null ? '—' : `${formatNumber(details.distanceMiles)} mi`} />
+            <Metric label="RPM" content={details.ratePerMile == null ? '—' : `${formatCurrency(details.ratePerMile)}/mi`} />
           </div>
           <button ref={closeRef} type="button" onClick={onClose} aria-label={t('common.close')} className="rounded-lg p-2 text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800"><X className="h-5 w-5" /></button>
         </header>
 
-        <div className="load-details-content">
-          <div className="load-details-overview">
-          <div className="load-details-stops grid grid-cols-2 gap-3">
-            <StopCard marker="A" title={t('inbox.pickup')} stop={details.pickup} t={t} />
-            <StopCard marker="B" title={t('inbox.delivery')} stop={details.delivery} t={t} />
+        <div className="load-command-content">
+          <div className="load-command-info">
+          <section className="load-command-driver">
+            <span className="load-command-avatar"><Truck size={23} /></span>
+            <div><span>{t('drivers.driver')}</span><strong>{details.driverName || t('loads.unassigned')}</strong></div>
+            <span className="load-command-equipment">{details.equipment || '—'}</span>
+          </section>
+          <div className="load-command-stops">
+            {details.stops.map((stop, index) => <StopCard key={index} marker={stop.markerLabel} title={t(stop.role === 'pickup' ? 'inbox.pickup' : 'inbox.delivery')} stop={stop} t={t} />)}
           </div>
 
-          <div className="load-details-facts grid grid-cols-3 gap-3">
-            <DetailSection title={t('loads.dispatchDetails')}>
-              <Fact label={t('drivers.driver')} content={details.driverName || t('loads.unassigned')} />
+          <div className="load-command-facts">
+            <DetailSection title={t('loads.broker')}>
               <Fact label={t('loads.broker')} content={value(details.broker)} />
               <Fact label={t('profile.contact')} content={value(details.brokerContact)} />
               <Fact label={t('common.phone')} content={value(details.brokerPhone)} />
               <Fact label={t('common.email')} content={value(details.brokerEmail)} />
-            </DetailSection>
-
-            <DetailSection title={t('loads.commercialDetails')}>
-              <Fact label={t('loads.rate')} content={formatCurrency(details.rate)} strong />
-              <Fact label={t('loads.distance')} content={`${formatNumber(details.distanceMiles)} mi`} />
-              <Fact label="RPM" content={details.ratePerMile == null ? '—' : `${formatCurrency(details.ratePerMile)}/mi`} />
-              <Fact label={t('loads.documents')} content={t('loads.documentCount', { count: details.documentCount })} />
             </DetailSection>
 
             <DetailSection title={t('loads.cargoDetails')}>
@@ -184,28 +202,11 @@ export default function LoadDetailsModal({ load, driver, onClose, onOpenDocs }) 
               <Fact label={t('loads.hazmat')} content={details.isHazmat == null ? '—' : details.isHazmat ? t('common.yes') : t('common.no')} />
             </DetailSection>
           </div>
-          </div>
-
-          <InstructionPages key={load.id} instructions={details.specialInstructions} requirements={details.requirements} t={t} />
-        </div>
-
-        <footer className="load-details-documents shrink-0 border-t border-zinc-200 px-5 py-3 dark:border-zinc-800">
+        <footer className="load-details-documents load-command-documents">
           <DetailSection title={t('loads.documents')}>
             <div className="grid grid-cols-4 gap-3">
               {documents.map((document) => (
-                <button
-                  key={document.id}
-                  type="button"
-                  disabled={!document.url}
-                  onClick={() => onOpenDocs(load, document.id)}
-                  className="flex items-center gap-3 rounded-xl border border-zinc-200 bg-white p-3 text-left transition-colors hover:border-teal-400 hover:bg-teal-50/60 disabled:cursor-not-allowed disabled:opacity-55 dark:border-zinc-700 dark:bg-zinc-950 dark:hover:border-teal-600 dark:hover:bg-teal-950/20"
-                >
-                  <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-300"><FileText className="h-5 w-5" /></span>
-                  <span className="min-w-0">
-                    <span className="block truncate text-sm font-bold text-zinc-900 dark:text-zinc-100">{document.title}</span>
-                    <span className={`mt-0.5 block text-xs font-semibold ${document.url ? 'text-emerald-600 dark:text-emerald-400' : 'text-zinc-400'}`}>{document.url ? t('documents.uploaded') : t('documents.notUploaded')}</span>
-                  </span>
-                </button>
+                <DraggableLoadDocument key={`${load.id}:${document.id}:${document.versionId || document.url || ''}`} document={document} onOpen={() => onOpenDocs(load, document.id)} />
               ))}
             </div>
             <div className="flex items-center justify-end gap-3">
@@ -214,8 +215,6 @@ export default function LoadDetailsModal({ load, driver, onClose, onOpenDocs }) 
                 type="button"
                 disabled={isDownloadingPdf || details.documentCount === 0}
                 onClick={combineDocuments}
-                onPointerEnter={preparePdfForDrag}
-                onFocus={preparePdfForDrag}
                 draggable={Boolean(pdfAsset)}
                 onDragStart={dragCombinedPdf}
                 title={pdfAsset ? t('documents.dragPdfHint') : t('documents.combinePdfHint')}
@@ -228,10 +227,23 @@ export default function LoadDetailsModal({ load, driver, onClose, onOpenDocs }) 
             </div>
           </DetailSection>
         </footer>
-
+          <InstructionPages key={load.id} instructions={details.specialInstructions} requirements={details.requirements} t={t} />
+          </div>
+          <aside className="load-command-map" aria-label={t('map.title')}>
+            <Suspense fallback={<div className="load-command-map-loading" role="status">{t('common.loading')}</div>}>
+              <LoadDetailsMap load={load} driver={driver} />
+            </Suspense>
+          </aside>
+        </div>
       </section>
     </div>
   );
+  const host = typeof document !== 'undefined' && document.querySelector('.workspace-main');
+  return host ? createPortal(page, host) : page;
+}
+
+function Metric({ label, content }) {
+  return <div className="load-command-metric"><span>{label}</span><strong>{content}</strong></div>;
 }
 
 function InstructionPages({ instructions, requirements, t }) {
@@ -278,11 +290,10 @@ function InstructionPages({ instructions, requirements, t }) {
 function StopCard({ marker, title, stop, t }) {
   return (
     <section className="rounded-xl border border-zinc-200 p-3 dark:border-zinc-800">
-      <div className="flex items-center gap-2"><span className={`grid h-7 w-7 place-items-center rounded-full text-xs font-black text-white ${marker === 'A' ? 'bg-teal-600' : 'bg-red-500'}`}>{marker}</span><h3 className="font-bold text-zinc-900 dark:text-white">{title}</h3></div>
+      <div className="flex flex-wrap items-center gap-2"><span className={`grid h-7 w-7 place-items-center rounded-full text-xs font-black text-white ${stop.role === 'pickup' ? 'bg-teal-600' : 'bg-red-500'}`}>{marker}</span><h3 className="font-bold text-zinc-900 dark:text-white">{title}</h3><span className="ml-auto flex items-center gap-1 text-[10px] text-zinc-500"><CalendarClock size={12} />{stop.appointment ? formatAppointment(stop.appointment, stop.timezone) : '—'}</span></div>
       <div className="mt-3 space-y-2 text-sm">
         <p className="flex items-start gap-2 font-semibold text-zinc-800 dark:text-zinc-200"><Truck className="mt-0.5 h-4 w-4 shrink-0 text-zinc-400" />{value(stop.facility)}</p>
         <p className="flex items-start gap-2 text-zinc-600 dark:text-zinc-300"><MapPin className="mt-0.5 h-4 w-4 shrink-0 text-zinc-400" />{value(stop.address)}</p>
-        <p className="flex items-start gap-2 text-zinc-600 dark:text-zinc-300"><CalendarClock className="mt-0.5 h-4 w-4 shrink-0 text-zinc-400" />{stop.appointment ? formatDateTime(stop.appointment) : '—'}</p>
         {(stop.contactName || stop.contactPhone) && <p className="text-xs text-zinc-500">{t('profile.contact')}: {[stop.contactName, stop.contactPhone].filter(Boolean).join(' · ')}</p>}
       </div>
     </section>

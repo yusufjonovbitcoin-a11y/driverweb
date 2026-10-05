@@ -4,12 +4,13 @@ import { isCloudinaryReference } from './cloudinaryMediaErrors';
 import { loadImportFileError } from './loadImportFile';
 import { fetchBrokerInboxRows, fetchBrokerUnreadCount } from './brokerInboxQueries';
 import { createCoalescedAsyncTrigger } from './realtimeRefresh';
+import { readAllRows, readAllPages } from './readAllRows.js';
+import { driverPresenceFields } from './driverPresence.js';
 import { normalizeLocale } from '../i18n/locales';
 import { vehicleRowToModel } from './fleetVehicleModel';
 import { loadBoardStatus } from './loadBoardStatus';
 import { isCompleteVin, normalizeVin, parseNhtsaVinResult, retryVinLookup } from './nhtsaVin';
 import {
-  resolveDocumentMediaUrls,
   resolveProfileAvatarUrls,
 } from './workspaceMediaResolver';
 
@@ -197,20 +198,12 @@ function toUiLoad(row, offersByLoad, documentsByLoad, warningsByLoad, reviewsByD
 }
 
 function toUiDriver(member, presence, avatar = null) {
-  const online = Boolean(presence?.is_online) && Date.now() - new Date(presence.last_seen_at).getTime() < 120000;
   return {
     id: member.id,
     name: member.full_name,
     email: member.email || null,
     driverNumber: `#${member.id.slice(0, 4).toUpperCase()}`,
     phone: member.phone || null,
-    status: online ? 'AVAILABLE' : 'RESTING',
-    dutyStatus: online ? 'ON_DUTY' : 'OFF_DUTY',
-    currentLocation: online && presence?.latitude && presence?.longitude
-      ? `${Number(presence.latitude).toFixed(4)}, ${Number(presence.longitude).toFixed(4)}`
-      : null,
-    lat: online && presence?.latitude ? Number(presence.latitude) : null,
-    lng: online && presence?.longitude ? Number(presence.longitude) : null,
     hos: {
       driveLeft: member.hos_available_minutes == null
         ? '—'
@@ -238,8 +231,8 @@ function toUiDriver(member, presence, avatar = null) {
     completedLoads: 0,
     onTimeRate: '—',
     avatar,
-    isOnline: online,
-    lastSeenAt: presence?.last_seen_at || null,
+    avatarPath: member.avatar_path || null,
+    ...driverPresenceFields(presence),
   };
 }
 
@@ -252,6 +245,7 @@ function toUiMember(member, avatar = null) {
     role: member.role,
     status: member.status,
     avatar,
+    avatarPath: member.avatar_path || null,
   };
 }
 
@@ -267,15 +261,16 @@ export async function fetchWorkspace() {
     warningsResult,
     reviewsResult,
   ] = await Promise.all([
-    client.from('load_overview').select('*').order('updated_at', { ascending: false }),
-    client.from('offers').select('id,load_id,driver_id,status,compatibility_warnings').order('created_at', { ascending: false }),
-    client.from('assignments').select('id,driver_stage').eq('status', 'active'),
-    client.from('documents').select('id,load_id,document_type,current_version_id'),
-    client.from('member_directory').select('*').order('full_name'),
-    client.from('driver_presence').select('*'),
-    client.from('warnings').select('id,load_id,code,message,params').eq('is_active', true).order('created_at'),
-    client.from('document_review_overview').select('*'),
-  ]);
+    () => readAllRows(() => client.from('load_overview').select('*')),
+    () => readAllRows(() => client.from('offers').select('id,load_id,driver_id,status,compatibility_warnings,created_at')),
+    () => readAllRows(() => client.from('assignments').select('id,driver_stage').eq('status', 'active')),
+    () => readAllRows(() => client.from('documents').select('id,load_id,document_type,current_version_id')),
+    () => readAllRows(() => client.from('member_directory').select('*')),
+    () => fetchDriverPresence(),
+    () => readAllRows(() => client.from('warnings').select('id,load_id,code,message,params,created_at').eq('is_active', true)),
+    () => readAllPages(() => client.from('document_review_overview').select('*')
+      .order('document_id').order('check_id', { nullsFirst: true })),
+  ].map(async read => ({ data: await read() })));
   for (const result of [
     loadsResult,
     offersResult,
@@ -288,11 +283,14 @@ export async function fetchWorkspace() {
   ]) {
     if (result.error) throw result.error;
   }
-  const members = (membersResult.data || []).filter((member) => member.status === 'active');
-  const [documents, avatarUrls] = await Promise.all([
-    resolveDocumentMediaUrls(client, documentsResult.data || [], cloudinarySignedUrl),
-    resolveProfileAvatarUrls(client, members, cloudinarySignedUrl),
-  ]);
+  const members = (membersResult.data || []).filter((member) => member.status === 'active')
+    .sort((a, b) => (a.full_name || '').localeCompare(b.full_name || ''));
+  loadsResult.data.sort((a, b) => String(b.updated_at).localeCompare(String(a.updated_at)) || a.id.localeCompare(b.id));
+  offersResult.data.sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)));
+  warningsResult.data.sort((a, b) => String(a.created_at).localeCompare(String(b.created_at)));
+  // Durable version IDs are sufficient for lists. Resolve private media only
+  // when it is opened, not before the entire workspace can become interactive.
+  const documents = documentsResult.data || [];
   const offersByLoad = new Map();
   for (const offer of offersResult.data || []) {
     const current = offersByLoad.get(offer.load_id) || [];
@@ -326,11 +324,17 @@ export async function fetchWorkspace() {
       toUiDriver(
         member,
         presenceByDriver.get(member.id),
-        avatarUrls.get(member.id),
       )
     )),
-    members: members.map((member) => toUiMember(member, avatarUrls.get(member.id))),
+    members: members.map((member) => toUiMember(member)),
   };
+}
+
+export async function fetchWorkspaceAvatar(member) {
+  const urls = await resolveProfileAvatarUrls(requireSupabase(), [
+    { id: member.id, avatar_path: member.avatarPath },
+  ], cloudinarySignedUrl);
+  return urls.get(member.id) || null;
 }
 
 export async function fetchBrokerInbox() {
@@ -465,10 +469,10 @@ export async function createLoadFromBrokerProposal(proposal) {
   return { ...proposal, id: loadId, lifecycleStatus: 'ready_for_offer' };
 }
 
-export async function createMember({ email, password, fullName, phone, role = 'driver', companyId }) {
+export async function createMember({ email, password, fullName, phone, role = 'driver', gmailLabel, companyId }) {
   const { data, error } = await invokeAuthenticatedFunction(
     'create-member',
-    { email, password, fullName, phone, role, companyId },
+    { email, password, fullName, phone, role, gmailLabel, companyId },
   );
   if (error) await throwFunctionError(error, 'Could not create account');
   if (data?.error) throw new Error(data.error);
@@ -635,6 +639,13 @@ export async function fetchImportContacts(loadId, signal) {
   return data;
 }
 
+export async function fetchImportPreviewContacts(previewTicket, signal) {
+  const { data, error } = await invokeAuthenticatedFunction('lookup-load-contacts', { previewTicket }, { signal });
+  if (error) await throwFunctionError(error, 'Contacts unavailable');
+  if (data?.error) throw new Error(data.error);
+  return data;
+}
+
 export async function assignLoadDirectly(loadId, driverId) {
   if (!loadId || !driverId) throw new Error('Tayinlash uchun bitta haydovchini tanlang.');
   const client = requireSupabase();
@@ -782,7 +793,12 @@ export async function unassignFleetVehicleDriver(vehicleId) {
   return data;
 }
 
-export function subscribeWorkspace(onChange) {
+export async function fetchDriverPresence() {
+  const client = requireSupabase();
+  return readAllRows(() => client.from('driver_presence').select('*'), 'driver_id');
+}
+
+export function subscribeWorkspace(onChange, onPresenceChange = onChange) {
   const client = requireSupabase();
   const refresh = createCoalescedAsyncTrigger(onChange);
   const channel = client
@@ -792,7 +808,7 @@ export function subscribeWorkspace(onChange) {
     .on('postgres_changes', { event: '*', schema: 'public', table: 'assignments' }, refresh)
     .on('postgres_changes', { event: '*', schema: 'public', table: 'document_checks' }, refresh)
     .on('postgres_changes', { event: '*', schema: 'public', table: 'warnings' }, refresh)
-    .on('postgres_changes', { event: '*', schema: 'public', table: 'driver_presence' }, refresh)
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'driver_presence' }, onPresenceChange)
     .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, refresh)
     .on('postgres_changes', { event: '*', schema: 'public', table: 'driver_profiles' }, refresh)
     .on('postgres_changes', { event: '*', schema: 'public', table: 'vehicles' }, refresh)

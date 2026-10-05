@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { isSupabaseConfigured, supabase } from '../lib/supabase';
 import { createAuthStateController } from '../services/authStateController';
 import { normalizeLocale } from '../i18n/locales';
+import { savePersonalProfile } from '../services/personalProfile';
 
 function toUiUser(profile, companyName) {
   if (!profile) return null;
@@ -81,5 +82,13 @@ export function useAuth() {
     await controllerRef.current?.setSession(null);
   };
 
-  return { ...state, configured: isSupabaseConfigured, login, logout };
+  const updateProfile = async (values) => {
+    if (!supabase || !state.currentUser) throw new Error('PROFILE_SAVE_FAILED');
+    const user = state.currentUser;
+    const saved = await savePersonalProfile(supabase, user, values);
+    controllerRef.current?.applyProfileUpdate(user.id, saved);
+    return saved;
+  };
+
+  return { ...state, configured: isSupabaseConfigured, login, logout, updateProfile };
 }

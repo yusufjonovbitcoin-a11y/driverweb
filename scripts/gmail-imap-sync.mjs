@@ -1,6 +1,8 @@
 import dotenv from 'dotenv';
 import { normalizeMessageLimit, selectPendingUids } from './gmail-sync-cursor.mjs';
 import { extractMessageBody } from './gmail-message-body.mjs';
+import { drainGmailLabelJobs } from './gmail-driver-labels.mjs';
+import { findPendingBrokerAttachments, shouldProcessExtraction } from './gmail-backlog.mjs';
 import { createHash } from 'node:crypto';
 import { ImapFlow } from 'imapflow';
 import { simpleParser } from 'mailparser';
@@ -186,16 +188,21 @@ function supportedMimeType(attachment) {
   return [...mimeTypeByExtension.entries()].find(([extension]) => lowerName.endsWith(extension))?.[1] || null;
 }
 
-async function processBrokerAttachment(attachmentId) {
+async function processBrokerAttachment(attachmentId, { retryFailed = false } = {}) {
   const { data: existing, error: existingError } = await admin
     .from('ai_extractions')
-    .select('status')
+    .select('status,processed_at')
     .eq('attachment_id', attachmentId)
     .maybeSingle();
   if (existingError) throw existingError;
-  if (['extracted', 'needs_review', 'parse_failed'].includes(existing?.status)) {
+  if (!shouldProcessExtraction(existing, { retryFailed })) {
     return { processed: false, status: existing.status };
   }
+
+  const { error: attemptError } = await admin.from('broker_attachments')
+    .update({ ai_last_attempt_at: new Date().toISOString() })
+    .eq('id', attachmentId).eq('company_id', companyId);
+  if (attemptError) throw attemptError;
 
   const response = await fetch(`${process.env.SUPABASE_URL.trim()}/functions/v1/process-broker-attachment`, {
     method: 'POST',
@@ -213,19 +220,12 @@ async function processBrokerAttachment(attachmentId) {
 }
 
 async function processPendingBrokerAttachments(limit = 10) {
-  const { data: attachments, error } = await admin
-    .from('broker_attachments')
-    .select('id')
-    .eq('company_id', companyId)
-    .in('mime_type', [...supportedAttachmentTypes])
-    .order('created_at', { ascending: false })
-    .limit(limit);
-  if (error) throw error;
+  const attachments = await findPendingBrokerAttachments(admin, companyId, [...supportedAttachmentTypes], limit);
   let processed = 0;
   let failed = 0;
   for (const attachment of attachments || []) {
     try {
-      const result = await processBrokerAttachment(attachment.id);
+      const result = await processBrokerAttachment(attachment.id, { retryFailed: true });
       if (result.processed) processed += 1;
     } catch (processingError) {
       failed += 1;
@@ -373,6 +373,9 @@ try {
   activeConnection = connection;
   await client.connect();
   imapConnected = true;
+  const gmailLabels = await drainGmailLabelJobs({
+    admin, client, companyId, connectionId: connection.id,
+  });
   const lock = await client.getMailboxLock('INBOX');
   let synced = 0;
   let documents = 0;
@@ -414,7 +417,7 @@ try {
   processed += backlog.processed;
   failed += backlog.failed;
   const bodyBackfill = await backfillMessageBodies(connection.id);
-  console.log(JSON.stringify({ synced, documents, processed, failed, ...bodyBackfill }));
+  console.log(JSON.stringify({ synced, documents, processed, failed, ...bodyBackfill, gmailLabels }));
 } catch (error) {
   if (activeConnection) {
     const safeMessage = !imapConnected

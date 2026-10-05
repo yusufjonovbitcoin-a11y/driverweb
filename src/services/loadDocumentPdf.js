@@ -1,4 +1,5 @@
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
+import { fetchTripDocument } from './tripDocumentAccess.js';
 
 export const LOAD_DOCUMENT_SEQUENCE = Object.freeze([
   { id: 'rateCon', label: 'Rate Con' },
@@ -19,10 +20,11 @@ export function orderedLoadDocuments(load) {
       id,
       label,
       url: load.documents?.[id] || null,
+      versionId: load.documentMeta?.[id]?.current_version_id || null,
       mimeType: load.documentMeta?.[id]?.mimeType || null,
       fileName: load.documentMeta?.[id]?.fileName || null,
     }))
-    .filter((document) => document.url);
+    .filter((document) => document.url || document.versionId);
 }
 
 async function rasterizeImage(blob) {
@@ -133,7 +135,7 @@ async function appendImagePage(output, bytes, blob, mimeType, documentItem, font
   drawSectionHeader(page, font, documentItem.label, 0, 1);
 }
 
-export async function mergeLoadDocumentsPdf(load, { fetchDocument = fetch, signal } = {}) {
+export async function mergeLoadDocumentsPdf(load, { fetchDocument = fetch, resolveSource, signal } = {}) {
   const documents = orderedLoadDocuments(load);
   if (!documents.length) throw new Error('No load documents are available');
 
@@ -141,16 +143,13 @@ export async function mergeLoadDocumentsPdf(load, { fetchDocument = fetch, signa
   const headerFont = await output.embedFont(StandardFonts.HelveticaBold);
   for (const documentItem of documents) {
     signal?.throwIfAborted();
-    const response = await fetchDocument(documentItem.url, { signal });
-    if (!response.ok) {
-      throw new Error(`${documentItem.label} could not be downloaded`);
-    }
-    const blob = await response.blob();
+    const source = await fetchTripDocument(documentItem, { fetchDocument, resolveSource, signal });
+    const { blob } = source;
     const bytes = new Uint8Array(await blob.arrayBuffer());
     signal?.throwIfAborted();
-    const mimeType = documentItem.mimeType || blob.type || response.headers.get('content-type') || '';
+    const mimeType = source.mimeType || blob.type || '';
 
-    if (/application\/pdf/i.test(mimeType) || /\.pdf(?:$|\?)/i.test(documentItem.url)) {
+    if (/application\/pdf/i.test(mimeType) || /\.pdf(?:$|\?)/i.test(source.mediaUrl)) {
       await appendPdfSection(output, bytes, documentItem, headerFont);
     } else if (/^image\//i.test(mimeType)) {
       await appendImagePage(output, bytes, blob, mimeType, documentItem, headerFont);

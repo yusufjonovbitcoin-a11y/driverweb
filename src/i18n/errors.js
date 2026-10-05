@@ -1,4 +1,8 @@
 const ERROR_PATTERNS = [
+  [/CHAT_MEDIA_FILE_TOO_LARGE/, 'chat.fileTooLarge'],
+  [/CHAT_MEDIA_FILE_EMPTY/, 'chat.mediaFileEmpty'],
+  [/CHAT_MEDIA_OUTBOX_FULL/, 'chat.mediaQueueFull'],
+  [/CHAT_MEDIA_STORAGE_UNAVAILABLE|QuotaExceededError/, 'chat.mediaStorageUnavailable'],
   [/ASSIGN_FAILED_DRAFT_SAVED/, 'loadImport.assignmentFailedSaved'],
   [/PREVIEW_TICKET_(?:INVALID|EXPIRED_OR_MISMATCHED)/, 'loadImport.previewExpired'],
   [/DOCUMENT_REVIEW_BLOCKED/, 'loadImport.reviewBlocked'],
@@ -8,6 +12,7 @@ const ERROR_PATTERNS = [
   [/PDF_SOURCE_REIMPORT_REQUIRED/, 'importReview.sourceReimport'],
   [/PDF_(?:SOURCE|WORKER|PREPROCESS|OCR|PAGE)/, 'importReview.sourceUnavailable'],
   [/LOAD_NUMBER_EXISTS|loads_company_id_load_number_key/, 'importReview.duplicateLoad'],
+  [/Yuk haydovchiga berilgan\. Uning hujjatini avtomatik almashtirib bo.lmaydi\./, 'importReview.duplicateLoad'],
   [/AI_DOCUMENT_TIMEOUT|Signal timed out/, 'importReview.timeout'],
   [/CHAT_RATE_LIMIT/, 'errors.chatRateLimit'],
   [/CHAT_MESSAGE_TOO_LONG/, 'errors.chatMessageTooLong'],

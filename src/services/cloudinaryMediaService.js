@@ -1,9 +1,9 @@
 import { requireSupabase, supabaseAnonKey, supabaseUrl } from '../lib/supabase';
 import {
-  CloudinaryMediaError,
   isCloudinaryReference,
 } from './cloudinaryMediaErrors';
 import { cachedSignedMediaUrl, invalidateSignedMediaUrl } from './mediaUrlCache';
+import { requestMediaJson, uploadMediaRequest } from './mediaRequestTransport';
 
 export {
   CloudinaryMediaError,
@@ -25,7 +25,7 @@ async function accessToken() {
 
 async function request(body, { multipart = false } = {}) {
   const token = await accessToken();
-  const response = await fetch(`${supabaseUrl}/functions/v1/cloudinary-media`, {
+  return requestMediaJson(`${supabaseUrl}/functions/v1/cloudinary-media`, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${token}`,
@@ -34,15 +34,6 @@ async function request(body, { multipart = false } = {}) {
     },
     body: multipart ? body : JSON.stringify(body),
   });
-  const payload = await response.json().catch(() => ({}));
-  if (!response.ok) {
-    throw new CloudinaryMediaError(
-      payload.error || `Media xatosi (${response.status})`,
-      response.status,
-      payload.code || null,
-    );
-  }
-  return payload;
 }
 
 export async function uploadCloudinaryMedia({
@@ -57,30 +48,10 @@ export async function uploadCloudinaryMedia({
   form.set('file', file, file.name);
   form.set('scope', scope);
   if (contextId) form.set('contextId', contextId);
-  return new Promise((resolve, reject) => {
-    const xhr = new XMLHttpRequest();
-    xhr.open('POST', `${supabaseUrl}/functions/v1/cloudinary-media`);
-    xhr.setRequestHeader('Authorization', `Bearer ${token}`);
-    xhr.setRequestHeader('apikey', supabaseAnonKey);
-    xhr.upload.onprogress = (event) => {
-      if (event.lengthComputable) onProgress?.(event.loaded / event.total);
-    };
-    xhr.onerror = () => reject(new Error('Media serveriga ulanib bo‘lmadi.'));
-    xhr.onabort = () => reject(new DOMException('Upload bekor qilindi.', 'AbortError'));
-    xhr.onload = () => {
-      let payload = {};
-      try { payload = JSON.parse(xhr.responseText || '{}'); } catch { /* handled below */ }
-      if (xhr.status < 200 || xhr.status >= 300) {
-        reject(new Error(payload.error || `Media xatosi (${xhr.status})`));
-        return;
-      }
-      onProgress?.(1);
-      resolve(payload);
-    };
-    const abort = () => xhr.abort();
-    signal?.addEventListener('abort', abort, { once: true });
-    xhr.onloadend = () => signal?.removeEventListener('abort', abort);
-    xhr.send(form);
+  return uploadMediaRequest({
+    url: `${supabaseUrl}/functions/v1/cloudinary-media`,
+    headers: { Authorization: `Bearer ${token}`, apikey: supabaseAnonKey },
+    body: form, onProgress, signal,
   });
 }
 

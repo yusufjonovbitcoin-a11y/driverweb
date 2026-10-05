@@ -1,8 +1,12 @@
-import { useState } from 'react';
-import { AlertTriangle, BadgeCheck, FileText, LoaderCircle, X } from 'lucide-react';
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
+import { BadgeCheck, FileText, LoaderCircle, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { formatCurrency } from '../i18n/format';
-import { warningLabel } from '../i18n/labels';
+import ImageDocumentViewer from './ImageDocumentViewer';
+import { resolveTripDocumentSource, fetchTripDocument, saveDocumentBlob } from '../services/tripDocumentAccess.js';
+import { openChatAttachment } from '../services/openChatAttachment';
+
+const PdfDocumentViewer = lazy(() => import('./PdfDocumentViewer.jsx'));
 
 export default function DocumentViewerModal({
   isOpen,
@@ -21,6 +25,7 @@ export default function DocumentViewerModal({
       title: t('documents.brokerRateCon'),
       url: load.documents?.rateCon,
       mimeType: load.documentMeta?.rateCon?.mimeType,
+      versionId: load.documentMeta?.rateCon?.current_version_id,
       review: load.documentChecks?.rateCon,
     },
     {
@@ -28,6 +33,7 @@ export default function DocumentViewerModal({
       title: t('documents.shipperBol'),
       url: load.documents?.shipperBol,
       mimeType: load.documentMeta?.shipperBol?.mimeType,
+      versionId: load.documentMeta?.shipperBol?.current_version_id,
       review: load.documentChecks?.shipperBol,
     },
     {
@@ -35,6 +41,7 @@ export default function DocumentViewerModal({
       title: t('documents.receiverPod'),
       url: load.documents?.receiverPod,
       mimeType: load.documentMeta?.receiverPod?.mimeType,
+      versionId: load.documentMeta?.receiverPod?.current_version_id,
       review: load.documentChecks?.receiverPod,
     },
     {
@@ -42,9 +49,10 @@ export default function DocumentViewerModal({
       title: t('documents.paymentReceipt'),
       url: load.documents?.receipt,
       mimeType: load.documentMeta?.receipt?.mimeType,
+      versionId: load.documentMeta?.receipt?.current_version_id,
       review: load.documentChecks?.receipt,
     },
-  ].map((document) => ({ ...document, available: Boolean(document.url) }));
+  ].map((document) => ({ ...document, fileName: load.documentMeta?.[document.id]?.fileName, available: Boolean(document.url || document.versionId) }));
 
   const currentDoc = docs.find((document) => document.id === activeDocTab) || docs[0];
   const handleClose = () => {
@@ -52,14 +60,14 @@ export default function DocumentViewerModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs dark:bg-black/80">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-1 backdrop-blur-xs sm:p-2 dark:bg-black/80">
       <section
         role="dialog"
         aria-modal="true"
         aria-labelledby="document-viewer-title"
-        className="flex h-[92dvh] w-full max-w-6xl flex-col overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-2xl transition-colors dark:border-zinc-800 dark:bg-zinc-950"
+        className="flex h-full w-full flex-col overflow-hidden rounded-lg border border-zinc-200 bg-white shadow-2xl transition-colors dark:border-zinc-800 dark:bg-zinc-950"
       >
-        <header className="flex shrink-0 items-center justify-between border-b border-zinc-200 bg-zinc-50 px-6 py-4 dark:border-zinc-800 dark:bg-zinc-900/50">
+        <header className="flex shrink-0 items-center justify-between gap-3 border-b border-zinc-200 bg-zinc-50 px-4 py-2 dark:border-zinc-800 dark:bg-zinc-900/50">
           <div>
             <div className="flex items-center space-x-2.5">
               <h2 id="document-viewer-title" className="text-base font-semibold text-zinc-900 dark:text-zinc-100">
@@ -86,23 +94,9 @@ export default function DocumentViewerModal({
 
         {currentDoc.available && <DocumentCheckSummary review={currentDoc.review} t={t} />}
 
-        <main className="min-h-0 flex-1 bg-zinc-100/70 p-3 dark:bg-zinc-900/60">
+        <main className="min-h-0 flex-1 bg-zinc-100/70 dark:bg-zinc-900/60">
           {currentDoc.available ? (
-            currentDoc.mimeType === 'application/pdf' || /\.pdf(?:$|\?)/i.test(currentDoc.url) ? (
-              <iframe
-                src={currentDoc.url}
-                title={currentDoc.title}
-                className="h-full w-full rounded-lg border border-zinc-200 bg-white dark:border-zinc-800"
-              />
-            ) : (
-              <div className="flex h-full w-full items-center justify-center overflow-auto rounded-lg border border-zinc-200 bg-white p-3 dark:border-zinc-800 dark:bg-zinc-950">
-                <img
-                  src={currentDoc.url}
-                  alt={currentDoc.title}
-                  className="max-h-full max-w-full object-contain"
-                />
-              </div>
-            )
+            <FreshDocumentViewer key={`${load.id}:${currentDoc.id}:${currentDoc.versionId || currentDoc.url}`} document={currentDoc} />
           ) : (
             <div className="flex h-full items-center justify-center rounded-lg border border-dashed border-zinc-300 bg-white text-center dark:border-zinc-700 dark:bg-zinc-950">
               <div className="space-y-2.5 p-8 text-zinc-400 dark:text-zinc-500">
@@ -139,10 +133,75 @@ export default function DocumentViewerModal({
   );
 }
 
+function FreshDocumentViewer({ document: doc }) {
+  const { t } = useTranslation();
+  const [source, setSource] = useState(null);
+  const [failed, setFailed] = useState(false);
+  const [attempt, setAttempt] = useState(0);
+  const [downloading, setDownloading] = useState(false);
+  const [actionError, setActionError] = useState('');
+  const automaticRetries = useRef(0);
+  const downloadController = useRef(null);
+  const alive = useRef(true);
+  useEffect(() => { alive.current = true; return () => { alive.current = false; downloadController.current?.abort(); }; }, []);
+  const resolve = useCallback(async () => {
+    const result = await resolveTripDocumentSource({ versionId: doc.versionId, url: doc.url, mimeType: doc.mimeType, fileName: doc.fileName });
+    if (!alive.current) throw new DOMException('Document closed', 'AbortError');
+    return result;
+  }, [doc.versionId, doc.url, doc.mimeType, doc.fileName]);
+  const reload = useCallback(() => {
+    if (!alive.current) return;
+    setFailed(false);
+    setSource(null);
+    setAttempt(value => value + 1);
+  }, []);
+  const retry = () => { automaticRetries.current = 0; reload(); };
+  const recoverSource = useCallback(() => {
+    if (!doc.versionId || !alive.current || automaticRetries.current >= 1) return false;
+    automaticRetries.current += 1;
+    reload();
+    return true;
+  }, [doc.versionId, reload]);
+  useEffect(() => {
+    let active = true;
+    resolve().then(result => { if (active) setSource(result); })
+      .catch(() => { if (active) setFailed(true); });
+    return () => { active = false; };
+  }, [resolve, attempt]);
+  const openOriginal = async () => {
+    try { await openChatAttachment(doc, resolve); }
+    catch { if (alive.current) setFailed(true); }
+  };
+  const download = async () => {
+    if (downloadController.current) return;
+    const controller = new AbortController();
+    downloadController.current = controller;
+    setDownloading(true);
+    setActionError('');
+    try {
+      const result = await fetchTripDocument(doc, { resolveSource: resolve, signal: controller.signal });
+      controller.signal.throwIfAborted();
+      if (alive.current) saveDocumentBlob(result.blob, result.fileName || (result.mimeType === 'application/pdf' ? 'document.pdf' : 'document'));
+    } catch (error) {
+      if (alive.current && error.name !== 'AbortError') setActionError(t('documents.downloadFailed'));
+    } finally {
+      if (downloadController.current === controller) downloadController.current = null;
+      if (alive.current) setDownloading(false);
+    }
+  };
+  if (failed) return <div role="alert" className="grid h-full place-items-center text-sm text-zinc-600">
+    <button type="button" className="rounded border px-4 py-2 font-medium" onClick={retry}>{t('chat.reloadMedia')}</button>
+  </div>;
+  const loading = <div role="status" className="flex h-full items-center justify-center gap-2 text-sm text-zinc-500"><LoaderCircle className="h-5 w-5 animate-spin" />{t('documents.loadingPdf')}</div>;
+  if (!source) return loading;
+  return source.mimeType === 'application/pdf' || /\.pdf(?:$|\?)/i.test(source.mediaUrl)
+    ? <Suspense fallback={loading}><PdfDocumentViewer key={attempt} url={source.mediaUrl} title={doc.title} onOpenOriginal={openOriginal} onRetrySource={retry} onSourceError={recoverSource} onDownload={download} downloading={downloading} actionError={actionError} /></Suspense>
+    : <ImageDocumentViewer key={attempt} url={source.mediaUrl} title={doc.title} onOpenOriginal={openOriginal} onRetrySource={retry} onSourceError={recoverSource} onDownload={download} downloading={downloading} actionError={actionError} />;
+}
+
 function DocumentCheckSummary({ review, t }) {
   if (!review) return null;
   const status = review.check_status;
-  const warnings = Array.isArray(review.active_warnings) ? review.active_warnings : [];
 
   if (status === 'passed' || status === 'overridden') {
     return (
@@ -162,20 +221,5 @@ function DocumentCheckSummary({ review, t }) {
     );
   }
 
-  if (!warnings.length && status !== 'failed_to_read') return null;
-  return (
-    <div role="alert" className="shrink-0 border-b border-red-200 bg-red-50 px-6 py-2.5 text-red-900 dark:border-red-900/70 dark:bg-red-950/30 dark:text-red-200">
-      <div className="flex items-center gap-2 text-sm font-black">
-        <AlertTriangle className="h-4 w-4 shrink-0" />
-        <span>{t('documents.issueCount', { count: Math.max(1, warnings.length) })}</span>
-      </div>
-      {warnings.length > 0 && (
-        <ul className="mt-1.5 list-disc space-y-0.5 pl-6 text-xs font-semibold">
-          {warnings.map((warning, index) => (
-            <li key={warning.id || `${warning.code}:${index}`}>{warningLabel(t, warning)}</li>
-          ))}
-        </ul>
-      )}
-    </div>
-  );
+  return null;
 }

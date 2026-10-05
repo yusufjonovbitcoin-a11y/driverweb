@@ -7,8 +7,10 @@ export function mergeChatMessages(current = [], incoming = []) {
   const byId = new Map(current.map((message) => [message.id, message]));
   for (const message of incoming) {
     if (!message?.id) continue;
+    const previous = byId.get(message.id);
+    if (Number(previous?.revision || 0) > Number(message.revision || 0)) continue;
     if (message.deleted_at) byId.delete(message.id);
-    else byId.set(message.id, { ...byId.get(message.id), ...message });
+    else byId.set(message.id, { ...previous, ...message, read_at: message.read_at || previous?.read_at || null });
   }
   return [...byId.values()].sort((left, right) => {
     const timestamp = new Date(left.created_at).getTime() - new Date(right.created_at).getTime();

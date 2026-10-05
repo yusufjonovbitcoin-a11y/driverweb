@@ -11,6 +11,7 @@ import {
 import { formatCurrency } from '../i18n/format';
 import DriverBriefPreview from './DriverBriefPreview';
 import { briefFieldLabel } from '../services/driverBrief';
+import { hasLoadDocument } from '../services/loadDocumentAvailability.js';
 
 const FIELD_LABELS = {
   'broker.contactName': 'missingFields.brokerContact',
@@ -37,6 +38,7 @@ export default function QuickDriverModal({
   loadData, 
   drivers, 
   initialDriverId = null,
+  onOpenDocs,
   onConfirm 
 }) {
   const { t } = useTranslation();
@@ -154,7 +156,9 @@ export default function QuickDriverModal({
             )}
           </div>
 
-          {loadData.driverBrief && <DriverBriefPreview brief={loadData.driverBrief} sourceUrl={loadData.sourceUrl || loadData.documents?.rateCon} />}
+          {loadData.driverBrief && <DriverBriefPreview brief={loadData.driverBrief}
+            sourceUrl={loadData.sourceUrl || loadData.documents?.rateCon}
+            onOpenSource={onOpenDocs && hasLoadDocument(loadData, 'rateCon') ? () => onOpenDocs(loadData, 'rateCon') : undefined} />}
           {warningFields.length > 0 && <div role="status" className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-200">
             <p className="font-semibold">{t('driverBrief.warning')}</p>
             <p className="mt-1">{warningFields.map(key => briefFieldLabel(t, key)).join(', ')}</p>

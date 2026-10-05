@@ -1,7 +1,6 @@
 import { withCors } from "../_shared/cors.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { checkDistributedRateLimit, rateLimitResponse } from "../_shared/rate-limit.ts";
-import { uploadPrivateMedia } from "../_shared/cloudinary-media.ts";
 import { verifyLoadExtraction, EVIDENCE_PATHS } from "../_shared/load-extraction-verification.ts";
 import { documentReviewSchema, runSinglePassExtraction } from "../_shared/load-single-pass.ts";
 import { sourcedExtractionSchema, decodeSourcedExtraction } from "../_shared/load-sourced-fields.ts";
@@ -745,20 +744,6 @@ Deno.serve((request) => withCors(request, async () => {
 
   try {
     const importStarted = performance.now();
-    const uploadStarted = performance.now();
-    const manualUpload = await uploadPrivateMedia({
-      supabaseUrl,
-      apiKey: publicKey,
-      authorization,
-      file,
-      scope: "manual_import",
-      contextId: importId,
-    });
-    console.info(JSON.stringify({ event: 'load_import_stage', importId, stage: 'source_upload', durationMs: Math.round(performance.now() - uploadStarted) }));
-    const storagePath = manualUpload.reference;
-    await adminClient.from("manual_load_imports").update({ storage_path: storagePath })
-      .eq("id", importId);
-
     // A retry after draft creation reuses only this contract's signed result.
     const savedExtraction = Number(existing?.extraction_schema_version) === extractionVersion
       && (!directPdf || existing?.raw_extraction?.candidate?.extractionMode === 'ai_pdf_direct')
@@ -866,6 +851,7 @@ Deno.serve((request) => withCors(request, async () => {
     const { data: previousDocument } = await adminClient.from('documents')
       .select('current_version_id').eq('load_id', loadId).eq('document_type', 'rate_confirmation')
       .not('current_version_id', 'is', null).order('created_at', { ascending: false }).limit(1).maybeSingle();
+    let storagePath: string;
     if (!previousDocument?.current_version_id) {
       const { data: uploadPlan, error: planError } = await callerClient.rpc(
         "begin_document_upload",
@@ -879,19 +865,20 @@ Deno.serve((request) => withCors(request, async () => {
         },
       );
       if (planError) return await fail(planError.message, 500);
-      const documentUpload = await uploadPrivateMedia({
-        supabaseUrl,
-        apiKey: publicKey,
-        authorization,
-        file,
-        scope: "load_document",
-        contextId: uploadPlan.versionId,
-      });
+      if (uploadPlan?.bucket !== 'load-documents' || !uploadPlan?.storagePath || !uploadPlan?.versionId) {
+        return await fail('DOCUMENT_UPLOAD_PLAN_INVALID', 500);
+      }
+      storagePath = uploadPlan.storagePath;
+      const uploadStarted = performance.now();
+      const { error: uploadError } = await callerClient.storage
+        .from(uploadPlan.bucket)
+        .upload(storagePath, file, { contentType: file.type, upsert: false });
+      if (uploadError) return await fail(uploadError.message, 502);
+      console.info(JSON.stringify({ event: 'load_import_stage', importId, stage: 'source_upload', durationMs: Math.round(performance.now() - uploadStarted) }));
       const { error: completeError } = await callerClient.rpc(
-        "bind_document_version_media",
+        "complete_document_upload",
         {
           version_id: uploadPlan.versionId,
-          media_ref: documentUpload.reference,
           checksum_sha256: checksum,
         },
       );
@@ -899,7 +886,16 @@ Deno.serve((request) => withCors(request, async () => {
       documentVersionId = uploadPlan.versionId;
     } else {
       documentVersionId = previousDocument.current_version_id;
+      const { data: existingVersion, error: versionError } = await adminClient
+        .from('document_versions').select('storage_path').eq('id', documentVersionId).single();
+      if (versionError || !existingVersion?.storage_path) {
+        return await fail('DOCUMENT_VERSION_PATH_UNAVAILABLE', 500);
+      }
+      storagePath = existingVersion.storage_path;
     }
+    const { error: pathError } = await adminClient.from('manual_load_imports')
+      .update({ storage_path: storagePath }).eq('id', importId);
+    if (pathError) return await fail('DOCUMENT_IMPORT_PATH_UNAVAILABLE', 500);
 
     const preparedLoad = {
       review: { ...verified.review, checksum },

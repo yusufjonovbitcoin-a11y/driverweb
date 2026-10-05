@@ -1,3 +1,5 @@
+import { hasLoadDocument } from '../services/loadDocumentAvailability.js';
+
 const FALLBACK_TRANSLATIONS = {
   'analytics.title': 'Analitika',
   'analytics.keywords': ['analitika', 'hisob', 'xarajat', 'qoldiq'],
@@ -95,9 +97,9 @@ export function buildGlobalSearchResults({ query, loads = [], drivers = [], limi
   const loadResults = loads.map((load) => {
     const driver = driverById.get(load.driverId);
     const availableDocuments = [
-      load.documents?.rateCon && 'Rate Con RateCon',
-      load.documents?.shipperBol && 'BOL',
-      load.documents?.receiverPod && 'POD',
+      hasLoadDocument(load, 'rateCon') && 'Rate Con RateCon',
+      hasLoadDocument(load, 'shipperBol') && 'BOL',
+      hasLoadDocument(load, 'receiverPod') && 'POD',
     ].filter(Boolean);
 
     return {

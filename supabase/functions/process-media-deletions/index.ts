@@ -71,11 +71,17 @@ Deno.serve((request) =>
     const deadlineAt = startedAt + 45_000;
     const expectedToken = Deno.env.get("MEDIA_CLEANUP_WORKER_TOKEN")?.trim() ??
       "";
+    const expectedCronToken = Deno.env.get("MEDIA_CLEANUP_CRON_TOKEN")?.trim() ??
+      "";
     const suppliedToken = request.headers.get("X-Worker-Token") ?? "";
-    if (!expectedToken) {
+    if (!expectedToken && !expectedCronToken) {
       return json({ error: "Function environment is incomplete" }, 500);
     }
-    if (!secureEqual(suppliedToken, expectedToken)) {
+    const authenticatedWorker = !!expectedToken &&
+      secureEqual(suppliedToken, expectedToken);
+    const authenticatedCron = !!expectedCronToken &&
+      secureEqual(suppliedToken, expectedCronToken);
+    if (!authenticatedWorker && !authenticatedCron) {
       return json({ error: "Worker authentication required" }, 401);
     }
 
@@ -101,22 +107,26 @@ Deno.serve((request) =>
     if (!rateLimit.allowed) return rateLimitResponse(rateLimit);
 
     const input = await request.json().catch(() => ({}));
-    const batchSize = Math.min(Math.max(Number(input?.batchSize) || 3, 1), 9);
-    const [expiredUploads, staleJobs, expiredRateLimits] = await Promise.all([
+    const batchSize = Math.min(Math.max(Math.floor(Number(input?.batchSize)) || 30, 1), 30);
+    const [expiredUploads, staleJobs, expiredRateLimits, staleCalls, expiredChatUploads] = await Promise.all([
       admin.rpc("cleanup_expired_document_uploads", { batch_size: 100 }),
       admin.rpc("requeue_stale_jobs", { stale_after: "15 minutes" }),
       admin.rpc("cleanup_edge_rate_limits", {
         retain_for: "2 days",
         batch_size: 1000,
       }),
+      admin.rpc("cleanup_stale_chat_calls", { batch_size: 100 }),
+      admin.rpc("queue_expired_chat_uploads", { batch_size: 100 }),
     ]);
-    if (expiredUploads.error || staleJobs.error || expiredRateLimits.error) {
+    if (expiredUploads.error || staleJobs.error || expiredRateLimits.error || staleCalls.error || expiredChatUploads.error) {
       return json({ error: "Media cleanup maintenance failed" }, 503);
     }
     const maintenance = {
       expiredUploads: Number(expiredUploads.data) || 0,
       staleJobs: Number(staleJobs.data) || 0,
       expiredRateLimits: Number(expiredRateLimits.data) || 0,
+      staleCalls: Number(staleCalls.data) || 0,
+      expiredChatUploads: Number(expiredChatUploads.data) || 0,
     };
     const { data, error: claimError } = await admin.rpc("claim_jobs", {
       worker_id: workerId,
@@ -171,6 +181,15 @@ Deno.serve((request) =>
               }
             }
           } else {
+            if (payload.chatUploadId) {
+              const eligibility = await admin.rpc("can_cleanup_chat_upload", {
+                target_upload_id: payload.chatUploadId,
+                target_company_id: job.company_id,
+                target_path: payload.storagePath,
+              });
+              if (eligibility.error) throw new MediaCleanupError("Chat upload eligibility lookup failed", true);
+              if (eligibility.data !== true) throw new MediaCleanupError("Chat upload is not eligible for deletion", false);
+            }
             const { error } = await withTimeout(
               admin.storage.from(payload.bucket!).remove([
                 payload.storagePath!,

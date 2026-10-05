@@ -159,7 +159,7 @@ async function uploadToCloudinary(file: File, folder: string, publicId: string) 
   form.set("signature", await signUpload(params));
   const response = await fetch(
     `https://api.cloudinary.com/v1_1/${encodeURIComponent(env("CLOUDINARY_CLOUD_NAME"))}/auto/upload`,
-    { method: "POST", body: form },
+    { method: "POST", body: form, signal: AbortSignal.timeout(90_000) },
   );
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(payload?.error?.message || `Cloudinary upload failed (${response.status})`);
@@ -181,7 +181,7 @@ async function destroyCloudinary(asset: Record<string, unknown>) {
   form.set("signature", await signUpload(params));
   const response = await fetch(
     `https://api.cloudinary.com/v1_1/${encodeURIComponent(env("CLOUDINARY_CLOUD_NAME"))}/${encodeURIComponent(String(asset.resource_type))}/destroy`,
-    { method: "POST", body: form },
+    { method: "POST", body: form, signal: AbortSignal.timeout(15_000) },
   );
   const payload = await response.json().catch(() => ({}));
   if (!response.ok || !["ok", "not found"].includes(payload.result)) {
@@ -207,6 +207,10 @@ Deno.serve((request) => withCors(request, async () => {
     const contentType = request.headers.get("content-type") || "";
 
     if (contentType.includes("multipart/form-data")) {
+      const announcedLength = Number(request.headers.get("content-length"));
+      if (Number.isFinite(announcedLength) && announcedLength > MAX_BYTES + 1024 * 1024) {
+        return json({ error: "File exceeds the 50 MB limit" }, 413);
+      }
       const form = await request.formData();
       const file = form.get("file");
       const scope = String(form.get("scope") || "");

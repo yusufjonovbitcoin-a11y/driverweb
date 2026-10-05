@@ -16,6 +16,13 @@ export function phoneUri(value: unknown): string | null {
   return `tel:${main.replace(/[^+\d]/g, '')}${extension ? `;ext=${extension[1]}` : ''}`;
 }
 
+// A city-only document cannot identify a particular facility's phone number.
+export function hasContactLookupAddress(stop: any): boolean {
+  return Boolean(/^\d+[a-z]?\s+.*[a-z]/i.test(String(stop?.address_line ?? '').trim())
+    && /^[a-z]{2}$/i.test(String(stop?.region ?? '').trim())
+    && (String(stop?.city ?? '').trim() || /^\d{5}(?:-\d{4})?$/.test(String(stop?.postal_code ?? '').trim())));
+}
+
 export function freshPosition(row: any, now = Date.now()) {
   if (!row || row.is_online !== true || row.latitude == null || row.longitude == null) return null;
   const latitude = Number(row.latitude), longitude = Number(row.longitude);

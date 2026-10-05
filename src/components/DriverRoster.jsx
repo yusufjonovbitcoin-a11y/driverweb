@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   Check,
@@ -6,9 +6,13 @@ import {
   MapPin, 
   Plus, 
   Search,
+  Truck,
+  FileUp,
+  PencilLine,
+  UploadCloud,
 } from 'lucide-react';
 import KanbanBoard from './KanbanBoard';
-import { formatDate, formatTime } from '../i18n/format';
+import { formatAppointment, formatDate, formatTime } from '../i18n/format';
 import {
   activeLoadsForDriver,
   lastSeenKind,
@@ -33,6 +37,28 @@ export default function DriverRoster({
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [copiedLoadId, setCopiedLoadId] = useState(null);
+  const [openMenuDriverId, setOpenMenuDriverId] = useState(null);
+  const [isPdfDragging, setIsPdfDragging] = useState(false);
+  const [dropError, setDropError] = useState('');
+  const isAddMenuOpen = Boolean(selectedDriverId && openMenuDriverId === selectedDriverId);
+  const addMenuRef = useRef(null);
+  const dragDepthRef = useRef(0);
+
+  useEffect(() => {
+    if (!isAddMenuOpen) return undefined;
+    const closeOnOutsideClick = (event) => {
+      if (!addMenuRef.current?.contains(event.target)) setOpenMenuDriverId(null);
+    };
+    const closeOnEscape = (event) => {
+      if (event.key === 'Escape') setOpenMenuDriverId(null);
+    };
+    document.addEventListener('pointerdown', closeOnOutsideClick);
+    document.addEventListener('keydown', closeOnEscape);
+    return () => {
+      document.removeEventListener('pointerdown', closeOnOutsideClick);
+      document.removeEventListener('keydown', closeOnEscape);
+    };
+  }, [isAddMenuOpen]);
 
   const copyLoadNumber = async (event, load) => {
     event.stopPropagation();
@@ -74,13 +100,106 @@ export default function DriverRoster({
 
   const selectedDriver = drivers.find((driver) => driver.id === selectedDriverId);
 
+  const isFileDrag = (event) => Array.from(event.dataTransfer?.types || []).includes('Files')
+    || Boolean(event.dataTransfer?.files?.length);
+  const onPageDragEnter = (event) => {
+    if (!isFileDrag(event)) return;
+    event.preventDefault();
+    dragDepthRef.current += 1;
+    setDropError('');
+    setIsPdfDragging(true);
+  };
+  const onPageDragOver = (event) => {
+    if (!isFileDrag(event)) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'copy';
+  };
+  const onPageDragLeave = (event) => {
+    if (!isFileDrag(event)) return;
+    dragDepthRef.current = Math.max(0, dragDepthRef.current - 1);
+    if (dragDepthRef.current === 0) setIsPdfDragging(false);
+  };
+  const onPageDrop = (event) => {
+    if (!isFileDrag(event)) return;
+    const handledByColumn = event.defaultPrevented;
+    event.preventDefault();
+    dragDepthRef.current = 0;
+    setIsPdfDragging(false);
+    if (handledByColumn || isAiProcessing || !selectedDriver) return;
+    const pdf = Array.from(event.dataTransfer.files || []).find(
+      (file) => file.type === 'application/pdf' || /\.pdf$/i.test(file.name),
+    );
+    if (!pdf) {
+      setDropError(t('drivers.pdfDropOnly'));
+      return;
+    }
+    setOpenMenuDriverId(null);
+    onImportDriverDocument?.(pdf, selectedDriver.id);
+  };
+
   if (selectedDriver) {
     const driverLoads = loads.filter((load) => load.driverId === selectedDriver.id);
     const { workflow, exceptions } = partitionDriverLoads(driverLoads);
+    const activeTripCount = workflow.filter((load) => load.status !== 'COMPLETED').length;
+    const completedTripCount = workflow.length - activeTripCount;
 
     return (
-      <div className="driver-trips-view space-y-5">
-        <section aria-label={t('drivers.tripHistory')}>
+      <div className="driver-trips-view" onDragEnter={onPageDragEnter} onDragOver={onPageDragOver} onDragLeave={onPageDragLeave} onDrop={onPageDrop}>
+        {isPdfDragging && <div className="driver-trip-drop-overlay" aria-hidden="true">
+          <UploadCloud size={42} />
+          <strong>{t('drivers.pdfDropTitle')}</strong>
+          <span>{t('loads.aiDropHint')}</span>
+        </div>}
+        {dropError && <p className="driver-trip-drop-error" role="alert">{dropError}</p>}
+        <section className="driver-trip-summary" aria-label={t('drivers.driver')}>
+          <div className="driver-trip-identity">
+            <div className="driver-trip-avatar">
+              <span>{selectedDriver.name?.split(/\s+/).map((part) => part[0]).slice(0, 2).join('').toUpperCase()}</span>
+              {selectedDriver.avatar && <img src={selectedDriver.avatar} alt="" onError={(event) => { event.currentTarget.style.display = 'none'; }} />}
+            </div>
+            <div className="driver-trip-identity-copy">
+              <div className="driver-trip-name-row">
+                <h1>{selectedDriver.name}</h1>
+                <span className={`driver-trip-availability ${activeTripCount > 0 ? 'is-active' : ''}`}>
+                  <span />{activeTripCount > 0 ? t('drivers.onLoad') : t('drivers.available')}
+                </span>
+              </div>
+              {(selectedDriver.driverNumber || selectedDriver.truck || selectedDriver.trailer) && (
+                <p><Truck size={16} />{[selectedDriver.driverNumber, selectedDriver.truck, selectedDriver.trailer].filter(Boolean).join(' · ')}</p>
+              )}
+            </div>
+          </div>
+          <div className="driver-trip-stats">
+            <div><span>{t('loads.allTrips')}</span><strong>{workflow.length}</strong></div>
+            <div><span>{t('drivers.activeTrips')}</span><strong>{activeTripCount}</strong></div>
+            <div><span>{t('loadStatus.completed')}</span><strong>{completedTripCount}</strong></div>
+          </div>
+          <div className="driver-trip-add-wrap" ref={addMenuRef}>
+            <button type="button" className="driver-trip-add" aria-expanded={isAddMenuOpen} aria-controls="driver-trip-add-options" onClick={() => setOpenMenuDriverId(isAddMenuOpen ? null : selectedDriver.id)}>
+              <Plus size={20} />{t('loads.addForDriver')}
+            </button>
+            {isAddMenuOpen && <div id="driver-trip-add-options" className="driver-trip-add-options">
+              <label className="driver-trip-add-option">
+                <FileUp size={18} />{t('loads.addPdf')}
+                <input type="file" accept=".pdf,.jpg,.jpeg,.png,.webp,.gif" onChange={(event) => {
+                  const file = event.target.files?.[0];
+                  event.target.value = '';
+                  if (file) {
+                    setOpenMenuDriverId(null);
+                    onImportDriverDocument?.(file, selectedDriver.id);
+                  }
+                }} />
+              </label>
+              <button type="button" className="driver-trip-add-option" onClick={() => {
+                setOpenMenuDriverId(null);
+                onAssignLoad?.(selectedDriver);
+              }}>
+                <PencilLine size={18} />{t('loads.addManually')}
+              </button>
+            </div>}
+          </div>
+        </section>
+        <section className="driver-trips-content" aria-label={t('drivers.tripHistory')}>
           <DriverLoadWorkspace
             loads={workflow}
             drivers={drivers}
@@ -323,7 +442,7 @@ function LoadStops({ loads, stopKey, emptyLabel, timeLabel }) {
             </div>
             <div className="mt-1 flex items-center gap-1.5 pl-5 text-xs text-zinc-500 dark:text-zinc-400">
               <Clock3 className="h-3.5 w-3.5 shrink-0" />
-              <span aria-label={timeLabel}>{appointment ? formatTime(appointment) : '—'}</span>
+              <span aria-label={timeLabel}>{appointment ? formatAppointment(appointment, stop.timezone, { timeOnly: true }) : '—'}</span>
             </div>
           </div>
         );
@@ -359,6 +478,8 @@ function DriverLoadWorkspace({
         isAiProcessing={isAiProcessing}
         includeUnassigned={false}
         hideStageFilters
+        boardOnly
+        driverWorkspace
         groupDeliveredWithOnRoad
         hideCompletedCardFooter
       />

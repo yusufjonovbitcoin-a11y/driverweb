@@ -19,18 +19,11 @@ import {
   UserPlus,
   Settings,
   Bell,
-  Languages,
   ShieldCheck,
-  Smartphone,
   Users,
-  PackageCheck,
-  Route,
   ChevronRight,
-  MessageSquare,
   Link2,
   UserRound,
-  MonitorCog,
-  KeyRound,
   UserCog,
   Plug,
   Eye,
@@ -42,7 +35,7 @@ import {
   ExternalLink,
   Pencil,
 } from 'lucide-react';
-import { LOCALE_META, SUPPORTED_LOCALES } from '../i18n/locales';
+import { DEFAULT_TIME_ZONE } from '../i18n/timeZone.js';
 import { formatDateTime } from '../i18n/format';
 import { roleLabel } from '../i18n/labels';
 import { localizedError } from '../i18n/errors';
@@ -50,6 +43,9 @@ import FleetVehiclesPanel from './FleetVehiclesPanel';
 import DriverVehicleAssignmentModal from './DriverVehicleAssignmentModal';
 import DriverContactEditModal from './DriverContactEditModal';
 import DriverProfilePanel from './DriverProfilePanel';
+import ProfileSettingsHub from './ProfileSettingsHub';
+import { ProfileContactPanel, ProfileNotificationsPanel, ProfilePersonalPanel, ProfileSectionHeading, ProfileSecurityPanel } from './ProfileAccountPanels';
+import './profileCenter.css';
 
 function GmailIcon({ className = '' }) {
   return (
@@ -70,6 +66,7 @@ export default function ProfileView({
   onAddDriver, 
   onDeleteMember,
   currentUser,
+  onSaveProfile,
   onNavigate,
   onOpenDriver,
   selectedDriverId = null,
@@ -82,6 +79,8 @@ export default function ProfileView({
   unreadInboxCount = 0,
   locale = 'uz',
   onLocaleChange,
+  timeZone = DEFAULT_TIME_ZONE,
+  onTimeZoneChange,
   onWorkspaceRefresh,
   initialDriverToEditId = null,
   onEditDriverClosed,
@@ -123,6 +122,7 @@ export default function ProfileView({
   const [password, setPassword] = useState('');
   const [role, setRole] = useState('driver');
   const [phone, setPhone] = useState('');
+  const [gmailLabel, setGmailLabel] = useState('');
   const handlePrepareForm = () => {
     setName('');
     setEmail('');
@@ -130,6 +130,7 @@ export default function ProfileView({
     setRole('driver');
     setFormError('');
     setPhone('');
+    setGmailLabel('');
   };
 
   const closeAddForm = () => {
@@ -146,7 +147,13 @@ export default function ProfileView({
     }
     setActiveSection(sectionId);
     if (focusPanel) {
-      requestAnimationFrame(() => document.getElementById('profile-section-panel')?.focus());
+      requestAnimationFrame(() => {
+        const panel = document.getElementById('profile-section-panel');
+        panel?.focus({ preventScroll: true });
+        const target = window.matchMedia('(max-width: 1000px)').matches
+          ? panel : document.querySelector('.profile-center-layout');
+        target?.scrollIntoView({ block: 'start', behavior: 'instant' });
+      });
     }
   };
 
@@ -237,6 +244,7 @@ export default function ProfileView({
       password,
       role,
       phone: phone.trim(),
+      gmailLabel: role === 'driver' ? (gmailLabel.trim() || name.trim()) : null,
     };
 
     setIsSubmitting(true);
@@ -278,7 +286,12 @@ export default function ProfileView({
     load.databaseStatus ? load.databaseStatus === 'completed' : load.status === 'COMPLETED'
   )).length;
   const notificationCount = unreadChatCount + unreadInboxCount;
-  const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Tashkent';
+  const handleLocaleChange = async (value) => {
+    setLocaleSaving(true);
+    try { await onLocaleChange?.(value); }
+    catch { /* Parent reports localized errors. */ }
+    finally { setLocaleSaving(false); }
+  };
 
   // Filter drivers for table
   const filteredDrivers = drivers.filter(driver => {
@@ -316,121 +329,9 @@ export default function ProfileView({
     { id: 'settings', label: t('profile.settings'), icon: Settings },
   ];
 
-  const settings = [
-    { id: 'language', label: t('profile.language'), value: LOCALE_META[locale]?.label, icon: Languages, tone: 'emerald' },
-    {
-      label: t('profile.notifications'),
-      value: notificationCount ? t('profile.newNotifications', { count: notificationCount }) : t('profile.allNotifications'),
-      icon: Bell,
-      badge: notificationCount || null,
-      tone: 'emerald',
-      action: () => changeSection('notifications', { focusPanel: true }),
-    },
-    {
-      label: t('profile.interface'),
-      value: theme === 'dark' ? t('profile.dark') : t('profile.light'),
-      icon: MonitorCog,
-      tone: 'blue',
-      action: toggleTheme,
-    },
-    { label: t('profile.timeZone'), value: timeZone, icon: Route, tone: 'teal' },
-    { label: t('profile.privacy'), value: t('common.active'), icon: ShieldCheck, tone: 'emerald', action: () => changeSection('security', { focusPanel: true }) },
-    { label: t('profile.devices'), value: t('profile.currentSession'), icon: Smartphone, tone: 'blue', action: () => changeSection('contact', { focusPanel: true }) },
-  ];
-
-  const quickActions = [
-    { label: t('nav.loads'), description: t('profile.loadsDescription'), icon: PackageCheck, tab: 'kanban' },
-    { label: t('nav.drivers'), description: t('profile.driversDescription'), icon: Users, tab: 'drivers' },
-    { label: t('nav.chat'), description: t('profile.chatDescription'), icon: MessageSquare, tab: 'chat' },
-  ];
-
-  const settingsPanel = (
-    <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_300px]">
-      <section aria-labelledby="system-settings-heading" className="rounded-2xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900">
-        <div className="mb-4 flex items-center gap-2">
-          <span className="grid h-8 w-8 place-items-center rounded-lg bg-emerald-50 text-emerald-600 dark:bg-emerald-950/40 dark:text-emerald-400">
-            <Settings className="h-4 w-4" aria-hidden="true" />
-          </span>
-          <h2 id="system-settings-heading" className="text-base font-bold text-zinc-900 dark:text-zinc-100">{t('profile.settings')}</h2>
-        </div>
-        <div className="grid gap-3 sm:grid-cols-2 2xl:grid-cols-3">
-          {settings.map((item) => {
-            const Icon = item.icon;
-            const content = (
-              <>
-                <div className="flex items-start justify-between gap-3">
-                  <span className={`grid h-10 w-10 place-items-center rounded-xl ${item.tone === 'blue' ? 'bg-blue-50 text-blue-600 dark:bg-blue-950/40 dark:text-blue-300' : item.tone === 'teal' ? 'bg-cyan-50 text-cyan-700 dark:bg-cyan-950/40 dark:text-cyan-300' : 'bg-emerald-50 text-emerald-600 dark:bg-emerald-950/40 dark:text-emerald-400'}`}>
-                    <Icon className="h-5 w-5" aria-hidden="true" />
-                  </span>
-                  {item.badge && <span className="rounded-full bg-red-500 px-2 py-0.5 text-[10px] font-bold text-white">{item.badge}</span>}
-                </div>
-                <div className="mt-5">
-                  <span className="block text-sm font-bold text-zinc-900 dark:text-zinc-100">{item.label}</span>
-                  {item.id === 'language' ? (
-                    <label className="mt-3 block">
-                      <span className="sr-only">{t('profile.language')}</span>
-                      <select
-                        value={locale}
-                        disabled={localeSaving}
-                        onChange={async (event) => {
-                          setLocaleSaving(true);
-                          try { await onLocaleChange?.(event.target.value); } catch { /* Parent reports a localized failure. */ } finally { setLocaleSaving(false); }
-                        }}
-                        className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm font-semibold text-zinc-900 outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 disabled:opacity-60 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
-                      >
-                        {SUPPORTED_LOCALES.map((language) => (
-                          <option key={language} value={language}>{LOCALE_META[language].label}</option>
-                        ))}
-                      </select>
-                      <span className="mt-2 block text-[11px] text-zinc-500">{t('profile.languageHint')}</span>
-                    </label>
-                  ) : <p className="mt-1 break-words text-xs text-zinc-500 dark:text-zinc-400">{item.value}</p>}
-                </div>
-              </>
-            );
-            return item.action ? (
-              <button key={item.label} type="button" onClick={item.action} className="min-h-36 rounded-xl border border-zinc-200 bg-zinc-50/50 p-4 text-left transition hover:-translate-y-0.5 hover:border-emerald-300 hover:bg-white hover:shadow-sm dark:border-zinc-800 dark:bg-zinc-950/40 dark:hover:border-emerald-800 dark:hover:bg-zinc-900">
-                {content}
-              </button>
-            ) : (
-              <article key={item.label} className="min-h-36 rounded-xl border border-zinc-200 bg-zinc-50/50 p-4 dark:border-zinc-800 dark:bg-zinc-950/40">
-                {content}
-              </article>
-            );
-          })}
-        </div>
-      </section>
-
-      <aside aria-labelledby="quick-actions-heading" className="rounded-2xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900">
-        <div className="mb-4 flex items-center gap-2">
-          <span className="grid h-8 w-8 place-items-center rounded-lg bg-emerald-50 text-emerald-600 dark:bg-emerald-950/40 dark:text-emerald-400">
-            <Route className="h-4 w-4" aria-hidden="true" />
-          </span>
-          <h2 id="quick-actions-heading" className="text-base font-bold text-zinc-900 dark:text-zinc-100">{t('profile.quickActions')}</h2>
-        </div>
-        <div className="space-y-2">
-          {quickActions.map((item) => {
-            const Icon = item.icon;
-            return (
-              <button key={item.tab} type="button" onClick={() => onNavigate?.(item.tab)} className="group flex w-full items-center gap-3 rounded-xl border border-transparent bg-zinc-50 px-3 py-3 text-left transition hover:border-zinc-200 hover:bg-white dark:bg-zinc-950/50 dark:hover:border-zinc-800 dark:hover:bg-zinc-900">
-                <span className="grid h-9 w-9 flex-none place-items-center rounded-lg bg-emerald-50 text-emerald-600 dark:bg-emerald-950/40 dark:text-emerald-400">
-                  <Icon className="h-4 w-4" aria-hidden="true" />
-                </span>
-                <span className="min-w-0 flex-1">
-                  <span className="block text-sm font-bold text-zinc-900 dark:text-zinc-100">{item.label}</span>
-                  <span className="block truncate text-[11px] text-zinc-500 dark:text-zinc-400">{item.description}</span>
-                </span>
-                <ChevronRight className="h-4 w-4 flex-none text-zinc-400 transition-transform group-hover:translate-x-0.5" aria-hidden="true" />
-              </button>
-            );
-          })}
-        </div>
-      </aside>
-    </div>
-  );
 
   return (
-    <div className="w-full space-y-6 pb-12">
+    <div className="profile-center w-full">
       
       {/* Success Notification Toast */}
       {successToast && (
@@ -445,135 +346,60 @@ export default function ProfileView({
         </div>
       )}
 
-      <section className="relative overflow-hidden rounded-2xl border border-emerald-200/70 bg-emerald-50 p-5 dark:border-emerald-900/50 dark:bg-zinc-900 sm:p-6">
-        <img src="/images/profile-logistics-banner.webp" alt="" className="pointer-events-none absolute inset-0 h-full w-full object-cover object-center" />
-        <div className="pointer-events-none absolute inset-0 bg-gradient-to-r from-white/95 via-white/80 to-cyan-50/30 dark:from-zinc-950/95 dark:via-zinc-950/80 dark:to-cyan-950/35" aria-hidden="true" />
-
-        <div className="relative z-10 grid items-center gap-5 xl:grid-cols-[minmax(260px,1fr)_auto]">
-          <div className="flex min-w-0 items-center gap-4">
-            <div className="grid h-16 w-16 flex-none place-items-center rounded-2xl bg-emerald-800 text-2xl font-black text-white shadow-sm dark:bg-emerald-200 dark:text-emerald-950 sm:h-20 sm:w-20 sm:text-3xl">
-              {currentUser?.avatarInitial || currentUser?.name?.charAt(0) || 'D'}
-            </div>
-            <div className="min-w-0">
-              <div className="flex flex-wrap items-center gap-2">
-                <h2 className="truncate text-xl font-black tracking-tight text-zinc-900 dark:text-zinc-100 sm:text-2xl">{currentUser?.name || '—'}</h2>
-                <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-200 bg-white/75 px-2.5 py-1 text-[11px] font-bold text-emerald-700 dark:border-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300">
-                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" aria-hidden="true" /> {t('common.active')}
-                </span>
-              </div>
-              <p className="mt-1 text-xs font-semibold text-zinc-600 dark:text-zinc-300">{currentUser?.company || '—'} · {roleLabel(t, currentUser?.roleCode || currentUser?.role)}</p>
-              <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1.5 text-[11px] text-zinc-600 dark:text-zinc-400">
-                <span className="inline-flex items-center gap-1.5"><Phone className="h-3.5 w-3.5" aria-hidden="true" />{currentUser?.phone || t('profile.phoneMissing')}</span>
-                <span className="inline-flex min-w-0 items-center gap-1.5"><Mail className="h-3.5 w-3.5 flex-none" aria-hidden="true" /><span className="truncate">{currentUser?.email || t('profile.emailMissing')}</span></span>
-              </div>
-            </div>
+      <div className="profile-center-layout">
+        <aside className="profile-identity-card">
+          <div className="profile-identity-top">
+            <span className="profile-identity-avatar">{currentUser?.avatarInitial || currentUser?.name?.charAt(0) || 'D'}</span>
+            <h2>{currentUser?.name || '—'}</h2>
+            <p>{roleLabel(t, currentUser?.roleCode || currentUser?.role)}</p>
           </div>
-
-          <div className="grid grid-cols-3 gap-2 sm:gap-3">
-            {[
-              { value: totalDrivers, label: t('nav.drivers'), icon: Users },
-              { value: activeLoads, label: t('profile.activeLoads'), icon: PackageCheck },
-              { value: completedLoads, label: t('profile.completed'), icon: Route },
-            ].map((metric) => {
-              const Icon = metric.icon;
-              return (
-                <div key={metric.label} className="min-w-0 rounded-xl border border-white/80 bg-white/85 px-3 py-3 shadow-xs backdrop-blur dark:border-zinc-700/80 dark:bg-zinc-900/80 sm:min-w-28">
-                  <div className="flex items-center gap-2">
-                    <span className="grid h-7 w-7 flex-none place-items-center rounded-lg bg-emerald-50 text-emerald-600 dark:bg-emerald-950/60 dark:text-emerald-300"><Icon className="h-3.5 w-3.5" aria-hidden="true" /></span>
-                    <strong className="text-lg font-black text-zinc-900 dark:text-zinc-100">{metric.value}</strong>
-                  </div>
-                  <span className="mt-1.5 block break-words text-[10px] font-semibold leading-tight text-zinc-500 dark:text-zinc-400">{metric.label}</span>
-                </div>
-              );
+          <div className="profile-identity-company"><Building2 size={21} /><div><strong>{currentUser?.company || t('common.notProvided')}</strong><span>{t('profile.companyTeam')}</span></div></div>
+          <div className="profile-identity-contacts">
+            <p><Mail size={16} /><span>{currentUser?.email || t('profile.emailMissing')}</span></p>
+            <p><Phone size={16} /><span>{currentUser?.phone || t('profile.phoneMissing')}</span></p>
+          </div>
+          <div className="profile-identity-stats">
+            <span><strong>{totalDrivers}</strong>{t('nav.drivers')}</span>
+            <span><strong>{activeLoads}</strong>{t('profile.activeLoads')}</span>
+            <span><strong>{completedLoads}</strong>{t('profile.completed')}</span>
+          </div>
+          <nav aria-label={t('profile.sections')} className="profile-center-nav">
+            {sections.map(section => {
+              const Icon = section.icon;
+              return <button key={section.id} type="button" aria-pressed={activeSection === section.id} aria-controls="profile-section-panel"
+                onClick={() => { changeSection(section.id, { focusPanel: true }); if (section.id === 'integrations') refreshGmailConnection(); }}>
+                <Icon size={17} aria-hidden="true" /><span>{section.label}</span><ChevronRight size={15} aria-hidden="true" />
+              </button>;
             })}
-          </div>
-
-        </div>
-      </section>
-
-        <nav aria-label={t('profile.sections')} className="profile-tabs-scroll overflow-x-auto border-b border-zinc-200 dark:border-zinc-800">
-        <div className="flex min-w-max gap-1">
-          {sections.map((section) => {
-            const Icon = section.icon;
-            const selected = activeSection === section.id;
-            return (
-              <button
-                key={section.id}
-                type="button"
-                aria-pressed={selected}
-                aria-controls="profile-section-panel"
-                onClick={() => {
-                  changeSection(section.id);
-                  if (section.id === 'integrations') refreshGmailConnection();
-                }}
-                className={`relative inline-flex items-center gap-2 px-3 py-3 text-xs font-semibold transition ${selected ? 'text-emerald-700 dark:text-emerald-300' : 'text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100'}`}
-              >
-                <Icon className="h-4 w-4" aria-hidden="true" /> {section.label}
-                {selected && <span className="absolute inset-x-2 bottom-0 h-0.5 rounded-full bg-emerald-600 dark:bg-emerald-400" aria-hidden="true" />}
-              </button>
-            );
-          })}
-        </div>
-      </nav>
+          </nav>
+        </aside>
 
       <div
         id="profile-section-panel"
         role="region"
         aria-label={t('profile.sectionLabel', { section: sections.find((section) => section.id === activeSection)?.label || t('nav.profile') })}
         tabIndex={-1}
-        className="space-y-6 focus:outline-none"
+        className={`profile-section-content profile-section-${activeSection} space-y-6 focus:outline-none`}
       >
-        {activeSection === 'settings' && settingsPanel}
+        {activeSection === 'settings' && <ProfileSettingsHub currentUser={currentUser}
+          locale={locale} localeSaving={localeSaving} timeZone={timeZone} theme={theme} toggleTheme={toggleTheme}
+          notificationCount={notificationCount} canManageIntegrations={canManageIntegrations} gmailConnection={gmailConnection}
+          onSection={section => { changeSection(section, { focusPanel: true }); if (section === 'integrations') refreshGmailConnection(); }}
+          onLocaleChange={handleLocaleChange}
+          onTimeZoneChange={onTimeZoneChange} />}
 
         {activeSection === 'overview' && (
-          <section className="rounded-2xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900">
-            <div className="flex items-center gap-2">
-              <UserRound className="h-5 w-5 text-emerald-600 dark:text-emerald-400" aria-hidden="true" />
-              <h2 className="text-base font-bold">{t('profile.personal')}</h2>
-            </div>
-            <dl className="mt-4 divide-y divide-zinc-100 dark:divide-zinc-800">
-              {[
-                [t('profile.fullName'), currentUser?.name || t('common.notProvided')],
-                [t('profile.position'), roleLabel(t, currentUser?.roleCode || currentUser?.role)],
-                [t('common.company'), currentUser?.company || t('common.notProvided')],
-              ].map(([label, value]) => (
-                <div key={label} className="grid grid-cols-[100px_minmax(0,1fr)] gap-4 py-3 text-sm sm:grid-cols-[140px_minmax(0,1fr)]">
-                  <dt className="text-zinc-500 dark:text-zinc-400">{label}</dt>
-                  <dd className="break-words text-right font-semibold text-zinc-900 dark:text-zinc-100">{value}</dd>
-                </div>
-              ))}
-            </dl>
-          </section>
+          <ProfilePersonalPanel currentUser={currentUser} locale={locale} localeSaving={localeSaving} timeZone={timeZone}
+            onLocaleChange={handleLocaleChange} onTimeZoneChange={onTimeZoneChange} onSaveProfile={onSaveProfile} />
         )}
 
       {activeSection === 'contact' && (
-          <div className="grid gap-4 lg:grid-cols-2">
-            <section className="rounded-2xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900">
-            <div className="flex items-center gap-2"><Link2 className="h-5 w-5 text-emerald-600 dark:text-emerald-400" aria-hidden="true" /><h2 className="text-base font-bold">{t('profile.contactDetails')}</h2></div>
-              <dl className="mt-4 divide-y divide-zinc-100 dark:divide-zinc-800">
-                {[
-                  [t('common.phone'), currentUser?.phone || t('common.notProvided')],
-                  [t('common.email'), currentUser?.email || t('common.notProvided')],
-                ].map(([label, value]) => (
-                  <div key={label} className="grid grid-cols-[90px_minmax(0,1fr)] gap-4 py-3 text-sm">
-                    <dt className="text-zinc-500 dark:text-zinc-400">{label}</dt>
-                    <dd className="break-words text-right font-semibold text-zinc-900 dark:text-zinc-100">{value}</dd>
-                  </div>
-                ))}
-              </dl>
-            </section>
-            <section className="rounded-2xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900">
-              <div className="flex items-center gap-2"><Smartphone className="h-5 w-5 text-emerald-600" aria-hidden="true" /><h2 className="text-base font-bold">{t('profile.devicesAndSessions')}</h2></div>
-              <div className="mt-4 rounded-xl border border-zinc-200 bg-zinc-50 p-4 dark:border-zinc-800 dark:bg-zinc-950/50">
-                <p className="text-sm font-bold">{t('profile.currentSession')}</p>
-                <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">{t('common.active')} · {timeZone}</p>
-              </div>
-            </section>
-          </div>
+          <ProfileContactPanel currentUser={currentUser} timeZone={timeZone} />
       )}
 
       {activeSection === 'integrations' && canManageIntegrations && (
-        <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
+        <div className="profile-gmail-layout">
+          <ProfileSectionHeading title={t('profile.gmailTitle')} description={t('profile.gmailDescription')} />
           <section aria-labelledby="gmail-integration-heading" aria-busy={gmailLoading || gmailSaving} className="rounded-2xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900 sm:p-6">
             <p role="status" aria-live="polite" className="sr-only">
               {gmailLoading ? t('profile.gmailChecking') : gmailSaving ? t('profile.gmailSaving') : gmailConnection?.status === 'active' ? t('profile.gmailConnected') : gmailConnection?.status === 'needs_reconnect' ? t('profile.gmailChecking') : t('profile.gmailDisconnected')}
@@ -650,7 +476,7 @@ export default function ProfileView({
             </form>
           </section>
 
-          <aside className="space-y-4">
+          <aside className="profile-gmail-support">
             <section className="rounded-2xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900">
               <h2 className="text-sm font-bold text-zinc-900 dark:text-zinc-100">{t('profile.connectionStatus')}</h2>
               {gmailLoading ? (
@@ -665,44 +491,26 @@ export default function ProfileView({
             </section>
             <section className="rounded-2xl border border-emerald-200 bg-emerald-50/70 p-5 dark:border-emerald-900 dark:bg-emerald-950/20">
               <h2 className="text-sm font-bold text-emerald-900 dark:text-emerald-200">{t('profile.howItWorks')}</h2>
-              <ol className="mt-3 space-y-2 text-xs leading-5 text-emerald-800 dark:text-emerald-300">
-                <li>1. {t('profile.gmailStepOne')}</li>
-                <li>2. {t('profile.gmailStepTwo')}</li>
-                <li>3. {t('profile.gmailStepThree')}</li>
+              <ol className="profile-gmail-steps">
+                <li><span>1</span><p>{t('profile.gmailStepOne')}</p></li>
+                <li><span>2</span><p>{t('profile.gmailStepTwo')}</p></li>
+                <li><span>3</span><p>{t('profile.gmailStepThree')}</p></li>
               </ol>
             </section>
           </aside>
+          <section className="profile-panel">
+            <div className="profile-panel-title"><Mail size={21} aria-hidden="true" /><div><h3>{t('profile.gmailDriverLabel')}</h3><p>{t('profile.gmailDriverLabelHint')}</p></div></div>
+            <button type="button" className="profile-inline-action" onClick={() => { setCompanyMemberView('drivers'); changeSection('company', { focusPanel: true }); }}>{t('profile.companyTeam')}<ChevronRight size={16} aria-hidden="true" /></button>
+          </section>
         </div>
       )}
 
       {activeSection === 'security' && (
-        <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {[
-            [t('profile.accountStatus'), t('profile.secureActive'), ShieldCheck],
-            [t('profile.signInMethod'), t('profile.emailAndPassword'), KeyRound],
-            [t('profile.session'), t('profile.currentSessionActive'), Smartphone],
-          ].map(([label, value, Icon]) => (
-            <article key={label} className="rounded-2xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900">
-              <Icon className="h-5 w-5 text-emerald-600 dark:text-emerald-400" aria-hidden="true" />
-              <h2 className="mt-4 text-sm font-bold">{label}</h2>
-              <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">{value}</p>
-            </article>
-          ))}
-        </section>
+        <ProfileSecurityPanel currentUser={currentUser} />
       )}
 
       {activeSection === 'notifications' && (
-        <section className="grid gap-3 sm:grid-cols-2">
-          {[
-            [t('nav.inbox'), unreadInboxCount, 'inbox'],
-            [t('nav.chat'), unreadChatCount, 'chat'],
-          ].map(([label, count, tab]) => (
-            <button key={label} type="button" onClick={() => onNavigate?.(tab)} className="flex items-center justify-between rounded-2xl border border-zinc-200 bg-white p-5 text-left transition hover:border-emerald-300 dark:border-zinc-800 dark:bg-zinc-900 dark:hover:border-emerald-800">
-              <span><span className="block text-sm font-bold">{label}</span><span className="mt-1 block text-xs text-zinc-500 dark:text-zinc-400">{count ? t('profile.newMessages', { count }) : t('profile.noNewMessages')}</span></span>
-              <ChevronRight className="h-4 w-4 text-zinc-400" aria-hidden="true" />
-            </button>
-          ))}
-        </section>
+        <ProfileNotificationsPanel unreadInboxCount={unreadInboxCount} unreadChatCount={unreadChatCount} onNavigate={onNavigate} />
       )}
 
       {activeSection === 'company' && (
@@ -721,11 +529,13 @@ export default function ProfileView({
             onDelete={(driver) => handleDeleteMember({ ...driver, role: 'driver' })}
           />
         ) : (
-        <>
+        <section className="profile-panel profile-company-panel">
+          <ProfileSectionHeading title={t('common.company')} description={t('profile.companyTeamHint')} />
+          <div className="profile-company-identity"><span className="profile-row-icon"><Building2 size={23} aria-hidden="true" /></span><div><strong>{currentUser?.company || t('common.notProvided')}</strong><p>{t('profile.companyTeam')}</p></div></div>
           {formError && <p id="member-form-error" role="alert" className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-600 dark:border-red-900 dark:bg-red-950/30 dark:text-red-400">{formError}</p>}
 
       {/* 2. HAYDOVCHILARNI BOSHQARISH & AMALLAR PANELI */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <div className="profile-company-toolbar flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h3 className="text-xl font-black text-zinc-900 dark:text-zinc-100 tracking-tight">
             {t('profile.companyTeam')}
@@ -758,7 +568,7 @@ export default function ProfileView({
         </button>}
       </div>
 
-          <div role="group" aria-label={t('profile.members')} className="inline-grid w-full grid-cols-3 rounded-xl border border-zinc-200 bg-zinc-100 p-1 dark:border-zinc-800 dark:bg-zinc-900 sm:w-auto">
+          <div role="group" aria-label={t('profile.members')} className="profile-company-tabs">
         <button
           type="button"
           aria-pressed={companyMemberView === 'drivers'}
@@ -889,6 +699,24 @@ export default function ProfileView({
                   className="w-full bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl px-3.5 py-2.5 text-sm text-zinc-900 dark:text-zinc-100 placeholder-zinc-400 focus:outline-none focus:border-zinc-400 focus-visible:ring-2 focus-visible:ring-teal-600 focus-visible:ring-offset-2 transition-colors"
                 />
               </div>
+
+              {role === 'driver' && (
+                <div>
+                  <label htmlFor="member-gmail-label" className="block text-xs font-mono font-bold text-zinc-500 dark:text-zinc-400 uppercase mb-1.5">
+                    {t('profile.gmailDriverLabel')}
+                  </label>
+                  <input
+                    type="text"
+                    id="member-gmail-label"
+                    maxLength={100}
+                    value={gmailLabel}
+                    onChange={(e) => setGmailLabel(e.target.value)}
+                    placeholder={name.trim() || t('profile.nameExample')}
+                    className="w-full bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl px-3.5 py-2.5 text-sm text-zinc-900 dark:text-zinc-100 placeholder-zinc-400 focus:outline-none focus:border-zinc-400 focus-visible:ring-2 focus-visible:ring-teal-600 focus-visible:ring-offset-2 transition-colors"
+                  />
+                  <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">{t('profile.gmailDriverLabelHint')}</p>
+                </div>
+              )}
 
               <div>
                 <label htmlFor="member-password" className="block text-xs font-mono font-bold text-zinc-500 dark:text-zinc-400 uppercase mb-1.5">
@@ -1274,11 +1102,12 @@ export default function ProfileView({
           </div>
         </div>
       )}
-        </>
+        </section>
         )
       )}
       {vehicleAssignmentDriver && <DriverVehicleAssignmentModal driver={vehicleAssignmentDriver} onClose={() => setVehicleAssignmentDriver(null)} onWorkspaceRefresh={onWorkspaceRefresh} />}
       {currentUser?.roleCode === 'company_admin' && editingDriver && <DriverContactEditModal key={editingDriver.id} driver={editingDriver} onClose={closeDriverEditor} onWorkspaceRefresh={onWorkspaceRefresh} />}
+      </div>
       </div>
 
     </div>

@@ -8,8 +8,11 @@ import ImportDocumentDetails from './ImportDocumentDetails';
 import { buildImportedLoad, canAssignImportedLoad, importedMapState, importedRatePerMile, importedTripRatePerMile, stopAddress, stopScheduleParts } from './importedLoadModel';
 import './imported-load-page.css';
 import { useImportEnrichment } from '../hooks/useImportEnrichment';
+import { useImportContacts } from '../hooks/useImportContacts';
+import { canLookupImportedStop, importedStopContact } from '../services/importContacts';
 import { usePreviewRoute } from '../hooks/usePreviewRoute';
-import { validPhone, phoneUri } from '../../supabase/functions/_shared/load-enrichment.ts';
+import { phoneUri } from '../../supabase/functions/_shared/load-enrichment.ts';
+import { copyText } from '../services/copyText';
 
 const show = value => value == null || value === '' ? '—' : String(value);
 const phoneHref = phoneUri;
@@ -30,6 +33,9 @@ export default function ImportedLoadPage({ load, processing, drivers = [], onBac
   const mapState = importedMapState(details, selectedDriver);
   const enrichmentEnabled = Boolean(load.id && !processing && !load.importError && enableMap && mapState.routeEnabled);
   const enrichment = useImportEnrichment(load.id, driverId, enrichmentEnabled);
+  const contactsEnabled = Boolean((load.id || load.previewTicket) && !processing && !load.importError
+    && details.stops.some(canLookupImportedStop));
+  const contacts = useImportContacts(load.id, load.previewTicket, contactsEnabled);
   const previewEnabled = Boolean(load.previewTicket && !load.id && !processing && !load.importError && enableMap && mapState.routeEnabled);
   const preview = usePreviewRoute(details.stops.map(stop => stop.address ? stopAddress(stop) : ''), driverId, mapState.livePosition, previewEnabled);
   const routeState = load.previewTicket ? preview.route : enrichment.route;
@@ -37,13 +43,7 @@ export default function ImportedLoadPage({ load, processing, drivers = [], onBac
   const ratePerMile = importedRatePerMile(details, road);
   const target = road?.targets?.find(item => item.driverId === driverId);
   const tripRatePerMile = importedTripRatePerMile(details, road, target);
-  const enrichStop = (stop, role) => {
-    const contact = role ? enrichment.contacts?.data?.contacts?.find(item => item.role === role) : null;
-    return { ...stop, phone: stop.phone || (contact?.status === 'found' ? validPhone(contact.phone) : null),
-      contactPending: Boolean(role && enrichmentEnabled && !stop.phone && !enrichment.contacts),
-      contactError: !stop.phone && (enrichment.contacts?.error || contact?.status === 'provider_error') };
-  };
-  const eligible = canAssignImportedLoad(load, driverId, drivers, processing || submitting);
+  const eligible = !load.existingFinalizedLoadId && canAssignImportedLoad(load, driverId, drivers, processing || submitting);
   useEffect(() => { headingRef.current?.focus(); }, []);
 
   async function assign(event) {
@@ -106,7 +106,7 @@ export default function ImportedLoadPage({ load, processing, drivers = [], onBac
           <div className="import-stops">
             {details.stops.map((stop, index) => <Stop key={index} number={index + 1}
               title={t(stop.role === 'pickup' ? 'inbox.pickup' : 'inbox.delivery')}
-              stop={enrichStop(stop, index === 0 ? 'pickup' : index === details.stops.length - 1 ? 'delivery' : null)}
+              stop={importedStopContact(stop, contacts, contactsEnabled)}
               referenceLabel={stop.role === 'pickup' ? 'PU#' : 'DEL#'} t={t} />)}
           </div>
           <div className="import-road-summary" aria-live="polite">
@@ -131,6 +131,7 @@ export default function ImportedLoadPage({ load, processing, drivers = [], onBac
                 {drivers.map(driver => <option key={driver.id} value={driver.id}>{driver.name}{driver.truck ? ` · ${driver.truck}` : ''}</option>)}
               </select>
             </label>}
+            {load.existingFinalizedLoadId && <p role="alert" className="import-blocked">{t('importReview.duplicateLoad')}</p>}
             {submitError && <p role="alert" className="import-blocked">{submitError}</p>}
             <div className="import-actions">
               <button type="button" className="import-button" onClick={onBack} disabled={submitting}>{t('loadImport.back')}</button>
@@ -167,12 +168,36 @@ function Metric({ icon: Icon, label, value }) {
 function Fact({ label, value }) { return <div><dt>{label}</dt><dd>{value}</dd></div>; }
 function Stop({ number, title, stop, referenceLabel, t }) {
   const address = stopAddress(stop);
+  const [copyResult, setCopyResult] = useState(null);
+  const copyTimer = useRef(null);
+  const copyAttempt = useRef(0);
+  const copyStatus = copyResult?.address === address ? copyResult.status : null;
+  useEffect(() => () => {
+    copyAttempt.current += 1;
+    clearTimeout(copyTimer.current);
+  }, [address]);
+  async function copyAddress() {
+    const attempt = ++copyAttempt.current;
+    clearTimeout(copyTimer.current);
+    let status;
+    try { await copyText(address); status = 'copied'; }
+    catch { status = 'error'; }
+    if (attempt !== copyAttempt.current) return;
+    setCopyResult({ address, status });
+    copyTimer.current = setTimeout(() => setCopyResult(null), 2500);
+  }
   return <section className={`import-stop stop-${stop.role}`}>
     <span className="import-stop-number">{number}</span>
     <div className="import-stop-title"><h2>{title}</h2><span>{stopScheduleParts(stop).map(([kind, value]) => kind === 'ready'
       ? `${t('loadImport.readyDate')}: ${value}` : kind === 'hours' ? `${t('loadImport.hours')}: ${value}` : value).join('\n')}</span></div>
     <div className="import-stop-content">
-      <div><h3><MapPin size={19} />{show(address)}</h3>{stop.facility && <p>{stop.facility}</p>}<p className="import-stop-ref"><FileText size={15} />{referenceLabel} {show(stop.reference)}</p>{stop.appointmentReference && <p>Appt #: {stop.appointmentReference}</p>}{stop.orderReferences && <p>REF: {stop.orderReferences}</p>}{stop.contact && <p>{stop.contact}</p>}</div>
+      <div><h3>{address ? <button type="button" className="import-stop-address" onClick={copyAddress}
+        title={t(copyStatus === 'copied' ? 'loadImport.addressCopied' : 'loadImport.copyAddress')}
+        aria-label={`${t('loadImport.copyAddress')}: ${address}`}>
+        {copyStatus === 'copied' ? <Check size={19} className="import-copy-success" aria-hidden="true" /> : <MapPin size={19} aria-hidden="true" />}<span>{address}</span>
+      </button> : <><MapPin size={19} />{show(address)}</>}</h3>
+        <span className={copyStatus === 'error' ? 'import-copy-error' : 'sr-only'} role="status">{copyStatus === 'copied' ? t('loadImport.addressCopied') : copyStatus === 'error' ? t('loadImport.copyAddressError') : ''}</span>
+        {stop.facility && <p>{stop.facility}</p>}<p className="import-stop-ref"><FileText size={15} />{referenceLabel} {show(stop.reference)}</p>{stop.appointmentReference && <p>Appt #: {stop.appointmentReference}</p>}{stop.orderReferences && <p>REF: {stop.orderReferences}</p>}{stop.contact && <p>{stop.contact}</p>}</div>
       <div className="import-stop-actions">
         {stop.phone ? <a className="import-button" href={phoneHref(stop.phone)}><Phone size={15} />{stop.phone}</a> : <span className="import-button muted"><Phone size={15} />{t(stop.contactPending ? 'loadImport.contactLoading' : stop.contactError ? 'loadImport.contactError' : 'loadImport.contactMissing')}</span>}
         {stop.address && <a className="import-button" href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}`} target="_blank" rel="noreferrer"><MapPin size={15} />{t('loadImport.openMap')}<ArrowUpRight size={13} /></a>}

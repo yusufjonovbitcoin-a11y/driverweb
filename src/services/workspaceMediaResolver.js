@@ -3,6 +3,7 @@ import {
   isMissingCloudinaryMediaError,
 } from './cloudinaryMediaErrors.js';
 import { cachedSignedMediaUrl } from './mediaUrlCache.js';
+import { mapWithConcurrency } from './readAllRows.js';
 
 function isMissingStorageObject(error) {
   if (error?.name !== 'StorageApiError' || ![400, 404].includes(Number(error.status))) return false;
@@ -31,17 +32,17 @@ export async function resolveDocumentMediaUrls(client, documents, signMedia) {
   for (let index = 0; index < versionIds.length; index += 100) {
     versionBatches.push(versionIds.slice(index, index + 100));
   }
-  const versions = await Promise.all(versionBatches.map(async (ids) => {
+  const versions = await mapWithConcurrency(versionBatches, async (ids) => {
     const { data, error } = await client
       .from('document_versions')
       .select('id,storage_path,mime_type,file_name')
       .in('id', ids);
     if (error) throw error;
     return data || [];
-  }));
+  });
   const versionsById = new Map(versions.flat().map((version) => [version.id, version]));
 
-  return Promise.all(documents.map(async (document) => {
+  return mapWithConcurrency(documents, async (document) => {
     if (!document.current_version_id) return document;
     const version = versionsById.get(document.current_version_id);
     if (!version?.storage_path) return document;
@@ -66,11 +67,11 @@ export async function resolveDocumentMediaUrls(client, documents, signMedia) {
       mimeType: version.mime_type || null,
       fileName: version.file_name || null,
     };
-  }));
+  });
 }
 
 export async function resolveProfileAvatarUrls(client, members, signMedia) {
-  const entries = await Promise.all(members.map(async (member) => {
+  const entries = await mapWithConcurrency(members, async (member) => {
     if (!member.avatar_path) return [member.id, null];
     if (isCloudinaryReference(member.avatar_path)) {
       try {
@@ -81,6 +82,6 @@ export async function resolveProfileAvatarUrls(client, members, signMedia) {
       }
     }
     return [member.id, await storageSignedUrl(client, 'profile-media', member.avatar_path)];
-  }));
+  });
   return new Map(entries);
 }

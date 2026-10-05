@@ -7,7 +7,52 @@ test('stop schedule prints the same appointment window only once', () => {
     appointment: ' 07:30  -  14:00 ', readyDate: null, hours: null }),
   [['date', '09/28/2026'], ['time', '07:30 - 14:00']]);
   assert.deepEqual(stopScheduleParts({ timePrinted: '07:30 - 14:00', appointment: 'FCFS 07:30 - 14:00' }),
-    [['time', '07:30 - 14:00'], ['appointment', 'FCFS 07:30 - 14:00']]);
+    [['appointment', 'FCFS 07:30 - 14:00']]);
+});
+
+test('ISO date plus time does not repeat the same named-date appointment from the screenshot', () => {
+  assert.deepEqual(stopScheduleParts({ scheduledDate: '2026-10-01', timePrinted: '08:00 - 15:30',
+    appointment: 'OCT 01, 2026 08:00 - 15:30' }),
+  [['date', '2026-10-01'], ['time', '08:00 - 15:30']]);
+  assert.deepEqual(stopScheduleParts({ scheduledDate: '2026-10-02', timePrinted: '09:01 - Appointment',
+    appointment: 'OCT 02, 2026 09:01 - Appointment' }),
+  [['date', '2026-10-02'], ['time', '09:01 - Appointment']]);
+});
+
+test('comparison tolerates explicit numeric date, dash, hour and AM/PM formatting without altering displayed facts', () => {
+  assert.deepEqual(stopScheduleParts({ scheduledDate: '10/1/2026', timePrinted: '8:00 – 15:30',
+    appointment: 'October 01, 2026 8:00am - 3:30pm' }),
+  [['date', '10/1/2026'], ['time', '8:00 – 15:30']]);
+  assert.deepEqual(stopScheduleParts({ scheduledDate: '9/30/26', timePrinted: '09:00', appointment: '9/30/26 09:00' }),
+    [['date', '9/30/26'], ['time', '09:00']]);
+});
+
+test('richer appointment instructions keep FCFS once, with no duplicated date or window', () => {
+  assert.deepEqual(stopScheduleParts({ scheduledDate: '2026-10-01', timePrinted: '08:00 - 15:30',
+    appointment: 'OCT 01, 2026 FCFS 08:00 - 15:30' }),
+  [['appointment', 'OCT 01, 2026 FCFS 08:00 - 15:30']]);
+  assert.deepEqual(stopScheduleParts({ scheduledDate: '2026-10-01', timePrinted: '08:00 - 15:30',
+    appointment: 'FCFS 08:00 - 15:30' }),
+  [['date', '2026-10-01'], ['appointment', 'FCFS 08:00 - 15:30']]);
+});
+
+test('genuinely different dates, windows and timezones are not hidden as duplicates', () => {
+  const stop = { scheduledDate: '2026-10-01', timePrinted: '08:00 - 15:30', appointment: 'OCT 02, 2026 08:00 - 15:30' };
+  assert.deepEqual(stopScheduleParts(stop), [['date', stop.scheduledDate], ['time', stop.timePrinted], ['appointment', stop.appointment]]);
+  assert.deepEqual(stopScheduleParts({ timePrinted: '08:00 - 15:30', appointment: '09:00 - 16:00' }),
+    [['time', '08:00 - 15:30'], ['appointment', '09:00 - 16:00']]);
+  assert.deepEqual(stopScheduleParts({ timePrinted: '08:00 EST', appointment: '08:00 CST' }),
+    [['time', '08:00 EST'], ['appointment', '08:00 CST']]);
+});
+
+test('readiness and opening hours are separate facts; partial dates do not acquire a guessed century', () => {
+  assert.deepEqual(stopScheduleParts({ scheduledDate: '2026-10-01', timePrinted: '08:00',
+    readyDate: '2026-10-01', hours: '08:00 - 17:00', appointment: 'Oct 1, 2026 08:00' }),
+  [['date', '2026-10-01'], ['time', '08:00'], ['ready', '2026-10-01'], ['hours', '08:00 - 17:00']]);
+  const partial = { scheduledDate: '10/1/26', timePrinted: '08:00', appointment: '10/1/2026 08:00' };
+  assert.equal(stopScheduleParts(partial).length, 3);
+  assert.deepEqual(stopScheduleParts({}), []);
+  assert.deepEqual(stopScheduleParts({ appointment: 'Call ahead' }), [['appointment', 'Call ahead']]);
 });
 
 test('staff snapshot is authoritative and preserves date-only stops without inventing time', () => {

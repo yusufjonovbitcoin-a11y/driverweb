@@ -72,15 +72,46 @@ export function stopAddress(stop) {
     stop.city, stop.state, stop.postalCode].filter(Boolean).join(', ');
 }
 
+// Comparison only: keep the displayed/source strings untouched, with no guessed
+// century, timezone or missing date. Recognize explicit US/ISO/named dates.
+function scheduleTextKey(value) {
+  const months = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+  const dateKey = (original, year, month, day) => {
+    if (Number(month) < 1 || Number(month) > 12 || Number(day) < 1 || Number(day) > 31) return original;
+    return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+  };
+  return String(value ?? '').normalize('NFKC').toLowerCase()
+    .replace(/[‐‑–—−]/g, '-')
+    .replace(/\b(\d{4})-(\d{1,2})-(\d{1,2})\b/g, (all, year, month, day) => dateKey(all, year, month, day))
+    .replace(/\b(\d{1,2})[/-](\d{1,2})[/-](\d{4}|\d{2})\b/g, (all, month, day, year) => dateKey(all, year, month, day))
+    .replace(/\b(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\.?\s+(\d{1,2})(?:,\s*|\s+)(\d{4}|\d{2})\b/g,
+      (all, month, day, year) => dateKey(all, year, months.indexOf(month.slice(0, 3)) + 1, day))
+    .replace(/\b(\d{1,2}):(\d{2})(?:\s*(am|pm)\b)?/g, (all, hour, minute, period) => {
+      let h = Number(hour);
+      if (Number(minute) > 59 || h > (period ? 12 : 23) || (period && h < 1)) return all;
+      if (period) h = h % 12 + (period === 'pm' ? 12 : 0);
+      return `${String(h).padStart(2, '0')}:${minute}`;
+    })
+    .replace(/[,\s@]+/g, ' ').replace(/\s*-\s*/g, '-').trim();
+}
+
 export function stopScheduleParts(stop) {
-  const sameTime = stop.timePrinted && stop.appointment
-    && String(stop.timePrinted).trim().replace(/\s+/g, ' ').toLowerCase()
-      === String(stop.appointment).trim().replace(/\s+/g, ' ').toLowerCase();
+  const date = scheduleTextKey(stop.scheduledDate), time = scheduleTextKey(stop.timePrinted);
+  const appointment = scheduleTextKey(stop.appointment);
+  const sameSchedule = appointment && [date, time, [date, time].filter(Boolean).join(' ')].includes(appointment);
+  const contains = key => key && ` ${appointment} `.includes(` ${key} `);
+  const printedDates = appointment.match(/\b(?:\d{4}|\d{2})-\d{2}-\d{2}\b/g) || [];
+  const scheduledDates = date.match(/\b(?:\d{4}|\d{2})-\d{2}-\d{2}\b/g) || [];
+  // Keep both schedules when their explicit dates conflict, even if the clock
+  // time is the same. Richer FCFS/appointment instructions remain visible.
+  const conflictingDate = printedDates.length && scheduledDates.length
+    && !scheduledDates.every(value => printedDates.includes(value));
+  const richerAppointment = appointment && !sameSchedule && !conflictingDate;
   return [
-    ['date', stop.scheduledDate],
-    ['time', stop.timePrinted],
+    ['date', richerAppointment && contains(date) ? null : stop.scheduledDate],
+    ['time', richerAppointment && contains(time) ? null : stop.timePrinted],
     ['ready', stop.readyDate],
-    ['appointment', sameTime ? null : stop.appointment],
+    ['appointment', sameSchedule ? null : stop.appointment],
     ['hours', stop.hours],
   ].filter(([, value]) => value != null && String(value).trim() !== '');
 }

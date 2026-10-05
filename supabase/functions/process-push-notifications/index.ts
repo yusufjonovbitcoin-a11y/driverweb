@@ -11,6 +11,7 @@ import {
 } from "../_shared/rate-limit.ts";
 import { runPushDeliveryBatch } from "../_shared/push-delivery-runner.ts";
 import { secureEqual } from "../_shared/secure-equal.ts";
+import { shouldSendPush } from "../_shared/push-delivery-guard.ts";
 
 type PushDelivery = {
   notification_id: string;
@@ -54,11 +55,16 @@ Deno.serve((request) =>
     const supabaseUrl = Deno.env.get("SUPABASE_URL") ?? "";
     const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
     const expectedWorkerToken = Deno.env.get("PUSH_WORKER_TOKEN") ?? "";
+    const expectedCronToken = Deno.env.get("PUSH_CRON_TOKEN") ?? "";
     const suppliedWorkerToken = request.headers.get("X-Worker-Token") ?? "";
-    if (!supabaseUrl || !serviceRoleKey || !expectedWorkerToken) {
+    if (!supabaseUrl || !serviceRoleKey || (!expectedWorkerToken && !expectedCronToken)) {
       return json({ error: "Function environment is incomplete" }, 500);
     }
-    if (!secureEqual(suppliedWorkerToken, expectedWorkerToken)) {
+    const authenticatedWorker = !!expectedWorkerToken &&
+      secureEqual(suppliedWorkerToken, expectedWorkerToken);
+    const authenticatedCron = !!expectedCronToken &&
+      secureEqual(suppliedWorkerToken, expectedCronToken);
+    if (!authenticatedWorker && !authenticatedCron) {
       return json({ error: "Worker authentication required" }, 401);
     }
 
@@ -85,7 +91,7 @@ Deno.serve((request) =>
     if (!limit.allowed) return rateLimitResponse(limit);
 
     const input = await request.json().catch(() => ({}));
-    const batchSize = Math.min(Math.max(Number(input?.batchSize) || 3, 1), 9);
+    const batchSize = Math.min(Math.max(Math.floor(Number(input?.batchSize)) || 30, 1), 30);
     const { data, error: claimError } = await admin.rpc(
       "claim_push_deliveries",
       { worker_id: workerId, batch_size: batchSize },
@@ -147,16 +153,46 @@ Deno.serve((request) =>
       deadlineAt,
       process: async (delivery) => {
         try {
+          const [leaseResult, notificationResult] = await Promise.all([
+            admin.from("push_deliveries").select("status,locked_by")
+              .eq("notification_id", delivery.notification_id).eq("device_id", delivery.device_id)
+              .eq("company_id", delivery.company_id).maybeSingle(),
+            admin.from("notifications").select("type,title,body,chat_message_id")
+              .eq("id", delivery.notification_id).eq("company_id", delivery.company_id)
+              .eq("recipient_id", delivery.recipient_id).maybeSingle(),
+          ]);
+          if (leaseResult.error || notificationResult.error) throw new Error("Push eligibility lookup failed");
+          const notification = notificationResult.data;
+          let message = null;
+          if (notification?.chat_message_id) {
+            const current = await admin.from("chat_messages").select("deleted_at")
+              .eq("id", notification.chat_message_id).eq("company_id", delivery.company_id).maybeSingle();
+            if (current.error) throw new Error("Chat push eligibility lookup failed");
+            message = current.data;
+          }
+          if (!shouldSendPush({ workerId, lease: leaseResult.data, notification, message })) {
+            // A concurrent delete may already have cancelled/released the lease.
+            const { error } = await admin.from("push_deliveries")
+              .update({ status: "cancelled", locked_by: null, locked_at: null,
+                last_error: "Notification no longer eligible", updated_at: new Date().toISOString() })
+              .eq("notification_id", delivery.notification_id).eq("device_id", delivery.device_id)
+              .eq("status", "processing").eq("locked_by", workerId);
+            if (error) return transitionFailure();
+            cancelled += 1;
+            return true;
+          }
           const result = await sendFcmMessage(
             serviceAccount,
             accessToken,
             delivery.push_token,
-            { title: delivery.title, body: delivery.body },
+            { title: notification!.title, body: notification!.body },
             {
               notificationId: delivery.notification_id,
-              type: delivery.notification_type,
+              type: notification!.type,
               entityType: delivery.entity_type ?? "",
               entityId: delivery.entity_id ?? "",
+              conversationId: delivery.entity_type === "chat_conversation" ? delivery.entity_id ?? "" : "",
+              callId: delivery.entity_type === "chat_call" ? delivery.entity_id ?? "" : "",
             },
           );
 
