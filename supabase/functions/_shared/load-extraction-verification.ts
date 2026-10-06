@@ -147,7 +147,7 @@ export function verifyLoadExtraction(candidate: any, audit: any, singlePass = fa
     set(safe, path, value);
     const acceptedSource = singlePass ? source[0] : checked[0];
     fields.push({ ...(acceptedSource ?? {}), key: path, value,
-      page: acceptedSource && Number.isInteger(acceptedSource.page) && acceptedSource.page > 0 ? acceptedSource.page : null,
+      page: acceptedSource && typeof acceptedSource.page === 'number' && Number.isInteger(acceptedSource.page) && acceptedSource.page > 0 ? acceptedSource.page : null,
       quote: acceptedSource && typeof acceptedSource.quote === 'string' && acceptedSource.quote.trim()
         ? acceptedSource.quote.trim() : null });
   }

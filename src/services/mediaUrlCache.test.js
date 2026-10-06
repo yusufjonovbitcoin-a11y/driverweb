@@ -8,6 +8,19 @@ const deferred = () => {
   return { promise, resolve };
 };
 
+test('server-enforced expiry overrides the longer media cache TTL', async () => {
+  let clock = Date.parse('2026-10-06T12:00:00Z');
+  let requests = 0;
+  const cache = createMediaUrlCache({ now: () => clock });
+  cache.setScope('driver-a');
+  const sign = () => ({url: `temporary-${++requests}`, expiresAt: new Date(clock + 900_000).toISOString()});
+  assert.equal(await cache.load('pdf',sign),'temporary-1');
+  clock += 860_000;
+  assert.equal(await cache.load('pdf',sign),'temporary-1');
+  clock += 10_000;
+  assert.equal(await cache.load('pdf',sign),'temporary-2');
+});
+
 test('concurrent signed URL lookups share one request until its TTL expires', async () => {
   let clock = 0;
   let requests = 0;

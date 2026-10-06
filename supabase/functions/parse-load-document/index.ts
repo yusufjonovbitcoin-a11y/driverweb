@@ -1,4 +1,5 @@
 import { withCors } from "../_shared/cors.ts";
+import { prepareDriverPay } from '../_shared/driver-pay.ts';
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { checkDistributedRateLimit, rateLimitResponse } from "../_shared/rate-limit.ts";
 import { verifyLoadExtraction, EVIDENCE_PATHS } from "../_shared/load-extraction-verification.ts";
@@ -677,7 +678,7 @@ Deno.serve((request) => withCors(request, async () => {
     .eq("company_id", profile.company_id)
     .eq("checksum_sha256", checksum)
     .maybeSingle();
-  if (!corrections && !confirmedPreview && reusableLoadImport(existing, extractionVersion, checksum, false)) {
+  if (existing && !corrections && !confirmedPreview && reusableLoadImport(existing, extractionVersion, checksum, false)) {
     return json({
       loadId: existing.load_id,
       preparedLoad: existing.extracted_result,
@@ -995,6 +996,13 @@ Deno.serve((request) => withCors(request, async () => {
     }).eq("id", importId);
     if (saveError) return await fail('Hujjat tekshiruvi saqlanmadi. Qayta urinib ko‘ring.', 500);
     if (confirmedPreview) {
+      try {
+        if (!confirmDriverId) throw new Error('Driver is required for assignment');
+        await prepareDriverPay(callerClient, adminClient, profile.id, loadId, confirmDriverId);
+      } catch (error) {
+        return json({ error: 'ASSIGN_FAILED_DRAFT_SAVED', loadId,
+          detail: error instanceof Error ? error.message : 'Driver pay route unavailable' }, 409);
+      }
       const { error: assignmentError } = await callerClient.rpc('review_and_assign_document_load', {
         target_load_id: loadId, target_driver_id: confirmDriverId, source_checksum: checksum,
       });

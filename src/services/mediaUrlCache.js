@@ -21,10 +21,13 @@ export function createMediaUrlCache({ ttlMs = 50 * 60_000, maxEntries = 500, now
       entry.promise = Promise.resolve().then(() => {
         if (started !== generation) throw staleSession();
         return resolve();
-      }).then((url) => {
+      }).then((value) => {
         if (started !== generation) throw staleSession();
+        const url = typeof value === 'string' ? value : value?.url;
+        const expires = value && typeof value === 'object' ? Date.parse(value.expiresAt) : NaN;
+        if (Number.isFinite(expires)) entry.until = Math.min(entry.until, expires - 30_000);
         if (!url && entries.get(key) === entry) entries.delete(key);
-        return url;
+        return url || null;
       }).catch((error) => {
         if (entries.get(key) === entry) entries.delete(key);
         throw error;

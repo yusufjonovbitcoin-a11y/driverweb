@@ -40,6 +40,8 @@ import { createDocumentImportRunner, mergeDocumentImportResult, continueDocument
 import { setAppLocale } from './i18n';
 import { changeLocaleWithProfileSync } from './i18n/localeSync';
 import { supabase } from './lib/supabase';
+import { useWebPush } from './hooks/useWebPush';
+import { syncAnalyticsPrivacy, trackPage } from './services/firebaseAnalytics';
 import { createCoalescedAsyncTrigger } from './services/realtimeRefresh';
 import { createSerializedRefresh } from './services/serializedRefresh';
 import { preserveWorkspaceAvatars, applyWorkspaceAvatar, hydrateWorkspaceAvatars } from './services/workspaceAvatars.js';
@@ -83,25 +85,36 @@ const PlatformAdminPanel = React.lazy(() => import('./components/PlatformAdminPa
 
 export default function App() {
   const auth = useAuth();
+  useEffect(() => {
+    const syncPrivacy = () => { void syncAnalyticsPrivacy(); };
+    window.addEventListener('storage', syncPrivacy);
+    return () => window.removeEventListener('storage', syncPrivacy);
+  }, []);
+  const browserPush = useWebPush(auth.currentUser?.companyId ? auth.currentUser.id : null, auth.loading);
   const scope = JSON.stringify([auth.currentUser?.id, auth.currentUser?.companyId, auth.currentUser?.roleCode]);
-  return <WorkspaceCache key={scope}><Workspace auth={auth} /></WorkspaceCache>;
+  return <WorkspaceCache key={scope}><Workspace auth={auth} browserPush={browserPush} /></WorkspaceCache>;
 }
 
-function Workspace({ auth }) {
+function Workspace({ auth, browserPush }) {
   const { t, i18n } = useTranslation();
+  const disableBrowserPush = browserPush.disable;
   const invalidate = useWorkspaceInvalidation();
   const querySourcesRef = useRef('');
   const { currentUser, loading: authLoading, configured, authError, login, logout: authLogout } = auth;
   const [displayTimeZone, setDisplayTimeZone] = useTimeZonePreference(currentUser?.id);
   const logout = useCallback(async () => {
+    await disableBrowserPush().catch(() => {});
     clearPersistedChatSession(chatAccountKey(currentUser));
     await clearPersistedChatMedia(chatAccountKey(currentUser)).catch(() => {});
     return authLogout();
-  }, [currentUser, authLogout]);
+  }, [currentUser, authLogout, disableBrowserPush]);
   const [activeTab, setActiveTab] = useState(() => {
     const hash = typeof window !== 'undefined' ? window.location.hash.replace('#', '') : '';
     return tabs.includes(hash) ? hash : 'kanban';
   });
+  useEffect(() => {
+    if (!authLoading) void trackPage(currentUser?.id ? activeTab : 'login');
+  }, [activeTab, authLoading, currentUser?.id]);
   const [loads, setLoads] = useState([]);
   const [trashedLoads, setTrashedLoads] = useState([]);
   const [drivers, setDrivers] = useState([]);
@@ -877,6 +890,7 @@ function Workspace({ auth }) {
           {activeTab === 'profile' && (
             currentUser.roleCode === 'super_admin' ? <PlatformAdminPanel onLogout={logout} /> : (
           <ProfileView
+            browserPush={browserPush}
             onSaveProfile={auth.updateProfile}
                 drivers={drivers}
                 members={members}

@@ -63,6 +63,7 @@
         "npm:@types/react@^19.2.18",
         "npm:@vitejs/plugin-react@^6.1.1",
         "npm:dotenv@^18.0.3",
+        "npm:firebase@12.19.0",
         "npm:i18next@^26.4.2",
         "npm:imapflow@^2.0.6",
         "npm:lucide-react@^1.47.0",
@@ -70,13 +71,19 @@
         "npm:mapbox-gl@^3.32.0",
         "npm:oxlint@^1.81.0",
         "npm:pdf-lib@^1.17.1",
+        "npm:pdfjs-dist@6.4.299",
         "npm:react-dom@^19.2.8",
         "npm:react-i18next@^17.0.15",
         "npm:react-virtuoso@4.18.3",
         "npm:react@^19.2.8",
+        "npm:swr@^2.5.1",
         "npm:tailwindcss@^4.3.3",
+        "npm:unpdf@1.8.1",
         "npm:vite@^8.3.0"
-      ]
+      ],
+      "overrides": {
+        "@grpc/grpc-js": "1.14.5"
+      }
     }
   }
 }

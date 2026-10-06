@@ -38,11 +38,14 @@ const sourcePaths = [
   path.join(root, 'src/utils/globalSearch.js'),
   ...(await readdir(componentDir)).filter((name) => name.endsWith('.jsx')).map((name) => path.join(componentDir, name)),
 ];
-const namespaces = 'common|nav|header|auth|profile|loads|loadStatus|drivers|driverStatus|documents|inbox|ingestionStatus|chat|map|search|roles|admin|errors|toasts|missingFields|warningCodes|accountStatus';
+const namespaces = 'common|nav|header|auth|profile|loads|loadStatus|drivers|driverStatus|documents|inbox|ingestionStatus|chat|map|search|roles|admin|errors|toasts|missingFields|warningCodes|accountStatus|driverInstructions';
 const keyPattern = new RegExp(`["']((?:${namespaces})\\.[A-Za-z0-9_.-]+)["']`, 'g');
 const referenced = new Set();
 for (const sourcePath of sourcePaths) {
-  const source = await readFile(sourcePath, 'utf8');
+  // Workspace view persistence keys intentionally share names such as map.*;
+  // they are storage identifiers, not user-visible translation references.
+  const source = (await readFile(sourcePath, 'utf8'))
+    .replace(/useWorkspaceView\(\s*(["'])[^"']+\1/g, 'useWorkspaceView(');
   for (const match of source.matchAll(keyPattern)) referenced.add(match[1]);
 }
 const missing = [...referenced].filter((key) => !baseline.has(key)).sort();

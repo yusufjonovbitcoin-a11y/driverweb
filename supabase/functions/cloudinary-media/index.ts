@@ -1,6 +1,7 @@
 import { withCors } from "../_shared/cors.ts";
-import { signedAuthenticatedDeliveryUrl } from "../_shared/cloudinary-delivery.ts";
+import { signedAuthenticatedDeliveryUrl, temporaryAuthenticatedDownloadUrl } from "../_shared/cloudinary-delivery.ts";
 import { canDeleteMedia } from "../_shared/media-permissions.ts";
+import { hasDurableMediaReference } from "../_shared/media-reference-guard.ts";
 import { checkDistributedRateLimit, rateLimitResponse } from "../_shared/rate-limit.ts";
 import { secureEqual } from "../_shared/secure-equal.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
@@ -302,6 +303,16 @@ Deno.serve((request) => withCors(request, async () => {
     if (assetError) return json({ error: "Media lookup failed", code: "MEDIA_LOOKUP_FAILED" }, 500);
     if (!asset) return json({ error: "Media not found", code: "MEDIA_NOT_FOUND" }, 404);
     if (action === "signedUrl") {
+      if (['load_document','driver_document','broker_original','manual_import','gmail_raw'].includes(String(asset.scope))) {
+        const expiresAt = Math.floor(Date.now()/1000) + 900;
+        const url = await temporaryAuthenticatedDownloadUrl({
+          cloudName: env('CLOUDINARY_CLOUD_NAME'), apiKey: env('CLOUDINARY_API_KEY'),
+          apiSecret: env('CLOUDINARY_API_SECRET'), publicId: String(asset.public_id),
+          resourceType: String(asset.resource_type), format: asset.format ? String(asset.format) : null,
+          expiresAt,
+        });
+        return json({url, expiresAt: new Date(expiresAt*1000).toISOString(), expirationEnforced: true});
+      }
       const url = await signedDeliveryUrl(asset);
       return json({
         url,
@@ -313,6 +324,12 @@ Deno.serve((request) => withCors(request, async () => {
       if (auth.worker) return json({ error: "Worker cannot delete media" }, 403);
       if (!canDeleteMedia(auth, asset)) {
         return json({ error: "Media delete permission denied" }, 403);
+      }
+      if (await hasDurableMediaReference(async (table, column, reference) => {
+        const { data, error } = await admin.from(table).select(column).eq(column, reference).limit(1);
+        return { data, error };
+      }, cloudinaryRef(asset.id))) {
+        return json({ error: "Remove media through its document or message command first", code: "MEDIA_IN_USE" }, 409);
       }
       await destroyCloudinary(asset);
       const { error: deleteError } = await admin.from("media_assets")

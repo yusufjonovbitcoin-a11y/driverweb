@@ -1,4 +1,31 @@
 {
+  "driverInstructions": {"title":"Instructions for the driver","hint":"For fixed-mileage pay, send only operational instructions here. Do not include broker rates or payment terms. The original broker document stays private.","edit":"Edit instructions","save":"Save for driver","saved":"Saved. Available to the assigned driver.","error":"Could not save or load. Refresh the load and retry; check your connection and permissions.","conflict":"This load changed. Your draft is preserved. Refresh and review the current instructions before saving again.","reviewHint":"Current saved instructions are shown below. Your draft above has not been replaced.","serverText":"Current saved instructions","reviewed":"I reviewed the current instructions and want to save my draft."},
+  "driverPay": {
+    "gpsRequired": "Ask the driver to share a fresh location in the app, then retry assignment. Mileage will not be guessed.",
+    "recalculate": "Route or pay settings changed. Retry to calculate a new quote.",
+    "routeUnavailable": "Could not calculate the road route. Check all pickup/delivery addresses and try again.",
+  "title": "Driver compensation",
+  "enabled": "Fixed pay per mile",
+  "rate": "Rate · USD / mile",
+  "hint": "New assignments only. Pay = rate × (driver → pickup + all route stops). Rate Con and broker revenue are hidden from this driver on these assignments. Existing assignments keep their saved terms.",
+  "loadError": "Could not load compensation settings. Reopen this form to retry.",
+  "invalidRate": "Enter a rate above 0 and up to 100, with at most 4 decimal places."
+},
+  "firebase": {
+    "browserPush": "Browser notifications",
+    "pushDescription": "Enable notifications on this browser. Message text stays hidden on the lock screen. Delivery also requires the server push service to be configured.",
+    "on": "This browser is registered for notifications.",
+    "off": "Notifications are off for this browser.",
+    "denied": "Notifications are blocked. Allow them in your browser’s site settings, then return here.",
+    "unsupported": "Push is unavailable in this browser. Try an HTTPS site in a supported browser; on iPhone, install it on the Home Screen.",
+    "working": "Connecting…",
+    "error": "Could not save the setting. Check your connection and try again.",
+    "enable": "Enable notifications",
+    "disable": "Disable notifications",
+    "analytics": "Usage analytics",
+    "analyticsDescription": "Send general page usage statistics to Google Analytics. We do not add chat text, email, phone numbers or document data to analytics events. This choice applies to this browser.",
+    "analyticsInactive": "Analytics is inactive on local/preview sites or when your browser requests not to be tracked."
+  },
   "loadTrash": {
     "title": "Trash",
     "subtitle": "Removed loads stay here with their documents and history until you choose to delete them permanently.",

@@ -2,6 +2,7 @@ import { withCors } from "../_shared/cors.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { checkDistributedRateLimit, rateLimitResponse } from "../_shared/rate-limit.ts";
 import { previewLoadRoute } from '../_shared/google-load-route.ts';
+import { prepareDriverPay } from '../_shared/driver-pay.ts';
 
 const corsHeaders = {
   "Access-Control-Allow-Headers":
@@ -64,6 +65,14 @@ Deno.serve((request) => withCors(request, async () => {
     ? [...new Set(payload.driverIds.map((value) => String(value)).filter(Boolean))]
     : [];
   if (!loadId) return json({ error: "loadId is required" }, 400);
+  if (payload.prepareDriverPay === true) {
+    if (driverIds.length !== 1) return json({ error: 'One driver is required' }, 400);
+    try {
+      return json(await prepareDriverPay(callerClient, admin, authData.user.id, loadId, driverIds[0]));
+    } catch (error) {
+      return json({ error: error instanceof Error ? error.message : 'Driver pay route unavailable' }, 422);
+    }
+  }
   if ((!preview && !driverIds.length) || driverIds.length > 25) {
     return json({ error: "1 tadan 25 tagacha haydovchini tanlang" }, 400);
   }

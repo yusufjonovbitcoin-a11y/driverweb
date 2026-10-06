@@ -66,6 +66,7 @@ export default function ProfileView({
   onAddDriver, 
   onDeleteMember,
   currentUser,
+  browserPush,
   onSaveProfile,
   onNavigate,
   onOpenDriver,
@@ -510,7 +511,7 @@ export default function ProfileView({
       )}
 
       {activeSection === 'notifications' && (
-        <ProfileNotificationsPanel unreadInboxCount={unreadInboxCount} unreadChatCount={unreadChatCount} onNavigate={onNavigate} />
+        <ProfileNotificationsPanel browserPush={browserPush} unreadInboxCount={unreadInboxCount} unreadChatCount={unreadChatCount} onNavigate={onNavigate} />
       )}
 
       {activeSection === 'company' && (

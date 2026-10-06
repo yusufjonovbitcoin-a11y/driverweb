@@ -5,7 +5,8 @@ import { loadTrashMetadata, partitionTrashedLoads, runLoadTrashAction } from './
 const load = { id: 'test-load', version: 4 };
 test('trash actions send the reviewed version and explicit restore driver', async () => {
   const calls = [];
-  const client = { rpc: async (...args) => { calls.push(args); return { data: load }; } };
+  const client = { functions: { invoke: async () => ({ data: { fixedPay: false } }) },
+    rpc: async (...args) => { calls.push(args); return { data: load }; } };
   await runLoadTrashAction(client, 'trash', load);
   await runLoadTrashAction(client, 'restore', load);
   await runLoadTrashAction(client, 'restore', load, 'other-driver');

@@ -1,4 +1,5 @@
 import { requireSupabase } from '../lib/supabase';
+import { prepareDriverPayAssignment } from './driverPay.js';
 import { cloudinarySignedUrl } from './cloudinaryMediaService';
 import { isCloudinaryReference } from './cloudinaryMediaErrors';
 import { loadImportFileError } from './loadImportFile';
@@ -22,6 +23,9 @@ async function throwFunctionError(error, fallback) {
   try {
     const payload = await error?.context?.json();
     if (payload?.error) message = payload.error;
+    if (payload?.error === 'ASSIGN_FAILED_DRAFT_SAVED' && typeof payload.detail === 'string') {
+      message += `: ${payload.detail}`;
+    }
     code = payload?.code || null;
     params = payload?.params || null;
   } catch {
@@ -651,6 +655,7 @@ export async function fetchImportPreviewContacts(previewTicket, signal) {
 export async function assignLoadDirectly(loadId, driverId) {
   if (!loadId || !driverId) throw new Error('Tayinlash uchun bitta haydovchini tanlang.');
   const client = requireSupabase();
+  await prepareDriverPayAssignment(client, loadId, driverId);
   const { data, error } = await client.rpc('assign_load_directly', {
     load_id: loadId,
     driver_id: driverId,
@@ -669,6 +674,7 @@ export async function assignLoadDirectly(loadId, driverId) {
 
 export async function reviewAndAssignDocumentLoad(loadId, driverId, checksum) {
   const client = requireSupabase();
+  await prepareDriverPayAssignment(client, loadId, driverId);
   const { data, error } = await client.rpc('review_and_assign_document_load', {
     target_load_id: loadId, target_driver_id: driverId, source_checksum: checksum,
   });
@@ -707,12 +713,20 @@ export async function fetchFleetVehicles() {
   return (data || []).map(vehicleRowToModel);
 }
 
-export async function updateCompanyDriverContact(driverId, { name, phone }) {
+export async function fetchDriverPaySettings(driverId) {
+  const { data, error } = await requireSupabase().from('driver_pay_settings')
+    .select('rate_per_mile').eq('driver_id', driverId).maybeSingle();
+  if (error) throw error;
+  return data?.rate_per_mile ?? null;
+}
+
+export async function updateCompanyDriverContact(driverId, { name, phone, ratePerMile }) {
   const client = requireSupabase();
-  const { data, error } = await client.rpc('update_company_driver_contact', {
+  const { data, error } = await client.rpc('update_driver_contact_and_pay', {
     p_driver_id: driverId,
     p_full_name: name.trim(),
     p_phone: phone.trim() || null,
+    p_rate_per_mile: ratePerMile,
   });
   if (error) throw error;
   return data;

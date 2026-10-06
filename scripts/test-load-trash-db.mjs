@@ -110,6 +110,39 @@ try {
   assert.match(deleted.stderr, /LOAD_TRASH_CONFLICT/);
   sql("select test_assert((select trashed_at is null and version=3 from loads where id='00000000-0000-0000-0000-000000000090'),'stale permanent deletion cannot delete concurrently restored load');");
   console.log('PASS: concurrent restore protects load from stale permanent deletion');
+  if (process.env.DRIVER_PAY_TEST === '1') {
+    await migration('202610010004_update_company_driver_contact.sql');
+    await migration('20261006110319_driver_mileage_pay.sql');
+    sql(await readFile(path.join(root, 'scripts/load-trash-test-fixtures/driver-pay-checks.sql'), 'utf8'));
+    await migration('202609240004_operational_hardening.sql', 'create or replace function public.assert_assignment_confirmed', 'create or replace function public.transition_stop');
+    await migration('202609280004_idempotent_driver_arrival.sql');
+    sql(await readFile(path.join(root, 'scripts/load-trash-test-fixtures/mobile-reliability-upgrade-seed.sql'), 'utf8'));
+    await migration('20261006131928_mobile_reliability_hardening.sql');
+    sql(await readFile(path.join(root, 'scripts/load-trash-test-fixtures/mobile-reliability-checks.sql'), 'utf8'));
+    sql(await readFile(path.join(root, 'scripts/load-trash-test-fixtures/mobile-reliability-upgrade-checks.sql'), 'utf8'));
+
+    // Route mutations use the parent-load lock. A simultaneous stale action
+    // fails, while the exact same operation safely replays after that lock.
+    let routeHasLock;
+    const routeLocked = new Promise((resolve) => { routeHasLock = resolve; });
+    const routeVersion = sql("select version from loads where id='00000000-0000-0000-0000-000000000415';").match(/\n\s*(\d+)\s*\n/)[1];
+    const routeCommand = `select advance_driver_route('00000000-0000-0000-0000-000000000415','en_route_to_pickup',
+      '00000000-0000-0000-0000-000000000451',${routeVersion});`;
+    const routeActor = `set role authenticated; set "request.jwt.claim.sub"='00000000-0000-0000-0000-000000000004';`;
+    const routeFirst = asyncSql(`begin; ${routeActor} ${routeCommand}
+      select 'ROUTE_LOCKED'; select pg_sleep(0.4); commit;`, (output) => { if (output.includes('ROUTE_LOCKED')) routeHasLock(); });
+    await Promise.race([routeLocked, routeFirst.then((result) => { if (!result.stdout.includes('ROUTE_LOCKED')) throw new Error(result.stderr); })]);
+    const routeRetry = asyncSql(`${routeActor} ${routeCommand}`);
+    const routeStale = asyncSql(`${routeActor} select advance_driver_route('00000000-0000-0000-0000-000000000415',
+      'arrived_at_pickup','00000000-0000-0000-0000-000000000452',${routeVersion});`);
+    const [routeCommitted, routeReplayed, routeRejected] = await Promise.all([routeFirst, routeRetry, routeStale]);
+    assert.equal(routeCommitted.code, 0, routeCommitted.stderr);
+    assert.equal(routeReplayed.code, 0, routeReplayed.stderr);
+    assert.notEqual(routeRejected.code, 0);
+    assert.match(routeRejected.stderr, /Load changed/);
+    sql("select test_assert((select count(*)=1 from client_operations where operation_id='00000000-0000-0000-0000-000000000451'),'concurrent route retry commits exactly once');");
+    console.log('PASS: concurrent route retry replays and stale mutation is rejected');
+  }
 } finally {
   if (started) run('pg_ctl', ['-D', `${directory}/data`, '-m', 'fast', 'stop']);
   await rm(directory, { recursive: true, force: true });

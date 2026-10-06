@@ -7,6 +7,7 @@ import { loadStatusLabel } from '../i18n/labels';
 import { buildLoadDetails } from './loadDetailsModel';
 import DraggableLoadDocument from './DraggableLoadDocument.jsx';
 import LoadTrashAction from './LoadTrashAction.jsx';
+import DriverInstructionsEditor from './DriverInstructionsEditor.jsx';
 import './loadDetails.css';
 
 const LoadDetailsMap = lazy(() => import('./LoadDetailsMap.jsx'));
@@ -232,6 +233,7 @@ export default function LoadDetailsModal({ load, driver, onClose, onOpenDocs, on
           </DetailSection>
         </footer>
           <InstructionPages key={load.id} instructions={details.specialInstructions} requirements={details.requirements} t={t} />
+          {onTrashLoad && !load.trashedAt && <DriverInstructionsEditor key={load.id} loadId={load.id} />}
           </div>
           <aside className="load-command-map" aria-label={t('map.title')}>
             <Suspense fallback={<div className="load-command-map-loading" role="status">{t('common.loading')}</div>}>

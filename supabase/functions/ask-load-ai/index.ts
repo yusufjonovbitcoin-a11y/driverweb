@@ -136,15 +136,15 @@ Deno.serve((request) => withCors(request, async () => {
   }
   if (!question) return json({ error: "Question is required" }, 400);
 
-  const [{ data: profile }, { data: visibleLoad }] = await Promise.all([
-    caller.from("profiles").select("id,company_id,role,status")
-      .eq("id", authData.user.id).maybeSingle(),
-    caller.from("loads").select("id,company_id,current_assignment_id")
-      .eq("id", loadId).maybeSingle(),
-  ]);
+  const { data: profile } = await caller.from('profiles').select('id,company_id,role,status')
+    .eq('id', authData.user.id).maybeSingle();
   if (!profile || profile.status !== "active") {
     return json({ error: "Active account required" }, 403);
   }
+  const visibleResult = profile.role === 'driver'
+    ? await caller.rpc('get_driver_load_rows', { p_load_ids: [loadId] })
+    : await caller.from('loads').select('*').eq('id', loadId).maybeSingle();
+  const visibleLoad = profile.role === 'driver' ? visibleResult.data?.[0] : visibleResult.data;
   if (!visibleLoad) return json({ error: "Load not found" }, 404);
   if (profile.role !== "super_admin" && profile.company_id !== visibleLoad.company_id) {
     return json({ error: "Load not found" }, 404);
@@ -168,18 +168,16 @@ Deno.serve((request) => withCors(request, async () => {
   const driverId = assignment?.driver_id ?? authData.user.id;
   const [loadResult, stopsResult, documentsResult, warningsResult, offerResult,
     presenceResult] = await Promise.all([
-    admin.from("loads").select(
-      "load_number,status,broker_name,broker_contact_name,broker_phone,broker_email,cargo_description,equipment_type,freight_mode,weight_lbs,broker_rate,loaded_miles,loaded_rpm,temperature_fahrenheit,pallet_count,case_count,is_hazmat,special_instructions,load_requirements,owner_dispatcher_id,updated_at",
-    ).eq("id", loadId).single(),
-    admin.from("load_stops").select(
+    Promise.resolve({ data: visibleLoad, error: visibleResult.error }),
+    caller.from("load_stops").select(
       "type,sequence,facility_name,address_line,city,region,postal_code,latitude,longitude,appointment_from,appointment_to,appointment_timezone,status,requires_document,contact_name,contact_phone,contact_source",
     ).eq("load_id", loadId).order("sequence"),
-    admin.from("documents").select(
+    caller.from("documents").select(
       "id,document_type,current_version_id,created_at",
     ).eq("load_id", loadId).not("current_version_id", "is", null),
-    admin.from("warnings").select("code,message,created_at")
+    caller.from("warnings").select("code,message,created_at")
       .eq("load_id", loadId).eq("is_active", true).order("created_at"),
-    admin.from("offers").select(
+    caller.from("offers").select(
       "estimated_deadhead_miles,loaded_miles,effective_rpm,compatibility_warnings,created_at",
     ).eq("load_id", loadId).eq("driver_id", driverId)
       .order("created_at", { ascending: false }).limit(1).maybeSingle(),
@@ -196,7 +194,7 @@ Deno.serve((request) => withCors(request, async () => {
   const versionIds = documentRows.map((document) => document.current_version_id)
     .filter(Boolean);
   const { data: versions } = versionIds.length
-    ? await admin.from("document_versions")
+    ? await caller.from("document_versions")
       .select("id,file_name,mime_type,uploaded_at")
       .in("id", versionIds)
     : { data: [] };
@@ -224,7 +222,11 @@ Deno.serve((request) => withCors(request, async () => {
       equipment: load.equipment_type,
       freightMode: load.freight_mode,
       weightLbs: load.weight_lbs,
-      rateUsd: load.broker_rate,
+      rateUsd: load.driver_pay ? undefined : load.broker_rate,
+      driverPayUsd: load.driver_pay?.amount,
+      driverPayPerMile: load.driver_pay?.rate_per_mile,
+      paidTotalMiles: load.driver_pay?.total_miles,
+      paidDeadheadMiles: load.driver_pay?.deadhead_miles,
       loadedMiles: load.loaded_miles,
       loadedRpm: load.loaded_rpm,
       temperatureFahrenheit: load.temperature_fahrenheit,
@@ -277,7 +279,7 @@ Deno.serve((request) => withCors(request, async () => {
             type: "input_text",
             text: JSON.stringify({
               trustedLoadContext: trustedContext,
-              conversationHistory: history,
+              conversationHistory: load.driver_pay ? [] : history,
               latestQuestion: question,
             }),
           }],

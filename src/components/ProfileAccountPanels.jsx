@@ -1,9 +1,10 @@
-import { Bell, Building2, ChevronRight, Clock3, Globe2, KeyRound, Mail, MessageSquare, ShieldCheck, Smartphone, UserRound } from 'lucide-react';
+import { Bell, Building2, ChevronRight, Clock3, Globe2, KeyRound, Mail, MessageSquare, ShieldCheck, Smartphone } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { LOCALE_META, SUPPORTED_LOCALES } from '../i18n/locales';
 import ProfileTimeZoneSelect from './ProfileTimeZoneSelect';
 import PersonalProfileForm from './PersonalProfileForm';
 import { roleLabel } from '../i18n/labels';
+import FirebasePreferences from './FirebasePreferences';
 
 export function ProfileSectionHeading({ title, description }) {
   return <header className="profile-section-heading"><h2>{title}</h2>{description && <p>{description}</p>}</header>;
@@ -57,7 +58,7 @@ export function ProfileSecurityPanel({ currentUser }) {
   </div>;
 }
 
-export function ProfileNotificationsPanel({ unreadChatCount = 0, unreadInboxCount = 0, onNavigate }) {
+export function ProfileNotificationsPanel({ unreadChatCount = 0, unreadInboxCount = 0, onNavigate, browserPush }) {
   const { t } = useTranslation();
   const items = [
     { tab: 'chat', icon: MessageSquare, label: t('nav.chat'), description: t('profile.chatDescription'), count: unreadChatCount },
@@ -73,7 +74,7 @@ export function ProfileNotificationsPanel({ unreadChatCount = 0, unreadInboxCoun
         <span className={`profile-count-badge ${count ? 'has-unread' : ''}`}>{count}</span><ChevronRight size={17} aria-hidden="true" />
       </button>)}
     </section>
-    <p className="profile-panel-note">{t('profile.notificationPreferencesHint')}</p>
+    <FirebasePreferences browserPush={browserPush} />
   </div>;
 }
 

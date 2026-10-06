@@ -1,4 +1,31 @@
 {
+  "driverInstructions": {"title":"Haydovchi uchun ko‘rsatmalar","hint":"Milya bo‘yicha to‘lovda bu yerga faqat ish ko‘rsatmalarini yozing. Broker narxi va to‘lov shartlarini qo‘shmang. Brokerning asl hujjati yashirin qoladi.","edit":"Ko‘rsatmalarni tahrirlash","save":"Haydovchi uchun saqlash","saved":"Saqlandi. Biriktirilgan haydovchiga ko‘rinadi.","error":"Saqlash yoki yuklash amalga oshmadi. Yukni yangilang; internet va ruxsatni tekshiring.","conflict":"Yuk o‘zgargan. Qoralamangiz saqlandi. Ma’lumotni yangilab, joriy ko‘rsatmalarni tekshirgach qayta saqlang.","reviewHint":"Quyida hozir saqlangan ko‘rsatmalar ko‘rsatilgan. Yuqoridagi qoralamangiz almashtirilmadi.","serverText":"Hozir saqlangan ko‘rsatmalar","reviewed":"Joriy ko‘rsatmalarni tekshirdim va o‘z qoralamamni saqlamoqchiman."},
+  "driverPay": {
+    "gpsRequired": "Haydovchi ilovadan yangi joylashuvini yuborsin, keyin yukni qayta biriktiring. Masofa taxminan olinmaydi.",
+    "recalculate": "Marshrut yoki stavka o‘zgardi. Yangi hisob uchun biriktirishni qayta bajaring.",
+    "routeUnavailable": "Yo‘l masofasini hisoblab bo‘lmadi. Barcha pickup/delivery manzillarini tekshirib, qayta urinib ko‘ring.",
+  "title": "Haydovchi haqi",
+  "enabled": "Har mil uchun belgilangan stavka",
+  "rate": "Stavka · USD / mil",
+  "hint": "Faqat yangi biriktiriladigan yuklar uchun. Haq = stavka × (haydovchi → pickup + barcha bekatlar). Shu yuklarda Rate Con va broker narxi haydovchidan yashiriladi. Oldingi yuklar shartlari saqlanadi.",
+  "loadError": "To‘lov sozlamalari yuklanmadi. Formani qayta oching.",
+  "invalidRate": "0 dan katta, 100 gacha stavka kiriting; ko‘pi bilan 4 kasr xonasi."
+},
+  "firebase": {
+    "browserPush": "Brauzer bildirishnomalari",
+    "pushDescription": "Shu brauzerda bildirishnomalarni yoqing. Qulflangan ekranda xabar matni ko‘rsatilmaydi. Yetkazib berish uchun server push xizmati ham sozlangan bo‘lishi kerak.",
+    "on": "Bu brauzer bildirishnomalar uchun ro‘yxatdan o‘tdi.",
+    "off": "Bu brauzerda bildirishnomalar o‘chirilgan.",
+    "denied": "Bildirishnomalar bloklangan. Brauzerning sayt sozlamalarida ruxsat bering va bu yerga qayting.",
+    "unsupported": "Bu brauzerda push mavjud emas. HTTPS va qo‘llab-quvvatlanadigan brauzerdan foydalaning; iPhone’da saytni bosh ekranga qo‘shing.",
+    "working": "Ulanmoqda…",
+    "error": "Sozlama saqlanmadi. Internetni tekshirib, qayta urinib ko‘ring.",
+    "enable": "Bildirishnomalarni yoqish",
+    "disable": "Bildirishnomalarni o‘chirish",
+    "analytics": "Foydalanish statistikasi",
+    "analyticsDescription": "Sahifalardan foydalanishning umumiy statistikasini Google Analytics’ga yuborish. Hodisalarga chat matni, email, telefon yoki hujjat ma’lumotlari qo‘shilmaydi. Tanlov shu brauzerga tegishli.",
+    "analyticsInactive": "Lokal/preview saytda yoki brauzer kuzatishni taqiqlaganda Analytics ishlamaydi."
+  },
   "loadTrash": {
     "title": "Korzinka",
     "subtitle": "Ro‘yxatdan olingan yuklar butunlay o‘chirilguncha hujjatlari va tarixi bilan shu yerda saqlanadi.",

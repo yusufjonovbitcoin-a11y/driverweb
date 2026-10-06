@@ -1,3 +1,4 @@
+import { prepareDriverPayAssignment } from './driverPay.js';
 // The server owns authorization and atomic version checks. Never silently retry
 // a destructive action against a version the user has not reviewed.
 export async function runLoadTrashAction(client, action, load, driverId = null) {
@@ -11,6 +12,7 @@ export async function runLoadTrashAction(client, action, load, driverId = null) 
   }
   const args = { target_load_id: load.id, expected_version: load.version };
   if (action === 'restore') args.target_driver_id = driverId || null;
+  if (action === 'restore' && driverId) await prepareDriverPayAssignment(client, load.id, driverId);
   const { data, error } = await client.rpc(rpc, args);
   if (error) throw error;
   if (action !== 'delete' && !data?.id) throw new Error('LOAD_TRASH_EMPTY_RESULT');

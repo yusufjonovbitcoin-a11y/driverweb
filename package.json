@@ -1,6 +1,9 @@
 {
   "name": "driverweb",
   "private": true,
+  "overrides": {
+    "@grpc/grpc-js": "1.14.5"
+  },
   "version": "0.0.0",
   "type": "module",
   "scripts": {
@@ -23,6 +26,7 @@
   "dependencies": {
     "@supabase/supabase-js": "^2.117.1",
     "dotenv": "^18.0.3",
+    "firebase": "12.19.0",
     "i18next": "^26.4.2",
     "imapflow": "^2.0.6",
     "lucide-react": "^1.47.0",

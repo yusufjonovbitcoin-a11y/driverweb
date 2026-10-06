@@ -31,3 +31,4 @@ output/evaluations/
 __pycache__/
 .venv/
 .env.pdf-worker
+.env*

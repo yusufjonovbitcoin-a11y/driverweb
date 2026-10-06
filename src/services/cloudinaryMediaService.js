@@ -59,7 +59,7 @@ export async function cloudinarySignedUrl(reference) {
   if (!isCloudinaryReference(reference)) return null;
   return cachedSignedMediaUrl(requireSupabase(), reference, async () => {
     const result = await request({ action: 'signedUrl', reference });
-    return result.url || null;
+    return result;
   });
 }
 
