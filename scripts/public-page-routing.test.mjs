@@ -14,3 +14,13 @@ test('public support and privacy URLs resolve to their static pages without repl
     assert.ok(html.includes(`https://managefleets.com${route.source}`));
   }
 });
+
+test('deployment keeps the pure helpers shared by the web without sending local artifacts', async () => {
+  const rules = await readFile(new URL('../.vercelignore', import.meta.url), 'utf8');
+  for (const helper of ['load-enrichment.ts', 'load-stop-address.ts', 'load-operational-extraction.ts']) {
+    assert.ok(rules.includes(`!supabase/functions/_shared/${helper}`));
+  }
+  for (const excluded of ['.env*', 'dist', 'output', 'tmp', 'supabase/*']) {
+    assert.ok(rules.split('\n').includes(excluded));
+  }
+});

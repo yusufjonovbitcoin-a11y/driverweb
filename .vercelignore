@@ -14,6 +14,14 @@ output
 tmp
 docs
 scripts
-supabase
+supabase/*
+!supabase/functions
+supabase/functions/*
+!supabase/functions/_shared
+supabase/functions/_shared/*
+# Pure helpers imported by the web bundle, not server credentials/handlers.
+!supabase/functions/_shared/load-enrichment.ts
+!supabase/functions/_shared/load-stop-address.ts
+!supabase/functions/_shared/load-operational-extraction.ts
 __pycache__
 .DS_Store
