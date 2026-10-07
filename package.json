@@ -9,6 +9,7 @@
   "scripts": {
     "test:driver-brief-db": "node scripts/test-driver-brief-db.mjs",
     "test:chat-db": "node scripts/test-chat-db.mjs",
+    "test:native-call-db": "node scripts/test-native-call-db.mjs",
     "dev": "vite",
     "test": "node --test src/**/*.test.js scripts/*.test.mjs",
     "test:i18n": "node --test src/i18n/*.test.js",

@@ -79,3 +79,12 @@ verify_jwt = false
 
 [functions.process-media-deletions]
 verify_jwt = false
+
+
+[functions.process-native-call-push]
+# Scoped no-secret wake or existing trusted Cron token; only server-owned outbox.
+verify_jwt = false
+
+[functions.native-call-action]
+# Short-lived HMAC capability; decline/status only, never unauthenticated accept.
+verify_jwt = false

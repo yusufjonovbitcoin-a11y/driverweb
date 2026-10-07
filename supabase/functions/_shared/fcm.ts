@@ -182,3 +182,82 @@ export async function sendFcmMessage(
       : `FCM delivery failed (${response.status}, ${code})`,
   };
 }
+
+// Native Android invitations/cancellations intentionally have no notification
+// object: Firebase must deliver them to the native service, not auto-display.
+export function buildCallFcmMessage(
+  token: string,
+  data: Record<string, string>,
+  legacyAlert: { title: string; body: string } | null = null,
+) {
+  const remaining = Math.max(
+    0,
+    Math.min(90, Math.floor((Date.parse(data.expires_at) - Date.now()) / 1000)),
+  );
+  return {
+    message: {
+      token,
+      data: data.event === "incoming_call"
+        ? {
+          ...data,
+          notificationId: data.call_id ?? "",
+          type: "chat",
+          entityType: "chat_call",
+          entityId: data.call_id ?? "",
+          conversationId: data.conversation_id ?? "",
+          callId: data.call_id ?? "",
+        }
+        : data,
+      ...(legacyAlert ? { notification: legacyAlert } : {}),
+      android: { priority: "high", ttl: `${remaining}s` },
+      apns: {
+        headers: {
+          "apns-push-type": legacyAlert ? "alert" : "background",
+          "apns-priority": legacyAlert ? "10" : "5",
+          "apns-expiration": "0",
+        },
+        payload: {
+          aps: legacyAlert ? { sound: "default" } : { "content-available": 1 },
+        },
+      },
+      ...(legacyAlert ? { webpush: { headers: { Urgency: "high" } } } : {}),
+    },
+  };
+}
+export async function sendCallFcmMessage(
+  account: FirebaseServiceAccount,
+  accessToken: string,
+  token: string,
+  data: Record<string, string>,
+  legacyAlert: { title: string; body: string } | null = null,
+  fetcher: Fetcher = fetch,
+) {
+  const response = await fetcher(
+    `https://fcm.googleapis.com/v1/projects/${
+      encodeURIComponent(account.projectId)
+    }/messages:send`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(buildCallFcmMessage(token, data, legacyAlert)),
+      signal: AbortSignal.timeout(4000),
+    },
+  );
+  const payload = await response.json().catch(() => ({}));
+  const code = fcmErrorCode(payload);
+  return {
+    ok: response.ok,
+    providerMessageId: response.ok && typeof payload.name === "string"
+      ? payload.name
+      : null,
+    invalidToken: code === "UNREGISTERED",
+    retryable: response.status === 429 || response.status >= 500 ||
+      ["UNAVAILABLE", "INTERNAL", "QUOTA_EXCEEDED"].includes(code),
+    error: response.ok
+      ? null
+      : `FCM call delivery failed (${response.status}, ${code})`,
+  };
+}

@@ -36,3 +36,5 @@ jobs:
           DOCUMENT_PRIVACY_TEST: '1'
           AUDIT_FIX_TEST: '1'
         run: PG_BIN="$(pg_config --bindir)" node scripts/test-load-trash-db.mjs
+      - name: Native incoming call lifecycle and device isolation checks
+        run: PG_BIN="$(pg_config --bindir)" npm run test:native-call-db

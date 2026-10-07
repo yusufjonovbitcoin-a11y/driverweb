@@ -1,0 +1,44 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { createCallCapability, verifyCallCapability } from '../supabase/functions/_shared/native-call-token.ts';
+import { apnsConfiguration, apnsProviderToken, sendVoipPush } from '../supabase/functions/_shared/apns-voip.ts';
+import { buildCallFcmMessage, buildFcmMessage } from '../supabase/functions/_shared/fcm.ts';
+const call='00000000-0000-0000-0000-000000000001',user='00000000-0000-0000-0000-000000000002',device='00000000-0000-0000-0000-000000000003';
+const secret='synthetic-capability-test-key-'.repeat(2), now=Date.parse('2026-10-07T18:00:00Z');
+test('native capability binds recipient, device, call and 120 second deadline', async () => {
+ const token=await createCallCapability(secret,call,user,device,new Date(now).toISOString(),now);
+ const claims=await verifyCallCapability(secret,token,call,now+90_000);
+ assert.equal(claims.recipient_id,user);assert.equal(claims.device_id,device);assert.equal(claims.scope,'native-call:decline-status');
+ assert.equal(await verifyCallCapability(secret,token,call,now+120_000),null);
+ assert.equal(await verifyCallCapability(secret,token,user,now),null);
+ assert.equal(await verifyCallCapability('wrong-key-'.repeat(5),token,call,now),null);
+ const [body,signature]=token.split('.');const altered=JSON.parse(Buffer.from(body,'base64url').toString());altered.device_id=user;
+ assert.equal(await verifyCallCapability(secret,Buffer.from(JSON.stringify(altered)).toString('base64url')+'.'+signature,call,now),null);
+ await assert.rejects(createCallCapability(secret,call,user,device,new Date(now-90_000).toISOString(),now));
+});
+test('FCM native call data is high priority and never auto-displays a generic notification', () => {
+ const data={event:'incoming_call',call_id:call,expires_at:new Date(Date.now()+90_000).toISOString()};
+ const native=buildCallFcmMessage('synthetic-token',data).message;
+ assert.equal(native.notification,undefined);assert.equal(native.android.priority,'high');assert.equal(native.apns.headers['apns-push-type'],'background');
+ const legacy=buildCallFcmMessage('synthetic-token',data,{title:'Incoming call',body:'Test'}).message;
+ assert.equal(legacy.data.entityType,'chat_call');assert.equal(legacy.data.callId,call);assert.equal(legacy.data.notificationId,call);
+ assert.equal(legacy.notification.title,'Incoming call');assert.equal(legacy.apns.headers['apns-push-type'],'alert');
+ assert.deepEqual(buildFcmMessage('token',{title:'Chat',body:'Hello'},{type:'chat'}).message.notification,{title:'Chat',body:'Hello'});
+});
+test('VoIP provider uses ES256, environment-specific APNs, matching bundle and zero expiration', async () => {
+ const keys=await crypto.subtle.generateKey({name:'ECDSA',namedCurve:'P-256'},true,['sign','verify']);
+ const pkcs8=Buffer.from(await crypto.subtle.exportKey('pkcs8',keys.privateKey)).toString('base64');
+ const config=apnsConfiguration({keyId:'ABCDEFGHIJ',teamId:'0123456789',bundleId:'com.test.calls',privateKey:`-----BEGIN PRIVATE KEY-----\n${pkcs8}\n-----END PRIVATE KEY-----`});
+ assert(config);const jwt=await apnsProviderToken(config,now);const parts=jwt.split('.');
+ assert.equal(JSON.parse(Buffer.from(parts[0],'base64url').toString()).alg,'ES256');
+ assert(await crypto.subtle.verify({name:'ECDSA',hash:'SHA-256'},keys.publicKey,Buffer.from(parts[2],'base64url'),new TextEncoder().encode(parts.slice(0,2).join('.'))));
+ let requests=0;
+ const fetcher=async(url,options)=>{requests++;assert.equal(new URL(url).host,'api.sandbox.push.apple.com');assert.equal(options.headers['apns-topic'],'com.test.calls.voip');assert.equal(options.headers['apns-expiration'],'0');assert.equal(JSON.parse(options.body).event,'incoming_call');return new Response('',{status:200,headers:{'apns-id':'test-id'}});};
+ const data={event:'incoming_call',call_id:call};
+ assert.equal((await sendVoipPush(config,jwt,'a'.repeat(64),'sandbox','com.test.calls',data,fetcher)).ok,true);
+ assert.equal((await sendVoipPush(config,jwt,'a'.repeat(64),'sandbox','com.other.calls',data,fetcher)).ok,false);
+ assert.equal((await sendVoipPush(config,jwt,'a'.repeat(64),'sandbox','com.test.calls',{...data,event:'call_ended'},fetcher)).ok,false);
+ assert.equal(requests,1,'invalid registrations and cancellation cannot issue VoIP requests');
+ const invalid=await sendVoipPush(config,jwt,'a'.repeat(64),'production','com.test.calls',data,async()=>new Response('{"reason":"Unregistered"}',{status:410}));
+ assert.equal(invalid.invalidToken,true);assert.equal(invalid.retryable,false);
+});
