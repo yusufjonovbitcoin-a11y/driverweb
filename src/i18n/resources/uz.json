@@ -1,4 +1,5 @@
 {
+  "loadRecovery": {"title": "Saqlangan qoralamalar ({{count}})", "hint": "Bu yuklar saqlangan, lekin hali biriktirilmagan. Mavjud yukni tekshiring va biriktirishni yakunlash uchun haydovchini tanlang.", "resume": "Tekshirish va biriktirish"},
   "driverInstructions": {"title":"Haydovchi uchun ko‘rsatmalar","hint":"Milya bo‘yicha to‘lovda bu yerga faqat ish ko‘rsatmalarini yozing. Broker narxi va to‘lov shartlarini qo‘shmang. Brokerning asl hujjati yashirin qoladi.","edit":"Ko‘rsatmalarni tahrirlash","save":"Haydovchi uchun saqlash","saved":"Saqlandi. Biriktirilgan haydovchiga ko‘rinadi.","error":"Saqlash yoki yuklash amalga oshmadi. Yukni yangilang; internet va ruxsatni tekshiring.","conflict":"Yuk o‘zgargan. Qoralamangiz saqlandi. Ma’lumotni yangilab, joriy ko‘rsatmalarni tekshirgach qayta saqlang.","reviewHint":"Quyida hozir saqlangan ko‘rsatmalar ko‘rsatilgan. Yuqoridagi qoralamangiz almashtirilmadi.","serverText":"Hozir saqlangan ko‘rsatmalar","reviewed":"Joriy ko‘rsatmalarni tekshirdim va o‘z qoralamamni saqlamoqchiman."},
   "driverPrivacy": {
     "title": "Rate Con maxfiyligi",
@@ -62,7 +63,7 @@
     "deleting": "O‘chirilmoqda…",
     "restoreError": "Yukni qaytarib bo‘lmadi. O‘zgarish saqlanmadi.",
     "deleteError": "Yukni o‘chirib bo‘lmadi.",
-    "restoreHint": "Haydovchisiz qaytaring yoki yangi reys uchun haydovchini tanlang. Oldingi tarix va PDF saqlanadi; pickup/delivery tasdiq hujjatlarini yangidan yuklash kerak.",
+    "restoreHint": "Yangi reys uchun haydovchini tanlang. Oldingi tarix va PDF saqlanadi; pickup/delivery tasdiq hujjatlarini yangidan yuklash kerak.",
     "move": "Korzinkaga",
     "moveTitle": "{{number}} korzinkaga o‘tkazilsinmi?",
     "moveWarning": "Yuk doskadan olinadi va joriy haydovchi bu yukdan bo‘shaydi. PDF va reys tarixi saqlanadi. Yuklar → Korzinka orqali qaytarish yoki boshqa haydovchiga berish mumkin.",
@@ -1321,8 +1322,8 @@
     "duplicateDocument": "Bu hujjat avval yuklangan.",
     "loadCreated": "Yuk yaratildi. Yo‘l masofasi: {{miles}} mil{{attribution}}. {{deliveredCount}} ta onlayn haydovchiga yetkazildi{{offline}}.",
     "loadSaved": "Yuk saqlandi. Taklifni «Takliflar» ustunidan yuborishingiz mumkin.",
-    "loadSavedApprovalFailed": "Yuk saqlandi, lekin yuborishga tayyor emas. Tasdiqlash server funksiyasini tekshiring.",
-    "loadSavedOfferFailed": "Yuk saqlandi, lekin taklif yuborilmadi. {{reason}} «Takliflar» ustunidan qayta yuboring.",
+    "loadSavedApprovalFailed": "Yuk saqlandi, lekin tasdiqlash yakunlanmadi. Saqlangan qoralamalardan qayta urinib ko‘ring.",
+    "loadSavedOfferFailed": "Yuk saqlandi, lekin biriktirish yakunlanmadi. {{reason}} Saqlangan qoralamalardan qayta urinib ko‘ring.",
     "offerSent": "Yo‘l masofasi: {{miles}} mil{{attribution}}. {{deliveredCount}} ta onlayn haydovchiga taklif yuborildi{{offline}}.",
     "offlineSkipped": ", {{count}} ta oflayn haydovchi o‘tkazib yuborildi",
     "reassignmentSent": "Qayta tayinlash taklifi yuborildi.",

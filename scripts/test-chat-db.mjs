@@ -37,7 +37,7 @@ try {
   started = true;
   run('psql', ['-h', directory, '-p', '55439', '-d', 'postgres', '-v', 'ON_ERROR_STOP=1',
     '-f', 'scripts/chat-test-fixtures/bootstrap.sql',
-    '-f', 'supabase/migrations/20261001140037_chat_reliability_hardening.sql',
+    '-f', 'supabase/migrations/20261001141119_chat_reliability_hardening.sql',
     '-f', 'scripts/chat-test-fixtures/checks.sql',
     '-f', 'supabase/migrations/20261004234608_chat_consistency_and_privacy.sql',
     '-f', 'scripts/chat-test-fixtures/consistency-checks.sql',

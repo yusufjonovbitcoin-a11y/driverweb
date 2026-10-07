@@ -58,3 +58,23 @@ test('load details preserve every operational field shown by the modal', () => {
   assert.equal(details.isHazmat, false);
   assert.equal(details.warnings.length, 1);
 });
+
+
+test('persisted extractor and database stop timestamps retain their own appointment zones', () => {
+  const details = buildLoadDetails({
+    origin: { appointmentAt: '2026-10-01T01:00:00Z', timezone: 'UTC' },
+    destination: { appointmentAt: '2026-10-01T02:00:00Z', timezone: 'UTC' },
+    driverBrief: { stops: [
+      { role: 'pickup', appointmentFrom: '2026-10-05T08:00:00-04:00', appointmentTimezone: 'America/New_York' },
+      { role: 'pickup', appointment_from: '2026-10-05T12:00:00-05:00', appointment_timezone: 'America/Chicago' },
+      { role: 'delivery', appointmentAt: '2026-10-06T10:00:00-04:00', timezone: 'America/Detroit' },
+      { role: 'delivery', date: '2026-10-07', timezone: 'America/New_York' },
+    ] },
+  });
+  assert.deepEqual(details.stops.map(stop => [stop.appointment, stop.timezone]), [
+    ['2026-10-05T08:00:00-04:00', 'America/New_York'],
+    ['2026-10-05T12:00:00-05:00', 'America/Chicago'],
+    ['2026-10-06T10:00:00-04:00', 'America/Detroit'],
+    ['2026-10-07', 'America/New_York'],
+  ]);
+});

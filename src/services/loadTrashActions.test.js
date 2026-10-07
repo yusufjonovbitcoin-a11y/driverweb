@@ -8,12 +8,11 @@ test('trash actions send the reviewed version and explicit restore driver', asyn
   const client = { functions: { invoke: async () => ({ data: { fixedPay: false } }) },
     rpc: async (...args) => { calls.push(args); return { data: load }; } };
   await runLoadTrashAction(client, 'trash', load);
-  await runLoadTrashAction(client, 'restore', load);
+  await assert.rejects(runLoadTrashAction(client, 'restore', load), /DRIVER_REQUIRED/);
   await runLoadTrashAction(client, 'restore', load, 'other-driver');
   await runLoadTrashAction(client, 'delete', load);
   assert.deepEqual(calls, [
     ['trash_load', { target_load_id: load.id, expected_version: 4 }],
-    ['restore_trashed_load', { target_load_id: load.id, expected_version: 4, target_driver_id: null }],
     ['restore_trashed_load', { target_load_id: load.id, expected_version: 4, target_driver_id: 'other-driver' }],
     ['permanently_delete_trashed_load', { target_load_id: load.id, expected_version: 4 }],
   ]);
@@ -30,7 +29,7 @@ test('server errors are not retried or treated as success', async () => {
   const error = new Error('LOAD_TRASH_CONFLICT');
   await assert.rejects(runLoadTrashAction({ rpc: async () => { calls++; return { error }; } }, 'trash', load), error);
   assert.equal(calls, 1);
-  await assert.rejects(runLoadTrashAction({ rpc: async () => ({ data: null }) }, 'restore', load), /EMPTY_RESULT/);
+  await assert.rejects(runLoadTrashAction({ rpc: async () => ({ data: null }) }, 'trash', load), /EMPTY_RESULT/);
 });
 test('trash is separate from ordinary cancelled/completed history and preserves original objects', () => {
   const active = { id: 'active' };

@@ -10,6 +10,7 @@ import { readAllRows, readAllPages } from './readAllRows.js';
 import { driverPresenceFields } from './driverPresence.js';
 import { normalizeLocale } from '../i18n/locales';
 import { vehicleRowToModel } from './fleetVehicleModel';
+import { approveSavedLoadDraft } from './savedLoadRecovery.js';
 import { loadBoardStatus } from './loadBoardStatus';
 import { loadTrashMetadata } from './loadTrashActions.js';
 import { isCompleteVin, normalizeVin, parseNhtsaVinResult, retryVinLookup } from './nhtsaVin';
@@ -492,7 +493,12 @@ function stopPayload(stop, requiresDocument) {
   };
 }
 
+export async function approveLoadDraft(loadId) {
+  return approveSavedLoadDraft(requireSupabase(), loadId);
+}
+
 export async function createManualLoad(newLoad) {
+  if (newLoad.targetDriverIds?.length !== 1) throw new Error('DRIVER_REQUIRED');
   const client = requireSupabase();
   const { data: loadId, error: createError } = await client.rpc('create_load_draft', {
     load_number: newLoad.loadNumber.replace(/^#/, ''),

@@ -19,6 +19,8 @@ let networkAttempts = 0;
 try {
   const { default: LoadsWorkspace } = await server.ssrLoadModule('/src/components/LoadsWorkspace.jsx');
   const { default: KanbanBoard } = await server.ssrLoadModule('/src/components/KanbanBoard.jsx');
+  const { default: CreateLoadModal } = await server.ssrLoadModule('/src/components/CreateLoadModal.jsx');
+  const { default: QuickDriverModal } = await server.ssrLoadModule('/src/components/QuickDriverModal.jsx');
   const { default: i18n } = await server.ssrLoadModule('/src/i18n/index.js');
   // A previously selected table mode must not override the redesigned board.
   Object.defineProperty(globalThis, 'localStorage', {
@@ -62,21 +64,32 @@ try {
     return result;
   };
   const stageColumns = html => [...html.matchAll(/class="kanban-column driver-board-column stage-([a-z_]+)/g)].map(match => match[1]);
+  const assertSummary = (html, { total, active, completed, driverCount }, label) => {
+    for (const [key, count] of [['totalLoads', total], ['activeLoads', active], ['completedLoads', completed]]) {
+      assert.ok(html.includes(`<span>${translated(`loadsWorkspace.${key}`)}</span><strong>${count}</strong>`), `${label}: ${key} counts visible loads only`);
+    }
+    assert.ok(html.includes(`${translated('loadsWorkspace.driversCount')}: ${driverCount}</p>`), `${label}: distinct visible drivers`);
+    assert.ok(!html.includes(translated('loadsWorkspace.unassignedLoads')), `${label}: no unassigned summary`);
+  };
 
   for (const locale of ['ru', 'uz', 'en']) {
     await i18n.changeLanguage(locale);
     const html = render();
     assert.ok(html.includes(`<h1>${translated('loadsWorkspace.title')}</h1>`), `${locale}: translated title`);
     for (const key of ['loadsWorkspace.boardTitle', 'loadsWorkspace.searchPlaceholder', 'loadsWorkspace.driverFilter',
-      'loadsWorkspace.allDrivers', 'loadsWorkspace.unassignedDriver', 'loadsWorkspace.totalLoads',
-      'loadsWorkspace.activeLoads', 'loadsWorkspace.completedLoads', 'loadsWorkspace.unassignedLoads',
+      'loadsWorkspace.allDrivers', 'loadsWorkspace.totalLoads',
+      'loadsWorkspace.activeLoads', 'loadsWorkspace.completedLoads',
       'loadsWorkspace.driversCount', 'loads.statusFilter', 'loads.dateFilter']) {
       assert.ok(i18n.exists(key, { lng: locale }), `${locale}: catalog includes ${key}`);
       assert.ok(html.includes(translated(key)), `${locale}: renders ${key}`);
     }
-    assert.deepEqual(stageColumns(html), ['unassigned', 'assigned', 'picked_up', 'on_road', 'completed'], `${locale}: unassigned plus the four driver-board stages`);
-    assert.ok(html.includes('--board-column-count:5'), `${locale}: grid matches visible stages`);
-    assert.equal(cards(html).length, loads.length, `${locale}: all loads, not one driver's subset`);
+    assert.deepEqual(stageColumns(html), ['assigned', 'picked_up', 'on_road', 'completed'], `${locale}: exactly four dispatched stages`);
+    assert.ok(html.includes('--board-column-count:4'), `${locale}: grid matches visible stages`);
+    assert.equal(cards(html).length, 5, `${locale}: dispatched loads from all drivers, without draft or offer cards`);
+    assertSummary(html, { total: 5, active: 4, completed: 1, driverCount: 2 }, locale);
+    assert.ok(!html.includes('<option value="UNASSIGNED">'), `${locale}: no unassigned filter`);
+    assert.ok(!html.includes(translated('loadsWorkspace.unassignedDriver')), `${locale}: no unassigned driver option`);
+
     assert.ok(!html.includes('loadsWorkspace.'), `${locale}: no raw translation keys`);
     assert.ok(!html.includes(`<span>${translated('loads.table')}</span>`), `${locale}: table toggle absent`);
     assert.ok(!html.includes('<table'), `${locale}: stored table preference ignored`);
@@ -93,15 +106,18 @@ try {
     assert.ok(delivered.includes(`class="driver-trip-stage stage-on_road">${translated('loads.awaitingCompletion')}</span>`), `${locale}: delivered retains awaiting-completion label`);
     const onRoadColumn = html.split('class="kanban-column driver-board-column stage-on_road')[1].split('class="kanban-column')[0];
     assert.ok(onRoadColumn.includes('TEST-ON-ROAD') && onRoadColumn.includes('TEST-DELIVERED'), `${locale}: delivered load remains in the on-road column`);
-    const unassigned = card(html, 'TEST-UNASSIGNED');
-    assert.ok(unassigned.includes(translated('loads.unassigned')), `${locale}: unassigned driver label`);
-    assert.ok(unassigned.includes('class="fleet-load-assign"'), `${locale}: assign action`);
-    assert.ok(unassigned.includes('class="fleet-load-delete"'), `${locale}: delete action`);
-    assert.ok(unassigned.includes(text(i18n.t('loads.offeredDrivers', { count: 2 }))), `${locale}: offered-driver count retained`);
+    assert.ok(!cards(html).some(markup => markup.includes('TEST-UNASSIGNED')), `${locale}: old unassigned card stays outside the board`);
+    assert.ok(html.includes('saved-load-recovery') && html.includes(translated('loadRecovery.resume')), `${locale}: saved draft has a separate recovery action`);
+    assert.ok(!html.includes('class="fleet-load-assign"'), `${locale}: no legacy assign action`);
+    assert.ok(!html.includes('class="fleet-load-delete"'), `${locale}: no hidden-draft delete action`);
+    assert.ok(!html.includes(text(i18n.t('loads.offeredDrivers', { count: 2 }))), `${locale}: no offered-driver count`);
+
     assert.ok(!alpha.includes('class="fleet-load-delete"'), `${locale}: active assigned load cannot be deleted`);
     assert.ok(card(html, 'TEST-COMPLETED').includes('class="fleet-load-documents"'), `${locale}: completed documents action`);
     assert.match(html, /<input[^>]*type="file"[^>]*accept="[^"]*\.pdf/, `${locale}: PDF input`);
     assert.ok(html.includes(translated('loadsWorkspace.importPdf')), `${locale}: PDF action label`);
+    assert.ok(html.includes(translated('loadTrash.title')), `${locale}: trash remains available`);
+
 
     const busyHtml = render({ isAiProcessing: true });
     assert.match(busyHtml, /<button[^>]*class="driver-trip-add"[^>]*disabled=""/, `${locale}: busy import button disabled`);
@@ -110,12 +126,38 @@ try {
     assert.ok(!busyHtml.includes('common.processing'), `${locale}: no missing busy translation`);
   }
 
+  const manualWithoutDriver = renderMarkup(React.createElement(CreateLoadModal, { isOpen:true, drivers, onClose:action, onCreateLoad:action }));
+  assert.match(manualWithoutDriver, /<button[^>]*type="submit"[^>]*disabled=""/);
+  const manualWithDriver = renderMarkup(React.createElement(CreateLoadModal, { isOpen:true, drivers, onClose:action, onCreateLoad:action, initialDriverId:'driver-a' }));
+  assert.ok(!/<button[^>]*type="submit"[^>]*disabled=""/.test(manualWithDriver), 'known driver enables manual creation');
+  const savedDraft = renderMarkup(React.createElement(QuickDriverModal, { isOpen:true, drivers, onClose:action, onConfirm:action, initialDriverId:'driver-a',
+    loadData:{...loads[0], lifecycleStatus:'draft', databaseStatus:'draft', source:'saved'},
+  }));
+  assert.ok(!savedDraft.includes(translated('loads.closedCannotOffer')), 'manual draft remains assignable through approval recovery');
+  assert.ok(!/<button[^>]*type="submit"[^>]*disabled=""/.test(savedDraft));
+
   const emptyHtml = render({ loads: [], drivers: [] });
   assert.equal(cards(emptyHtml).length, 0);
   assert.deepEqual(stageColumns(emptyHtml), ['assigned', 'picked_up', 'on_road', 'completed']);
   assert.equal(emptyHtml.split('class="driver-board-empty"').length - 1, 4);
   assert.ok(emptyHtml.includes(translated('drivers.noTripsInStage')));
   assert.ok(!emptyHtml.includes('NaN'));
+  assertSummary(emptyHtml, { total: 0, active: 0, completed: 0, driverCount: 0 }, 'Empty board');
+
+  const draftOnlyHtml = render({ loads: ['draft', 'review', 'ready_for_offer', 'offered'].map((databaseStatus, index) =>
+    load(`HIDDEN-${databaseStatus}`, 'UNASSIGNED', index === 0 ? 'driver-a' : null, { databaseStatus })) });
+  assert.deepEqual(stageColumns(draftOnlyHtml), ['assigned', 'picked_up', 'on_road', 'completed']);
+  assert.ok(draftOnlyHtml.includes('--board-column-count:4'), 'Draft-only board keeps four columns');
+  assert.equal(cards(draftOnlyHtml).length, 0, 'Draft and offer records never appear as dispatched cards');
+  assert.equal(draftOnlyHtml.split('class="driver-board-empty"').length - 1, 4);
+  assert.ok(draftOnlyHtml.includes('saved-load-recovery'), 'Legacy records remain reachable outside the board');
+  for (const status of ['draft', 'review', 'ready_for_offer', 'offered']) assert.ok(draftOnlyHtml.includes(`HIDDEN-${status}`), `${status} can be recovered`);
+  const failedSaveHtml = render({ loads: [], recoveryLoads: loads, recoveryRequest: 1 });
+  assert.match(failedSaveHtml, /<details[^>]*open=""[^>]*class="saved-load-recovery/);
+  assert.ok(failedSaveHtml.includes('TEST-UNASSIGNED'), 'failed-save recovery is independent of active board search');
+  assertSummary(draftOnlyHtml, { total: 0, active: 0, completed: 0, driverCount: 0 }, 'Draft-only board');
+  assert.ok(draftOnlyHtml.includes(translated('loadsWorkspace.importPdf')), 'Draft-only board retains PDF import');
+  assert.ok(draftOnlyHtml.includes(translated('loadTrash.title')), 'Draft-only board retains trash');
 
   const assignedLoads = loads.filter(item => item.status !== 'UNASSIGNED');
   const assignedHtml = render({ loads: assignedLoads });
@@ -157,7 +199,7 @@ try {
   assert.ok(!driverHtml.includes('fleet-load-card-footer'));
   assert.ok(!driverHtml.includes('<table'));
   assert.equal(networkAttempts, 0);
-  console.log('LoadsWorkspace render: 3 locales, 4/5 fleet stages, grouped delivered loads, compact driver identity, actions, PDF/busy, empty/missing fields and legacy driver board passed; no network.');
+  console.log('LoadsWorkspace render: 3 locales, 4 dispatched stages, visible-only totals, excluded drafts/offers, grouped delivered loads, PDF/busy/trash, empty/missing fields and driver board passed; no network.');
 } finally {
   globalThis.fetch = previousFetch;
   if (storageDescriptor) Object.defineProperty(globalThis, 'localStorage', storageDescriptor);

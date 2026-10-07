@@ -1,7 +1,7 @@
 import { withCors } from "../_shared/cors.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { checkDistributedRateLimit, rateLimitResponse } from "../_shared/rate-limit.ts";
-import { loadAiStops } from "../_shared/load-ai-context.ts";
+import { loadAiStops, loadAiConversationHistory, loadAiPresence } from "../_shared/load-ai-context.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Headers":
@@ -183,7 +183,7 @@ Deno.serve((request) => withCors(request, async () => {
     ).eq("load_id", loadId).eq("driver_id", driverId)
       .order("created_at", { ascending: false }).limit(1).maybeSingle(),
     admin.from("driver_presence").select(
-      "is_online,latitude,longitude,heading,speed_mph,last_seen_at",
+      "is_online,latitude,longitude,heading,speed_mph,last_seen_at,location_captured_at",
     ).eq("driver_id", driverId).maybeSingle(),
   ]);
 
@@ -251,7 +251,7 @@ Deno.serve((request) => withCors(request, async () => {
       : null,
     dispatcher: dispatcher ? compactObject(dispatcher) : null,
     offer: offerResult.data ?? null,
-    driverPresence: presenceResult.data ?? null,
+    driverPresence: loadAiPresence(presenceResult.data),
     documents: documentRows.map((document) => ({
       type: document.document_type,
       ...(versionsById.get(document.current_version_id) ?? {}),
@@ -281,7 +281,7 @@ Deno.serve((request) => withCors(request, async () => {
             type: "input_text",
             text: JSON.stringify({
               trustedLoadContext: trustedContext,
-              conversationHistory: load.driver_pay ? [] : history,
+              conversationHistory: loadAiConversationHistory(load, history),
               latestQuestion: question,
             }),
           }],

@@ -1,3 +1,4 @@
+import { loadContactAccess } from '../_shared/load-contact-access.ts';
 import { withCors } from "../_shared/cors.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { checkDistributedRateLimit, rateLimitResponse } from "../_shared/rate-limit.ts";
@@ -86,13 +87,9 @@ Deno.serve((request) => withCors(request, async () => {
   }
   if (!loadId) return json({ error: "loadId or previewTicket is required" }, 400);
 
-  // This RLS-scoped read is the authorization check for dispatcher and driver callers.
-  const { data: visibleLoad } = await callerClient
-    .from("loads")
-    .select("id")
-    .eq("id", loadId)
-    .maybeSingle();
-  if (!visibleLoad) return json({ error: "Load not found" }, 404);
+  const access = await loadContactAccess(callerClient, loadId);
+  if (access === 'unavailable') return json({ error: 'Load access check unavailable' }, 503);
+  if (access !== 'allowed') return json({ error: 'Load not found' }, 404);
 
   const adminClient = admin;
   const [{ data: load, error: loadError }, { data: stops, error: stopsError }] =

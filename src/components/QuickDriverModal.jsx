@@ -56,7 +56,7 @@ export default function QuickDriverModal({
     'offered',
     'assigned',
     'in_progress',
-    ...(reviewRequired ? ['review', 'draft'] : []),
+    ...(reviewRequired || loadData?.source === 'saved' ? ['review', 'draft'] : []),
   ].includes(loadData.lifecycleStatus);
 
   if (!isOpen || !loadData) return null;

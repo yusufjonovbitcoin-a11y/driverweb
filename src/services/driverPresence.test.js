@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { driverPresenceFields, refreshDriverPresence, mergePresenceSnapshot } from './driverPresence.js';
 
 const now = Date.parse('2026-10-05T12:00:00Z');
-const presence = { driver_id: 'a', last_seen_at: new Date(now).toISOString(), is_online: true, latitude: 0, longitude: -73 };
+const presence = { driver_id: 'a', last_seen_at: new Date(now).toISOString(), location_captured_at: new Date(now).toISOString(), is_online: true, latitude: 0, longitude: -73 };
 test('online expires without a server write; zero coordinates remain valid', () => {
   const driver = { id: 'a', name: 'Keep this driver', ...driverPresenceFields(presence, now) };
   assert.equal(driver.isOnline, true); assert.equal(driver.lat, 0);
@@ -42,4 +42,20 @@ test('reconciliation clears missing presence but does not erase drivers', () => 
   const merged = mergePresenceSnapshot(current, new Map(current), []);
   assert.equal(merged.get('a'), null);
   assert.equal(refreshDriverPresence([{ id: 'a', name: 'Driver' }], merged, now).length, 1);
+});
+
+test('fresh heartbeat does not revive stale, missing or future GPS coordinates', () => {
+  for (const capturedAt of [undefined, null, 'invalid', new Date(now - 120_000).toISOString(), new Date(now + 30_001).toISOString()]) {
+    const fields = driverPresenceFields({ ...presence, location_captured_at: capturedAt }, now);
+    assert.equal(fields.isOnline, true);
+    assert.equal(fields.lat, null);
+    assert.equal(fields.lng, null);
+    assert.equal(fields.currentLocation, null);
+  }
+});
+test('GPS expires independently while later heartbeats keep the driver online', () => {
+  const later = { ...presence, last_seen_at: new Date(now + 119_000).toISOString() };
+  const fields = driverPresenceFields(later, now + 120_000);
+  assert.equal(fields.isOnline, true);
+  assert.equal(fields.lat, null);
 });

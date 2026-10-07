@@ -1,9 +1,19 @@
+import { freshPosition } from './load-enrichment.ts';
+
 const STOP_FACTS: Record<string, string> = {
   scheduledDate: 'documentDate', timePrinted: 'documentTime',
   appointmentPrinted: 'documentWindow', hours: 'documentHours',
   referenceNumber: 'referenceNumber', appointmentReference: 'appointmentReference',
   orderReferences: 'orderReferences', note: 'instructions', timingNote: 'timingNote',
 };
+
+// A previous answer can contain terms that staff have since hidden. History is
+// client-supplied, so the current server projection is the privacy authority.
+export function loadAiConversationHistory<T>(
+  load: { driver_pay?: unknown; broker_terms_hidden?: boolean }, history: T[],
+): T[] {
+  return load.driver_pay || load.broker_terms_hidden === true ? [] : history;
+}
 
 // Add only reviewed operational values. Never send source quotes or a hidden
 // broker brief to the model; hidden-price drivers use the server allowlist.
@@ -30,4 +40,23 @@ export function loadAiStops(load: any, stops: any[]) {
     }
     return { ...stop, ...extra };
   });
+}
+
+// Heartbeat metadata is separate from a GPS capture. A recent heartbeat cannot
+// make a cached coordinate into the driver's current position in model context.
+export function loadAiPresence(row: any, now = Date.now()) {
+  if (!row) return null;
+  const position = freshPosition(row, now);
+  const heartbeatAge = now - Date.parse(row.last_seen_at);
+  return {
+    is_online: row.is_online === true && Number.isFinite(heartbeatAge)
+      && heartbeatAge >= -30_000 && heartbeatAge < 120_000,
+    last_seen_at: row.last_seen_at ?? null,
+    ...(position ? {
+      ...position,
+      location_captured_at: row.location_captured_at,
+      heading: row.heading ?? null,
+      speed_mph: row.speed_mph ?? null,
+    } : {}),
+  };
 }

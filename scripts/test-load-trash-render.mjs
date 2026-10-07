@@ -60,7 +60,7 @@ try {
   for (const locale of ['uz', 'ru', 'en']) {
     await i18n.changeLanguage(locale);
     const html = render();
-    for (const key of ['title', 'subtitle', 'searchPlaceholder', 'restoreHint', 'documents', 'restore', 'chooseDriver', 'restoreWithDriver', 'permanentlyDelete', 'previousDriver', 'deletedAt']) {
+    for (const key of ['title', 'subtitle', 'searchPlaceholder', 'restoreHint', 'documents', 'chooseDriver', 'restoreWithDriver', 'permanentlyDelete', 'previousDriver', 'deletedAt']) {
       assert.ok(i18n.exists(`loadTrash.${key}`, { lng: locale }), `${locale}: ${key} exists`);
       assert.ok(html.includes(translated(`loadTrash.${key}`)), `${locale}: ${key} renders`);
     }
@@ -69,6 +69,7 @@ try {
     assert.ok(html.includes('Test Driver Alpha') && html.includes('New York') && html.includes('Boston'));
     assert.ok(html.includes(translated('loadTrash.unassigned')));
     assert.ok(!html.includes('Suspended Driver'), `${locale}: suspended drivers cannot receive restored loads`);
+    assert.ok(!html.includes('class="load-trash-restore"'), `${locale}: no no-driver restore action`);
     assert.match(html, /<button[^>]*class="load-trash-assign-button"[^>]*disabled=""/, `${locale}: requires explicit driver selection`);
     assert.ok(!html.includes('loadTrash.'), `${locale}: no raw keys`);
     assert.ok(!html.includes('load-trash-confirmation'), `${locale}: destructive confirmation closed initially`);

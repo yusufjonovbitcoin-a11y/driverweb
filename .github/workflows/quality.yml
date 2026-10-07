@@ -26,3 +26,13 @@ jobs:
         run: PG_BIN="$(pg_config --bindir)" npm run test:chat-db
       - name: Driver sheet review and assignment checks
         run: PG_BIN="$(pg_config --bindir)" npm run test:driver-brief-db
+      - name: Verify canonical migration ledger
+        run: node scripts/verify-migration-ledger.mjs
+      - name: Isolated backend integrity regression tests
+        env:
+          BACKEND_AUDIT_TEST: '1'
+          DRIVER_PAY_TEST: '1'
+          SECURITY_AUDIT_TEST: '1'
+          DOCUMENT_PRIVACY_TEST: '1'
+          AUDIT_FIX_TEST: '1'
+        run: PG_BIN="$(pg_config --bindir)" node scripts/test-load-trash-db.mjs

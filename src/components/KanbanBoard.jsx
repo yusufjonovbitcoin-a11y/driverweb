@@ -251,7 +251,7 @@ export default function KanbanBoard({
             <label className="driver-board-search"><Search size={17} /><input type="search" value={tripSearch} onChange={(event) => setTripSearch(event.target.value)} aria-label={t(fleetWorkspace ? 'loadsWorkspace.searchPlaceholder' : 'drivers.tripSearchPlaceholder')} placeholder={t(fleetWorkspace ? 'loadsWorkspace.searchPlaceholder' : 'drivers.tripSearchPlaceholder')} /></label>
             {fleetWorkspace && <label className="fleet-driver-filter"><UsersRound size={16} aria-hidden="true" /><select value={driverFilter} onChange={(event) => setDriverFilter(event.target.value)} aria-label={t('loadsWorkspace.driverFilter')}>
               <option value="ALL">{t('loadsWorkspace.allDrivers')}</option>
-              <option value="UNASSIGNED">{t('loadsWorkspace.unassignedDriver')}</option>
+              {includeUnassigned && <option value="UNASSIGNED">{t('loadsWorkspace.unassignedDriver')}</option>}
               {drivers.map((driver) => <option key={driver.id} value={driver.id}>{[driver.name || t('loadsWorkspace.missingDriver'), driver.driverNumber].filter(Boolean).join(' · ')}</option>)}
             </select></label>}
             <select className="driver-board-status" value={stageFilter} onChange={(event) => setStageFilter(event.target.value)} aria-label={t('loads.statusFilter')}>

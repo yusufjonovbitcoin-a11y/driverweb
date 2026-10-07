@@ -113,7 +113,7 @@ export default function CreateLoadModal({ isOpen, onClose, drivers = [], onCreat
             </div>}
           </fieldset>
           {error && <p role="alert" className="mt-3 rounded-lg bg-red-50 p-3 text-sm text-red-700 dark:bg-red-950/30 dark:text-red-300">{error}</p>}
-          <footer className="mt-4 flex justify-end gap-3 border-t border-zinc-200 pt-4 dark:border-zinc-800"><button type="button" onClick={onClose} disabled={submitting} className="rounded-lg px-3 py-2 text-sm text-zinc-500 disabled:opacity-50">{t('common.cancel')}</button><button type="submit" disabled={submitting} className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-50">{submitting ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}{submitting ? t('loads.preparing') : selectedIds.length ? t('loads.createAndAssign') : t('loads.createOnly')}</button></footer>
+          <footer className="mt-4 flex justify-end gap-3 border-t border-zinc-200 pt-4 dark:border-zinc-800"><button type="button" onClick={onClose} disabled={submitting} className="rounded-lg px-3 py-2 text-sm text-zinc-500 disabled:opacity-50">{t('common.cancel')}</button><button type="submit" disabled={submitting || selectedIds.length !== 1} className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-50">{submitting ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}{submitting ? t('loads.preparing') : t('loads.createAndAssign')}</button></footer>
         </form>
       </section>
     </div>

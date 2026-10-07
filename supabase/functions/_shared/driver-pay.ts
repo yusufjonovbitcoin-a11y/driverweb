@@ -30,7 +30,7 @@ export async function prepareDriverPay(caller: any, admin: any, actorId: string,
   const [{ data: stops, error: stopsError }, { data: presence, error: presenceError }] = await Promise.all([
     caller.from('load_stops').select('id,type,sequence,address_line,city,region,postal_code,latitude,longitude,contact_place_id')
       .eq('load_id',loadId).order('sequence').order('id'),
-    admin.from('driver_presence').select('driver_id,latitude,longitude,is_online,last_seen_at').eq('driver_id',driverId),
+    admin.from('driver_presence').select('driver_id,latitude,longitude,is_online,last_seen_at,location_captured_at').eq('driver_id',driverId),
   ]);
   if (stopsError || presenceError) throw new Error('Route data unavailable');
   const snapshot = (stops ?? []).map((s: any) => [s.id,s.type,s.sequence,s.address_line,s.city,s.region,s.postal_code,s.latitude,s.longitude]);

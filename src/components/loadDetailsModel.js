@@ -4,8 +4,8 @@ function stopDetails(stop = {}) {
   return {
     facility: stop.facility || null,
     address: stop.address || [stop.city, stop.state, stop.postalCode].filter(Boolean).join(', ') || null,
-    appointment: stop.appointmentAt || stop.date || null,
-    timezone: stop.timezone || null,
+    appointment: stop.appointmentAt || stop.appointmentFrom || stop.appointment_from || stop.date || null,
+    timezone: stop.timezone || stop.appointmentTimezone || stop.appointment_timezone || null,
     contactName: stop.contactName || null,
     contactPhone: stop.contactPhone || null,
   };

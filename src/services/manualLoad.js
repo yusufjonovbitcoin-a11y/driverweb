@@ -27,6 +27,7 @@ export function normalizeManualLoad(form, selectedDriverIds, availableDriverIds)
   if (selectedDriverIds.length && !targets.length) {
     throw new Error('Tanlangan haydovchi mavjud emas. Ro‘yxatni yangilang.');
   }
+  if (!targets.length) throw new Error('DRIVER_REQUIRED');
   const stop = (prefix, label) => ({
     city: requiredText(form[`${prefix}City`], `${label} shahri`),
     state: requiredText(form[`${prefix}State`], `${label} shtati / hududi`),

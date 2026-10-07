@@ -8,7 +8,7 @@ const stops = [
   { type: 'pickup', address_line: '1023 Buffalo Run', city: 'Missouri City', region: 'TX', postal_code: '77489' },
   { type: 'delivery', address_line: '445 Birch Street', city: 'Lake Elsinore', region: 'CA', postal_code: '92530' },
 ];
-const presence = { driver_id: 'driver', is_online: true, latitude: 29, longitude: -95, last_seen_at: new Date(now).toISOString() };
+const presence = { driver_id: 'driver', is_online: true, latitude: 29, longitude: -95, last_seen_at: new Date(now).toISOString(), location_captured_at: new Date(now).toISOString() };
 function mockMapbox({ confidence = 'exact', postalMismatch = false, ambiguous = false, failDeadhead = false } = {}) {
   let roads = 0;
   const fetcher = async url => {
@@ -174,4 +174,10 @@ test('Google failure uses real Mapbox road geometry for both legs with explicit 
   assert.equal(route.targets[0].totalMiles, 2);
   assert.equal(googleCalls, 1);
   assert.equal(mapboxCalls, 2);
+});
+
+test('route and pay origins require actual fresh GPS capture, not just heartbeat', () => {
+  for (const capturedAt of [undefined, null, 'bad', new Date(now - 120_000).toISOString(), new Date(now + 30_001).toISOString()]) {
+    assert.equal(freshPosition({ ...presence, location_captured_at: capturedAt }, now), null);
+  }
 });

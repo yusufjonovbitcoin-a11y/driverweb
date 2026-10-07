@@ -3,6 +3,8 @@ import { ArrowLeft, FileUp, LoaderCircle, Package, Trash2, UploadCloud, UsersRou
 import { useTranslation } from 'react-i18next';
 import KanbanBoard from './KanbanBoard';
 import LoadTrashPanel from './LoadTrashPanel';
+import SavedLoadRecovery from './SavedLoadRecovery';
+import { recoverableLoads } from '../services/savedLoadRecovery.js';
 import { summarizeWorkspaceLoads } from './loadWorkspaceModel';
 import './loads-workspace.css';
 
@@ -11,14 +13,17 @@ const EMPTY_TRASH = [];
 // The fleet board shares the driver's trip cards, but never narrows the source
 // data to one driver. Filtering belongs to the board, not this overview.
 export default function LoadsWorkspace({ loads, drivers, trashedLoads = EMPTY_TRASH, onRestoreLoad, onPermanentlyDeleteLoad,
-  onDropOnOffer, isAiProcessing = false, ...boardProps }) {
+  onDropOnOffer, isAiProcessing = false, recoveryRequest = 0, recoveryLoads = loads, ...boardProps }) {
   const { t } = useTranslation();
   const fileInputRef = useRef(null);
   const dragDepthRef = useRef(0);
   const [isFileDragging, setIsFileDragging] = useState(false);
   const [isTrashOpen, setIsTrashOpen] = useState(false);
   const [isTrashBusy, setIsTrashBusy] = useState(false);
-  const summary = useMemo(() => summarizeWorkspaceLoads(loads), [loads]);
+  // Legacy drafts and offers stay in storage, outside the dispatched-load board.
+  const boardLoads = useMemo(() => loads.filter(load => load.status !== 'UNASSIGNED'), [loads]);
+  const summary = useMemo(() => summarizeWorkspaceLoads(boardLoads), [boardLoads]);
+  const savedLoads = useMemo(() => recoverableLoads(recoveryLoads), [recoveryLoads]);
   const isFileDrag = event => Array.from(event.dataTransfer?.types || []).includes('Files')
     || Boolean(event.dataTransfer?.files?.length);
   const resetDrag = () => { dragDepthRef.current = 0; setIsFileDragging(false); };
@@ -62,7 +67,6 @@ export default function LoadsWorkspace({ loads, drivers, trashedLoads = EMPTY_TR
         <div className="driver-trip-stats fleet-loads-stats">
           <div><span>{t('loadsWorkspace.totalLoads')}</span><strong>{summary.total}</strong></div>
           <div><span>{t('loadsWorkspace.activeLoads')}</span><strong>{summary.active}</strong></div>
-          <div><span>{t('loadsWorkspace.unassignedLoads')}</span><strong>{summary.unassigned}</strong></div>
           <div><span>{t('loadsWorkspace.completedLoads')}</span><strong>{summary.completed}</strong></div>
         </div>
         <div className="fleet-loads-actions">
@@ -86,11 +90,13 @@ export default function LoadsWorkspace({ loads, drivers, trashedLoads = EMPTY_TR
           </div>}
         </div>
       </section>
+      {!isTrashOpen && <SavedLoadRecovery key={recoveryRequest} initiallyOpen={recoveryRequest > 0} loads={savedLoads}
+        onResume={boardProps.onSendOffer} onOpenDocs={boardProps.onOpenDocs} onTrashLoad={boardProps.onTrashLoad} />}
       <section className="driver-trips-content" aria-label={t(isTrashOpen ? 'loadTrash.title' : 'loadsWorkspace.boardTitle')}>
         {isTrashOpen ? <LoadTrashPanel loads={trashedLoads} drivers={drivers} onRestoreLoad={onRestoreLoad}
           onPermanentlyDeleteLoad={onPermanentlyDeleteLoad} onOpenDocs={boardProps.onOpenDocs} onBusyChange={setIsTrashBusy} />
-          : <KanbanBoard {...boardProps} loads={loads} drivers={drivers} onDropOnOffer={onDropOnOffer} isAiProcessing={isAiProcessing}
-          includeUnassigned={loads.some(load => load.status === 'UNASSIGNED')} groupDeliveredWithOnRoad
+          : <KanbanBoard {...boardProps} loads={boardLoads} drivers={drivers} onDropOnOffer={onDropOnOffer} isAiProcessing={isAiProcessing}
+          includeUnassigned={false} groupDeliveredWithOnRoad
           fleetWorkspace boardOnly hideStageFilters />}
       </section>
     </div>

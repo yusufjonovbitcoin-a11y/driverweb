@@ -20,6 +20,9 @@ export function driverPresenceFields(presence, now = Date.now()) {
   const age = now - lastSeen;
   const isOnline = Boolean(presence?.is_online) && Number.isFinite(lastSeen)
     && age >= -30_000 && age < PRESENCE_TTL_MS;
+  const locationAge = now - Date.parse(presence?.location_captured_at);
+  const hasFreshLocation = isOnline && Number.isFinite(locationAge)
+    && locationAge >= -30_000 && locationAge < PRESENCE_TTL_MS;
   const latitude = presence?.latitude == null ? NaN : Number(presence.latitude);
   const longitude = presence?.longitude == null ? NaN : Number(presence.longitude);
   const validPosition = Number.isFinite(latitude) && Math.abs(latitude) <= 90
@@ -30,9 +33,9 @@ export function driverPresenceFields(presence, now = Date.now()) {
     lastSeenAt: presence?.last_seen_at || null,
     status: isOnline ? 'AVAILABLE' : 'RESTING',
     dutyStatus: isOnline ? 'ON_DUTY' : 'OFF_DUTY',
-    currentLocation: isOnline && validPosition ? `${latitude.toFixed(4)}, ${longitude.toFixed(4)}` : null,
-    lat: isOnline && validPosition ? latitude : null,
-    lng: isOnline && validPosition ? longitude : null,
+    currentLocation: hasFreshLocation && validPosition ? `${latitude.toFixed(4)}, ${longitude.toFixed(4)}` : null,
+    lat: hasFreshLocation && validPosition ? latitude : null,
+    lng: hasFreshLocation && validPosition ? longitude : null,
   };
 }
 

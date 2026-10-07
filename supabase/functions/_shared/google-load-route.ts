@@ -131,7 +131,7 @@ export async function previewLoadRoute(stops: any[], presence: any[], driverIds:
           loaded.provider === 'mapbox' ? mapboxToken : '', loaded.provider);
         return { driverId, deadheadMiles: result.distanceMiles, deadheadMeters: result.distanceMeters,
           durationSeconds: result.durationSeconds, points: result.points, hasCurrentLocation: true,
-          originLatitude: origin.latitude, originLongitude: origin.longitude, locationAt: row.last_seen_at, status: 'ready' };
+          originLatitude: origin.latitude, originLongitude: origin.longitude, locationAt: row.location_captured_at, status: 'ready' };
       } catch {
         return { driverId, deadheadMiles: null, deadheadMeters: null, hasCurrentLocation: true, status: 'route_unavailable' };
       }

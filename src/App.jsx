@@ -9,6 +9,7 @@ import { useTimeZonePreference } from './hooks/useTimeZonePreference.js';
 import { WorkspaceCache, useWorkspaceInvalidation } from './hooks/WorkspaceCache';
 import {
   createManualLoad,
+  approveLoadDraft,
   prepareLoadFromDocument,
   prepareLoadFromBrokerAttachment,
   sendPreviewDocumentLoad,
@@ -34,6 +35,7 @@ import { clearPersistedChatMedia } from './services/chatMediaOutbox';
 import { buildGlobalSearchResults } from './utils/globalSearch';
 import { localizedError } from './i18n/errors';
 import { runLoadTrashAction, loadTrashMetadata, partitionTrashedLoads } from './services/loadTrashActions.js';
+import { isRecoverableLoad, recoverSavedLoad } from './services/savedLoadRecovery.js';
 import { loadBoardStatus } from './services/loadBoardStatus.js';
 import { loadImportFileError } from './services/loadImportFile';
 import { createDocumentImportRunner, mergeDocumentImportResult, continueDocumentImport, shouldCancelImportOnNavigation, findExistingFinalizedLoad } from './services/documentImportSession';
@@ -127,6 +129,8 @@ function Workspace({ auth, browserPush }) {
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [selectedDriverForLoad, setSelectedDriverForLoad] = useState(null);
   const [selectedDriverId, setSelectedDriverId] = useState(null);
+  const [driverProfileRequest, setDriverProfileRequest] = useState(0);
+  const [draftRecoveryRequest, setDraftRecoveryRequest] = useState(0);
   const [profileEditDriverId, setProfileEditDriverId] = useState(null);
   const [chatDriverId, setChatDriverId] = useState(null);
   const [chatSelectionRequest, setChatSelectionRequest] = useState(0);
@@ -455,7 +459,7 @@ function Workspace({ auth, browserPush }) {
     setInlineChatDriverId(null);
     cancelDocumentImport();
     if (tab !== 'profile') setProfileEditDriverId(null);
-    if (tab !== 'profile') setSelectedDriverId(null);
+    if (tab !== 'profile') { setSelectedDriverId(null); setDriverProfileRequest(0); }
     setActiveTab(tab);
     window.location.hash = tab;
   }, [currentUser, cancelDocumentImport]);
@@ -463,6 +467,8 @@ function Workspace({ auth, browserPush }) {
   const handleOpenDriverProfile = useCallback((driverOrId) => {
     const driverId = typeof driverOrId === 'string' ? driverOrId : driverOrId?.id;
     setSelectedDriverId(driverId || null);
+    // A repeated request must also leave Settings/Integrations for the driver.
+    setDriverProfileRequest(request => request + 1);
     handleSelectTab('profile');
   }, [handleSelectTab]);
 
@@ -489,6 +495,8 @@ function Workspace({ auth, browserPush }) {
         await refreshWorkspace({ quiet: true });
         setIsCreateModalOpen(false);
         setSelectedDriverForLoad(null);
+        handleSelectTab('kanban');
+        setDraftRecoveryRequest(request => request + 1);
         showToast(t('toasts.loadSavedApprovalFailed'));
         return;
       }
@@ -500,17 +508,14 @@ function Workspace({ auth, browserPush }) {
 
     setIsCreateModalOpen(false);
     setSelectedDriverForLoad(null);
-    if (!newLoad.targetDriverIds.length) {
-      await refreshWorkspace({ quiet: true });
-      showToast(t('toasts.loadSaved'));
-      return;
-    }
 
     setOperationLoading(true);
     try {
       await assignLoadDirectly(loadId, newLoad.targetDriverIds[0]);
       showToast(t('loads.assignedDirectly'));
     } catch (error) {
+      handleSelectTab('kanban');
+      setDraftRecoveryRequest(request => request + 1);
       showToast(t('toasts.loadSavedOfferFailed', {
         reason: localizedError(t, error, 'errors.createLoad'),
       }));
@@ -668,6 +673,10 @@ function Workspace({ auth, browserPush }) {
           brokerMessageId: preparedLoad.brokerMessageId,
           brokerAttachmentId: preparedLoad.brokerAttachmentId,
         });
+      } else if (preparedLoad.source === 'saved' && isRecoverableLoad(preparedLoad)) {
+        await recoverSavedLoad(preparedLoad, driverIds[0], {
+          approve: approveLoadDraft, assign: assignLoadDirectly, review: reviewAndAssignDocumentLoad,
+        });
       } else if (preparedLoad.review?.required) {
         await reviewAndAssignDocumentLoad(preparedLoad.id, driverIds[0], preparedLoad.review.checksum);
       } else {
@@ -681,6 +690,11 @@ function Workspace({ auth, browserPush }) {
       return true;
     } catch (error) {
       const message = localizedError(t, error, 'errors.createLoad');
+      if ((aiPreparedLoad?.source === 'saved' && isRecoverableLoad(aiPreparedLoad)) || /ASSIGN_FAILED_DRAFT_SAVED/.test(error?.code || '') || /ASSIGN_FAILED_DRAFT_SAVED/.test(error?.message || '')) {
+        await refreshWorkspace({ quiet: true });
+        handleSelectTab('kanban');
+        setDraftRecoveryRequest(request => request + 1);
+      }
       showToast(message);
       return message;
     } finally {
@@ -783,7 +797,7 @@ function Workspace({ auth, browserPush }) {
         activeTab={activeTab}
         setActiveTab={handleSelectTab}
         onPrefetch={(tab) => { void prefetchRoute(tab)?.catch(() => {}); }}
-        loadsCount={loads.length}
+        loadsCount={loads.filter(load => load.status !== 'UNASSIGNED').length}
         unreadChatCount={unreadChatCount}
         unreadInboxCount={unreadInboxCount}
         onDropFile={() => showToast(t('toasts.brokerFilesAutomatic'))}
@@ -851,6 +865,8 @@ function Workspace({ auth, browserPush }) {
           {activeTab === 'kanban' && (
             <LoadsWorkspace
               loads={filteredLoads}
+              recoveryRequest={draftRecoveryRequest}
+              recoveryLoads={loads}
               drivers={drivers}
               onAdvanceStatus={() => showToast(t('toasts.statusFromMobile'))}
               onOpenDocs={handleOpenDocs}
@@ -890,6 +906,8 @@ function Workspace({ auth, browserPush }) {
           {activeTab === 'profile' && (
             currentUser.roleCode === 'super_admin' ? <PlatformAdminPanel onLogout={logout} /> : (
           <ProfileView
+            key={driverProfileRequest}
+            initialSection={driverProfileRequest ? 'company' : undefined}
             browserPush={browserPush}
             onSaveProfile={auth.updateProfile}
                 drivers={drivers}

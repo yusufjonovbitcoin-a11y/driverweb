@@ -6,7 +6,6 @@
 .fleet-loads-identity h1 { margin: 0; color: var(--ink); font-size: 23px; line-height: 1.2; font-weight: 750; letter-spacing: -.035em; }
 .fleet-loads-identity p { display: flex; align-items: center; gap: 6px; margin: 7px 0 0; color: var(--muted); font-size: 12px; }
 .fleet-loads-stats > div { min-width: 80px; padding-inline: 15px; }
-.fleet-loads-stats > div:nth-child(3) strong { color: #ae791e; }
 .fleet-loads-import { flex-shrink: 0; }
 .fleet-loads-import button:disabled { opacity: .65; }
 .fleet-loads-view .fleet-loads-board .board-toolbar { gap: 12px; flex-wrap: wrap; }
@@ -43,7 +42,6 @@
 .fleet-loads-filter-feedback { display: flex; flex-shrink: 0; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; padding: 8px 11px; margin-bottom: 10px; border-radius: 7px; background: var(--canvas); color: var(--muted); font-size: 12px; }
 .fleet-loads-filter-feedback button { color: var(--accent); font-weight: 600; }
 .dark .fleet-loads-stats > div:nth-child(2) strong { color: #65c9bb; }
-.dark .fleet-loads-stats > div:nth-child(3) strong { color: #e4b967; }
 @media (max-width: 1150px) {
   .fleet-loads-view .fleet-loads-summary { flex-wrap: wrap; }
   .fleet-loads-board .board-toolbar > div:first-child { flex-basis: 100%; }

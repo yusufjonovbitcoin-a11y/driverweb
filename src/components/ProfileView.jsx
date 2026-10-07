@@ -45,6 +45,7 @@ import DriverContactEditModal from './DriverContactEditModal';
 import DriverProfilePanel from './DriverProfilePanel';
 import ProfileSettingsHub from './ProfileSettingsHub';
 import { ProfileContactPanel, ProfileNotificationsPanel, ProfilePersonalPanel, ProfileSectionHeading, ProfileSecurityPanel } from './ProfileAccountPanels';
+import { summarizeWorkspaceLoads } from './loadWorkspaceModel.js';
 import './profileCenter.css';
 
 function GmailIcon({ className = '' }) {
@@ -71,6 +72,7 @@ export default function ProfileView({
   onNavigate,
   onOpenDriver,
   selectedDriverId = null,
+  initialSection,
   onAssignDriverLoad,
   onOpenDriverChat,
   onOpenDriverLoad,
@@ -96,7 +98,7 @@ export default function ProfileView({
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [companyMemberView, setCompanyMemberView] = useState('drivers');
   const [activeSection, setActiveSection] = useState(
-    initialDriverToEditId || selectedDriverId ? 'company' : 'settings',
+    initialSection || (initialDriverToEditId || selectedDriverId ? 'company' : 'settings'),
   );
   const [gmailConnection, setGmailConnection] = useState(null);
   const [gmailEmail, setGmailEmail] = useState('');
@@ -282,7 +284,7 @@ export default function ProfileView({
   const totalDrivers = drivers.length;
   const availableDrivers = drivers.filter(d => !loads.some(l => l.driverId === d.id && l.status !== 'COMPLETED')).length;
   const onDutyDrivers = totalDrivers - availableDrivers;
-  const activeLoads = loads.filter((load) => load.status !== 'COMPLETED').length;
+  const { active: activeLoads } = summarizeWorkspaceLoads(loads);
   const completedLoads = loads.filter((load) => (
     load.databaseStatus ? load.databaseStatus === 'completed' : load.status === 'COMPLETED'
   )).length;

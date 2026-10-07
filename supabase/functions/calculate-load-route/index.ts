@@ -102,7 +102,7 @@ Deno.serve((request) => withCors(request, async () => {
         .eq("load_id", loadId)
         .order("sequence"),
       adminClient.from("driver_presence")
-        .select("driver_id,latitude,longitude,is_online,last_seen_at")
+        .select("driver_id,latitude,longitude,is_online,last_seen_at,location_captured_at")
         .in("driver_id", driverIds),
     ]);
   if (stopsError || presenceError) return json({ error: "Marshrut ma’lumotlarini olib bo‘lmadi" }, 500);

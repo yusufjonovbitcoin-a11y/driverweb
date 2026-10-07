@@ -10,6 +10,7 @@ export async function runLoadTrashAction(client, action, load, driverId = null) 
   if (!rpc || !load?.id || !Number.isSafeInteger(Number(load.version)) || load.version == null) {
     throw new Error('LOAD_TRASH_CONFLICT');
   }
+  if (action === 'restore' && !driverId) throw new Error('DRIVER_REQUIRED');
   const args = { target_load_id: load.id, expected_version: load.version };
   if (action === 'restore') args.target_driver_id = driverId || null;
   if (action === 'restore' && driverId) await prepareDriverPayAssignment(client, load.id, driverId);

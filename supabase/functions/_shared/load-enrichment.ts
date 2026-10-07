@@ -26,8 +26,10 @@ export function hasContactLookupAddress(stop: any): boolean {
 export function freshPosition(row: any, now = Date.now()) {
   if (!row || row.is_online !== true || row.latitude == null || row.longitude == null) return null;
   const latitude = Number(row.latitude), longitude = Number(row.longitude);
-  const age = now - Date.parse(row.last_seen_at);
-  if (!Number.isFinite(age) || age < -30_000 || age > 120_000
+  const age = now - Date.parse(row.location_captured_at);
+  const heartbeatAge = now - Date.parse(row.last_seen_at);
+  if (!Number.isFinite(age) || age < -30_000 || age >= 120_000
+    || !Number.isFinite(heartbeatAge) || heartbeatAge < -30_000 || heartbeatAge >= 120_000
     || !Number.isFinite(latitude) || !Number.isFinite(longitude)
     || Math.abs(latitude) > 90 || Math.abs(longitude) > 180) return null;
   return { latitude, longitude };

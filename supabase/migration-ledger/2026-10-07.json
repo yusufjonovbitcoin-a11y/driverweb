@@ -1,0 +1,89 @@
+{
+  "projectRef": "gsnbjpqwwpvqtmphsyfs",
+  "verifiedAt": "2026-10-07",
+  "verification": "Read-only schema_migrations statement comparison; equality after outer whitespace trim, no SQL normalization. No production ledger or schema writes.",
+  "canonicalMigrations": [
+    {
+      "name": "chat_reliability_hardening",
+      "previousFile": "20261001140037_chat_reliability_hardening.sql",
+      "canonicalFile": "20261001141119_chat_reliability_hardening.sql",
+      "trimmedSqlSha256": "5b5dd6cda912764d0771bb90e3fa8d7afba081aef48a0189480bc2e62ee99edb"
+    },
+    {
+      "name": "direct_driver_assignment",
+      "previousFile": "20261001150028_direct_driver_assignment.sql",
+      "canonicalFile": "20261001151138_direct_driver_assignment.sql",
+      "trimmedSqlSha256": "394578e9e430d10d4c3befc2111d7bd0ac6c8568606dbbd1d9bd16fa3659da24"
+    },
+    {
+      "name": "verified_driver_brief",
+      "previousFile": "20261001220059_verified_driver_brief.sql",
+      "canonicalFile": "20261001222100_verified_driver_brief.sql",
+      "trimmedSqlSha256": "8f171c49620a2aeb9b73d674cb5b9d90be7e79480d55ad3ed897ed5f62e1a777"
+    },
+    {
+      "name": "refresh_verified_import_draft",
+      "previousFile": "20261002004341_refresh_verified_import_draft.sql",
+      "canonicalFile": "20261002004628_refresh_verified_import_draft.sql",
+      "trimmedSqlSha256": "bff5b2cd8292991c5bb236cccc824843edb9c3800dc10ee4f56874cf25ecefc7"
+    },
+    {
+      "name": "reverify_unassigned_import",
+      "previousFile": "20261002005825_reverify_unassigned_import.sql",
+      "canonicalFile": "20261002010301_reverify_unassigned_import.sql",
+      "trimmedSqlSha256": "215098304bfb017ad801c96694d958bf0b89f612078a7b145e567e3eef749488"
+    },
+    {
+      "name": "company_trip_analytics",
+      "previousFile": "20261002024124_company_trip_analytics.sql",
+      "canonicalFile": "20261002025707_company_trip_analytics.sql",
+      "trimmedSqlSha256": "16ab5dcd54c29db8c363e842d75620a01b98a6d0ddeb8327013570e38a6547e1"
+    },
+    {
+      "name": "trip_analytics_snapshot_priority",
+      "previousFile": "20261002030536_trip_analytics_snapshot_priority.sql",
+      "canonicalFile": "20261002030627_trip_analytics_snapshot_priority.sql",
+      "trimmedSqlSha256": "e9fc9abd19854c4c77c3924e2314bf07c904b529b207ca92d33c394e01009778"
+    },
+    {
+      "name": "analytics_dashboard_charts",
+      "previousFile": "20261002033901_analytics_dashboard_charts.sql",
+      "canonicalFile": "20261002033948_analytics_dashboard_charts.sql",
+      "trimmedSqlSha256": "51aa8091cd27170a46e17bb63ae2913d458d634a2d51f4377aa34805389edbcc"
+    },
+    {
+      "name": "trip_analytics_read_only_actor",
+      "previousFile": "20261003090135_trip_analytics_read_only_actor.sql",
+      "canonicalFile": "20261003090404_trip_analytics_read_only_actor.sql",
+      "trimmedSqlSha256": "5379f9355e4eb3aedaed68fa7a136ff0a2980d1871b4873f679a11f54de096ab"
+    },
+    {
+      "name": "import_ordered_stops",
+      "previousFile": "20261003105242_import_ordered_stops.sql",
+      "canonicalFile": "20261003111510_import_ordered_stops.sql",
+      "trimmedSqlSha256": "d3ec6ed04f76e3a8fb549f55306c97dde7d9ff602e6528064326847421d27d8c"
+    },
+    {
+      "name": "preserve_incomplete_import_review",
+      "previousFile": "20261003151116_preserve_incomplete_import_review.sql",
+      "canonicalFile": "20261003151200_preserve_incomplete_import_review.sql",
+      "trimmedSqlSha256": "3a65e286aacf683f1129c4063412cc067cfd53c8f12849725cd37ac6f60b9a77"
+    }
+  ],
+  "unrecordedContract": {
+    "previousFile": "20261003221941_allow_review_warnings_on_dispatch.sql",
+    "historyFile": "supabase/migration-ledger/history/20261003221941_allow_review_warnings_on_dispatch.sql",
+    "forwardFile": "20261007133312_record_dispatch_review_warning_contract.sql",
+    "trimmedSqlSha256": "be3b5a39cbd187d100368969c9fd00d66a7b112442e4b5603735e68cdc2c2141",
+    "trimmedFunctionBodySha256": "90444e704de81c890ebadbd008a48870d572c92de9eafeb70cf0d30589033112",
+    "liveFunction": "public.review_and_assign_document_load(uuid,uuid,text)",
+    "liveSecurityDefiner": true,
+    "liveVolatility": "v",
+    "liveConfig": [
+      "search_path=public"
+    ],
+    "liveAcl": "{postgres=X/postgres,service_role=X/postgres,authenticated=X/postgres}",
+    "forwardTrimmedSqlSha256": "9190794da2a5e0f0033eeb1589e8016b0533245cc13ebdb1035350d3e36c206c",
+    "forwardCorrection": "Parenthesize the right-hand JSON extraction during warning array concatenation. Synthetic regression proved the original SQL discarded all acknowledged warning fields because of operator precedence. Historical source and live-equivalence hash remain unchanged."
+  }
+}

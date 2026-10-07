@@ -81,7 +81,7 @@ export default function LoadTrashPanel({
       return;
     }
     if (action === 'delete' && !matchesDeleteConfirmation(actionLoad, confirmation)) return;
-    if (driverId != null && !availableDrivers.some(driver => driver.id === driverId)) return;
+    if (action === 'restore' && !availableDrivers.some(driver => driver.id === driverId)) return;
     pendingRef.current = true;
     setPending({ loadId: load.id, action });
     setError(null);
@@ -166,10 +166,6 @@ export default function LoadTrashPanel({
 
               {(onRestoreLoad || onPermanentlyDeleteLoad) && <div className="load-trash-actions">
                 {onRestoreLoad && <>
-                  <button type="button" className="load-trash-restore" disabled={isBusy} onClick={() => runAction(load, 'restore')}>
-                    {isRestoring ? <LoaderCircle size={15} className="animate-spin" aria-hidden="true" /> : <RotateCcw size={15} aria-hidden="true" />}
-                    {t(isRestoring ? 'loadTrash.restoring' : 'loadTrash.restore')}
-                  </button>
                   <div className="load-trash-assign">
                     <label className="load-trash-driver-picker">
                       <Truck size={15} aria-hidden="true" />
@@ -184,7 +180,7 @@ export default function LoadTrashPanel({
                       </select>
                     </label>
                     <button type="button" className="load-trash-assign-button" disabled={isBusy || !selectedDriver}
-                      onClick={() => runAction(load, 'restore', selectedDriverId)}>{t('loadTrash.restoreWithDriver')}</button>
+                      onClick={() => runAction(load, 'restore', selectedDriverId)}>{isRestoring && <LoaderCircle size={15} className="animate-spin" aria-hidden="true" />}{t(isRestoring ? 'loadTrash.restoring' : 'loadTrash.restoreWithDriver')}</button>
                   </div>
                 </>}
                 {onPermanentlyDeleteLoad && <button type="button" className="load-trash-delete" disabled={isBusy || !number.trim()}

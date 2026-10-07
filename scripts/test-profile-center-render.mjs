@@ -32,6 +32,21 @@ try {
     assert.ok(!page.includes('profile-logistics-banner'));
     assert.ok(!page.includes('profile-center-heading'), 'removed settings header');
     assert.ok(!page.includes('profile-center-search'), 'removed settings search');
+    const mixedLoads = [
+      { id: 'saved-draft', status: 'UNASSIGNED', databaseStatus: 'draft' },
+      { id: 'review', status: 'UNASSIGNED', databaseStatus: 'review' },
+      { id: 'ready', status: 'UNASSIGNED', databaseStatus: 'ready_for_offer' },
+      { id: 'offered', status: 'UNASSIGNED', databaseStatus: 'offered' },
+      { id: 'active', status: 'ASSIGNED', databaseStatus: 'assigned' },
+      { id: 'completed', status: 'COMPLETED', databaseStatus: 'completed' },
+      { id: 'cancelled', status: 'COMPLETED', databaseStatus: 'cancelled' },
+    ];
+    const withLoads = renderToString(React.createElement(Profile, { ...props, loads: mixedLoads, drivers: [] }));
+    const identityStats = withLoads.match(/class="profile-identity-stats">(.*?)<\/div>/)?.[1];
+    assert.ok(identityStats, 'identity statistics rendered');
+    assert.deepEqual([...identityStats.matchAll(/<strong>(\d+)<\/strong>/g)].map(match => Number(match[1])), [0, 1, 1],
+      'profile counts one dispatched active load and one completed load, excluding saved drafts and cancelled history');
+
     const accountProps = { ...props, currentUser: { name: '<Admin>', email: 'admin@example.com', phone: '+1 555 123 4567', roleCode: 'company_admin', company: 'Test Company' } };
     const personal = renderToString(React.createElement(ProfilePersonalPanel, accountProps));
     assert.ok(personal.includes('&lt;Admin&gt;'), 'profile values escaped');
@@ -61,6 +76,14 @@ try {
     assert.ok(company.includes('profile-company-panel'));
     assert.ok(company.includes('profile-company-tabs'));
     assert.ok(company.includes(i18n.t('drivers.noDrivers')));
+    const explicitDriver = renderToString(React.createElement(Profile, { ...accountProps,
+      initialSection: 'company', selectedDriverId: 'driver-a', loads: [],
+      drivers: [{ id:'driver-a', name:'Requested Driver', driverNumber:'#FIXTURE' }],
+    }));
+    assert.ok(explicitDriver.includes('Requested Driver') && explicitDriver.includes('id="driver-profile-title"'), 'explicit navigation opens the requested driver');
+    const driverBack = renderToString(React.createElement(Profile, { ...accountProps, initialSection:'company', loads:[], drivers:[] }));
+    assert.ok(driverBack.includes('profile-company-panel'), 'explicit back request returns to the driver list instead of Settings');
+
   }
   console.log('Profile center: 3 locales, search, role gating, account panels, regional controls, unread counts, safe data display and company layout passed.');
 } finally { await server.close(); }

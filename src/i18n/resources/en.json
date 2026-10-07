@@ -1,4 +1,5 @@
 {
+  "loadRecovery": {"title": "Saved drafts ({{count}})", "hint": "These loads are saved but not dispatched. Review them and choose a driver to finish assigning the existing load.", "resume": "Review and assign"},
   "driverInstructions": {"title":"Instructions for the driver","hint":"For fixed-mileage pay, send only operational instructions here. Do not include broker rates or payment terms. The original broker document stays private.","edit":"Edit instructions","save":"Save for driver","saved":"Saved. Available to the assigned driver.","error":"Could not save or load. Refresh the load and retry; check your connection and permissions.","conflict":"This load changed. Your draft is preserved. Refresh and review the current instructions before saving again.","reviewHint":"Current saved instructions are shown below. Your draft above has not been replaced.","serverText":"Current saved instructions","reviewed":"I reviewed the current instructions and want to save my draft."},
   "driverPrivacy": {
     "title": "Rate Con privacy",
@@ -62,7 +63,7 @@
     "deleting": "Deleting…",
     "restoreError": "Could not restore the load. Nothing was changed.",
     "deleteError": "Could not delete the load.",
-    "restoreHint": "Restore unassigned, or select a driver to start a new trip. Previous history and PDFs are kept; new pickup/delivery proof will be required.",
+    "restoreHint": "Select a driver to start a new trip. Previous history and PDFs are kept; new pickup/delivery proof will be required.",
     "move": "Move to trash",
     "moveTitle": "Move {{number}} to trash?",
     "moveWarning": "The load will leave the board and the current driver will be released from it. PDFs and trip history are kept. You can restore or reassign it from Loads → Trash.",
@@ -1319,8 +1320,8 @@
     "duplicateDocument": "This document was already uploaded.",
     "loadCreated": "Load created. Route distance: {{miles}} mi{{attribution}}. Delivered to {{deliveredCount}} online drivers{{offline}}.",
     "loadSaved": "Load saved. You can send an offer from the Offers column.",
-    "loadSavedApprovalFailed": "Load saved but is not ready to send. Check the server approval function.",
-    "loadSavedOfferFailed": "Load saved, but the offer was not sent. {{reason}} Retry from the Offers column.",
+    "loadSavedApprovalFailed": "Load saved but approval did not finish. Retry from Saved drafts.",
+    "loadSavedOfferFailed": "Load saved, but assignment did not finish. {{reason}} Retry from Saved drafts.",
     "offerSent": "Route distance: {{miles}} mi{{attribution}}. Offer sent to {{deliveredCount}} online drivers{{offline}}.",
     "offlineSkipped": ", skipped {{count}} offline drivers",
     "reassignmentSent": "Reassignment offer sent.",

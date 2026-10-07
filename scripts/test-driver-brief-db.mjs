@@ -18,8 +18,8 @@ try {
   started = true;
   run('psql', ['-h', directory, '-p', '55440', '-d', 'postgres', '-v', 'ON_ERROR_STOP=1',
     '-f', 'scripts/driver-brief-test-fixtures/bootstrap.sql',
-    '-f', 'supabase/migrations/20261001150028_direct_driver_assignment.sql',
-    '-f', 'supabase/migrations/20261001220059_verified_driver_brief.sql',
+    '-f', 'supabase/migrations/20261001151138_direct_driver_assignment.sql',
+    '-f', 'supabase/migrations/20261001222100_verified_driver_brief.sql',
     '-f', 'scripts/driver-brief-test-fixtures/checks.sql']);
 } finally {
   if (started) run('pg_ctl', ['-D', `${directory}/data`, '-m', 'fast', 'stop']);

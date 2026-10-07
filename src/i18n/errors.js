@@ -1,4 +1,5 @@
 const ERROR_PATTERNS = [
+  [/DRIVER_REQUIRED/, 'loads.selectDriver'],
   [/DRIVER_PAY_GPS_REQUIRED/, 'driverPay.gpsRequired'],
   [/DRIVER_PAY_ROUTE_REQUIRED|Driver pay settings changed|Route changed/, 'driverPay.recalculate'],
   [/DRIVER_PAY_DISTANCE_INVALID|DRIVER_PAY_ROUTE_UNAVAILABLE/, 'driverPay.routeUnavailable'],

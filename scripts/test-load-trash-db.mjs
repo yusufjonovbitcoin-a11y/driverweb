@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { runAuditBackendChecks } from './run-audit-backend-checks.mjs';
 
 // Private Unix-socket cluster only. Never reads DATABASE_URL or app credentials.
 const root = fileURLToPath(new URL('..', import.meta.url));
@@ -60,16 +61,16 @@ try {
   await migration('202609250003_manual_ai_load_imports.sql');
   sql(await readFile(path.join(root, 'scripts/load-trash-test-fixtures/support.sql'), 'utf8'));
   await migration('202609280002_remove_company_member.sql', null, '-- These read RPCs');
-  await migration('20261001150028_direct_driver_assignment.sql');
-  await migration('20261001220059_verified_driver_brief.sql');
+  await migration('20261001151138_direct_driver_assignment.sql');
+  await migration('20261001222100_verified_driver_brief.sql');
   await migration('202609260004_operational_integrity_and_push.sql', 'create or replace function public.required_document_type_for_stop', 'create or replace function public.begin_document_upload');
   await migration('202609260004_operational_integrity_and_push.sql', 'create or replace function public.complete_document_upload', '-- ---------------------------------------------------------------------------');
   await migration('202609260004_operational_integrity_and_push.sql', 'create or replace function public.bind_document_version_media', 'create or replace function public.complete_document_upload');
   await migration('202609260004_operational_integrity_and_push.sql', 'create table if not exists public.push_deliveries', 'create or replace function public.register_push_device');
   await migration('202609300001_driver_tracking.sql', null, 'alter table public.driver_tracking_sessions enable row level security');
   await migration('202609300002_payment_receipts.sql');
-  await migration('20261002024124_company_trip_analytics.sql');
-  await migration('20261003090135_trip_analytics_read_only_actor.sql');
+  await migration('20261002025707_company_trip_analytics.sql');
+  await migration('20261003090404_trip_analytics_read_only_actor.sql');
   await migration('202609240010_driver_analytics.sql');
   sql('alter function public.get_driver_analytics(timestamptz,timestamptz) volatile;');
   await migration('20261005205741_load_trash_restore.sql');
@@ -195,6 +196,10 @@ try {
         console.log('PASS: historic check JSON protected in raw REST/view, safe status and realtime signal retained');
       }
     }
+  }
+  if (process.env.AUDIT_FIX_TEST === '1') {
+    assert(['BACKEND_AUDIT_TEST','DRIVER_PAY_TEST','SECURITY_AUDIT_TEST','DOCUMENT_PRIVACY_TEST'].every(key => process.env[key] === '1'), 'AUDIT_FIX_TEST requires the complete fixture');
+    await runAuditBackendChecks({sql,migration,root});
   }
 } finally {
   if (started) run('pg_ctl', ['-D', `${directory}/data`, '-m', 'fast', 'stop']);
