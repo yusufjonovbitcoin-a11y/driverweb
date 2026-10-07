@@ -254,7 +254,7 @@ try {
   assert.equal(sql('select is_called from net.test_request_ids;'), 'f', 'Final helper never invokes pg_net, including on HTTP errors');
   assert.equal(sql('select count(*) from net.test_requests;'), '0', 'No request headers enter the public pg_net queue');
   console.log('PASS: invalid configuration has no HTTP side effects; pg_net was never called in any success or failure case');
-  const documentMigration = await readFile(path.join(root, 'supabase/migrations/20261006221743_durable_document_check_worker.sql'), 'utf8');
+  const documentMigration = await readFile(path.join(root, 'supabase/migrations/20261007003612_durable_document_check_worker.sql'), 'utf8');
   const documentCronOffset = documentMigration.indexOf('-- Preserve the existing credential-safe synchronous transport.');
   assert.ok(documentCronOffset > 0);
   sql(`set role postgres; ${documentMigration.slice(documentCronOffset)}`);

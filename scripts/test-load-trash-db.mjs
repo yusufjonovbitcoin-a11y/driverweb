@@ -114,8 +114,8 @@ try {
     await migration('202609240001_core_schema.sql', 'create or replace function public.create_load_draft(', 'create or replace function public.approve_load_draft(');
     await migration('202609250004_ai_document_intelligence.sql', null, 'create or replace function public.apply_ai_import_metadata');
     await migration('202609270002_semantic_warning_payloads.sql');
-    await migration('20261006221418_atomic_document_import_draft.sql');
-    await migration('20261006221743_durable_document_check_worker.sql', null, '-- Preserve the existing credential-safe synchronous transport.');
+    await migration('20261007003559_atomic_document_import_draft.sql');
+    await migration('20261007003612_durable_document_check_worker.sql', null, '-- Preserve the existing credential-safe synchronous transport.');
     sql(await readFile(path.join(root, 'scripts/load-trash-test-fixtures/backend-audit-checks.sql'), 'utf8'));
     console.log('PASS: atomic import rollback/retry, authorization and durable document check recovery');
   }
@@ -183,14 +183,14 @@ try {
         select (string_to_array($1,'/'))[1:array_length(string_to_array($1,'/'),1)-1] $$;
         grant delete on storage.objects to authenticated;`);
       await migration('202609250014_assigned_driver_document_delete.sql');
-      await migration('20261006221228_audit_auth_storage_privacy_hardening.sql');
+      await migration('20261007003549_audit_auth_storage_privacy_hardening.sql');
       sql(await readFile(path.join(root, 'scripts/load-trash-test-fixtures/security-audit-checks.sql'), 'utf8'));
       console.log('PASS: security audit active-tenant reads, legacy completion denial, Storage retention and trash/privacy');
       if (process.env.DOCUMENT_PRIVACY_TEST === '1') {
         await migration('202609270002_semantic_warning_payloads.sql');
         // Match production RLS and publication omitted by this focused harness.
         sql('alter table document_checks enable row level security; create publication supabase_realtime;');
-        await migration('20261006223322_private_document_check_projection.sql');
+        await migration('20261007003622_private_document_check_projection.sql');
         sql(await readFile(path.join(root, 'scripts/load-trash-test-fixtures/document-check-privacy.sql'), 'utf8'));
         console.log('PASS: historic check JSON protected in raw REST/view, safe status and realtime signal retained');
       }

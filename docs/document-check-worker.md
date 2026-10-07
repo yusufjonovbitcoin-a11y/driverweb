@@ -15,9 +15,9 @@ An attempt has a 45-second download/provider budget, shorter than the existing
 
 ## Deployment gate — not executed by the local fix
 
-1. Apply `20261006221418_atomic_document_import_draft.sql`,
-   `20261006221743_durable_document_check_worker.sql` and
-   `20261006223322_private_document_check_projection.sql` with the normal migrations.
+1. Apply `20261007003559_atomic_document_import_draft.sql`,
+   `20261007003612_durable_document_check_worker.sql` and
+   `20261007003622_private_document_check_projection.sql` with the normal migrations.
    Deploy `parse-load-document`, `ask-load-ai` and `check-load-document` together
    with their shared dependencies. The checked-in config intentionally sets
    `check-load-document.verify_jwt=false`: the handler verifies either the user
