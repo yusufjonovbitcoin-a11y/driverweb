@@ -1,6 +1,14 @@
 import { normalizeSearchText } from '../utils/globalSearch.js';
 import { validMapCoordinate } from './mapboxMapModel.js';
 
+export function shouldRefreshCompletedTrack(previous, { driverId, loadId, isActive, isVisible }) {
+  // Initial/empty workspace IDs can both be undefined. Equality alone does not
+  // mean that a previous trip exists or that an actual trip was completed.
+  return Boolean(isVisible && previous && driverId && loadId
+    && previous.driver === driverId && previous.load === loadId
+    && previous.active === true && isActive === false);
+}
+
 export function tripStops(load) {
   const printed = load?.driverBrief?.stops || load?.stops;
   return [load?.origin, load?.destination, ...(Array.isArray(printed) ? printed : [])].filter(Boolean);

@@ -881,7 +881,8 @@ export default function ProfileView({
               </dl>
 
               {(onDeleteMember || currentUser?.roleCode === 'company_admin') && (
-                <div className="flex justify-end border-t border-zinc-200 px-3 py-2 dark:border-zinc-800">
+                <div className="flex flex-wrap justify-end border-t border-zinc-200 px-3 py-2 dark:border-zinc-800">
+                  {currentUser?.roleCode === 'company_admin' && <button type="button" onClick={(event) => { event.stopPropagation(); setEditingDriverId(driver.id); }} aria-label={`${t('driverPrivacy.title')}: ${driver.name}`} title={t('driverPrivacy.title')} className="rounded-lg p-2 text-teal-700 transition hover:bg-teal-50 dark:text-teal-300 dark:hover:bg-teal-950/30"><EyeOff className="h-4 w-4" /></button>}
                   {currentUser?.roleCode === 'company_admin' && <button type="button" onClick={(event) => { event.stopPropagation(); setVehicleAssignmentDriver(driver); }} className="mr-auto inline-flex items-center gap-1.5 rounded-lg px-2.5 py-2 text-xs font-bold text-teal-700 transition hover:bg-teal-50 dark:text-teal-300 dark:hover:bg-teal-950/30"><Truck className="h-4 w-4" />{t('fleet.openAssignment')}</button>}
                   {currentUser?.roleCode === 'company_admin' && <button type="button" onClick={(event) => { event.stopPropagation(); setEditingDriverId(driver.id); }} className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-2 text-xs font-bold text-teal-700 transition hover:bg-teal-50 dark:text-teal-300 dark:hover:bg-teal-950/30"><Pencil className="h-4 w-4" />{t('common.edit')}</button>}
                   {onDeleteMember && (
@@ -978,6 +979,7 @@ export default function ProfileView({
                     </td>
 
                     <td className="py-3.5 px-4 text-right whitespace-nowrap">
+                      {currentUser?.roleCode === 'company_admin' && <button type="button" onClick={(event) => { event.stopPropagation(); setEditingDriverId(driver.id); }} aria-label={`${t('driverPrivacy.title')}: ${driver.name}`} title={t('driverPrivacy.title')} className="rounded-lg p-2 text-teal-700 transition hover:bg-teal-50 dark:text-teal-300 dark:hover:bg-teal-950/30"><EyeOff className="h-4 w-4" /></button>}
                       {currentUser?.roleCode === 'company_admin' && <button type="button" onClick={(event) => { event.stopPropagation(); setEditingDriverId(driver.id); }} aria-label={t('profile.editDriverFor', { name: driver.name })} title={t('common.edit')} className="rounded-lg p-2 text-teal-700 transition hover:bg-teal-50 dark:text-teal-300 dark:hover:bg-teal-950/30"><Pencil className="h-4 w-4" /></button>}
                       {currentUser?.roleCode === 'company_admin' && <button type="button" onClick={(event) => { event.stopPropagation(); setVehicleAssignmentDriver(driver); }} aria-label={t('fleet.assignToDriver', { name: driver.name })} title={t('fleet.assignToDriver', { name: driver.name })} className="rounded-lg p-2 text-teal-700 transition hover:bg-teal-50 dark:text-teal-300 dark:hover:bg-teal-950/30"><Truck className="h-4 w-4" /></button>}
                       {onDeleteMember && (

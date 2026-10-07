@@ -17,14 +17,28 @@ test('initial open failure retries automatically and reaches history without pag
   loader.dispose();
 });
 
-test('reopening the page, focus and realtime share a single pending request', async () => {
+test('focus and realtime coalesce one trailing read after the pending snapshot', async () => {
   const response = deferred(); let attempts = 0;
   const loader = createChatRecovery({ load: () => { attempts++; return response.promise; }, onState: () => {} });
   const first = loader.run();
   assert.equal(loader.run(), first); assert.equal(loader.run(), first);
   await settle(); assert.equal(attempts, 1);
   response.resolve(); await first;
-  await loader.run(); assert.equal(attempts, 2);
+  assert.equal(attempts, 2);
+  await loader.run(); assert.equal(attempts, 3);
+  loader.dispose();
+});
+
+test('subscription ready during initial HTTP read recovers a message missed by both snapshots', async () => {
+  const response = deferred(); let calls = 0; const messages = [];
+  const loader = createChatRecovery({ load: async () => {
+    if (++calls === 1) { await response.promise; messages.push('old'); }
+    else messages.push('gap-message');
+  }, onState: () => {} });
+  const initial = loader.run(); await settle();
+  loader.run(); // SUBSCRIBED after the first HTTP snapshot, before its response.
+  response.resolve(); await initial;
+  assert.deepEqual(messages, ['old', 'gap-message']); assert.equal(calls, 2);
   loader.dispose();
 });
 

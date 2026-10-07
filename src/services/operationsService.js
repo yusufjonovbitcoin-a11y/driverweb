@@ -1,4 +1,5 @@
 import { requireSupabase } from '../lib/supabase';
+import { invokeAuthenticatedFunction as invokeWithSession } from './authenticatedFunction.js';
 import { prepareDriverPayAssignment } from './driverPay.js';
 import { cloudinarySignedUrl } from './cloudinaryMediaService';
 import { isCloudinaryReference } from './cloudinaryMediaErrors';
@@ -37,48 +38,8 @@ async function throwFunctionError(error, fallback) {
   throw normalized;
 }
 
-async function getFunctionAccessToken(client, forceRefresh = false) {
-  const { data, error } = forceRefresh
-    ? await client.auth.refreshSession()
-    : await client.auth.getSession();
-  if (error) {
-    await client.auth.signOut({ scope: 'local' });
-    throw new Error('Sessiya tugagan. Hisobga qayta kiring.');
-  }
-  let session = data.session;
-  const expiresSoon = !session?.expires_at || session.expires_at * 1000 <= Date.now() + 5 * 60 * 1000;
-  if (!forceRefresh && expiresSoon) {
-    const refreshed = await client.auth.refreshSession();
-    if (refreshed.error || !refreshed.data.session) {
-      await client.auth.signOut({ scope: 'local' });
-      throw new Error('Sessiya tugagan. Hisobga qayta kiring.');
-    }
-    session = refreshed.data.session;
-  }
-  if (!session?.access_token) {
-    await client.auth.signOut({ scope: 'local' });
-    throw new Error('Sessiya topilmadi. Hisobga qayta kiring.');
-  }
-  return session.access_token;
-}
-
 async function invokeAuthenticatedFunction(name, body, options = {}) {
-  const client = requireSupabase();
-  let accessToken = await getFunctionAccessToken(client);
-  let result = await client.functions.invoke(name, {
-    body,
-    headers: { Authorization: `Bearer ${accessToken}` },
-    ...options,
-  });
-  if (result.error?.context?.status === 401) {
-    accessToken = await getFunctionAccessToken(client, true);
-    result = await client.functions.invoke(name, {
-      body,
-      headers: { Authorization: `Bearer ${accessToken}` },
-      ...options,
-    });
-  }
-  return result;
+  return invokeWithSession(requireSupabase(), name, body, options);
 }
 
 export async function updateMyLocale(locale) {
@@ -343,8 +304,8 @@ export async function fetchWorkspaceAvatar(member) {
   return urls.get(member.id) || null;
 }
 
-export async function fetchBrokerInbox() {
-  return fetchBrokerInboxRows(requireSupabase());
+export async function fetchBrokerInbox(before = null) {
+  return fetchBrokerInboxRows(requireSupabase(), before);
 }
 
 export async function fetchBrokerMessageBody(messageId) {
@@ -715,18 +676,19 @@ export async function fetchFleetVehicles() {
 
 export async function fetchDriverPaySettings(driverId) {
   const { data, error } = await requireSupabase().from('driver_pay_settings')
-    .select('rate_per_mile').eq('driver_id', driverId).maybeSingle();
+    .select('rate_per_mile,hide_rate_con').eq('driver_id', driverId).maybeSingle();
   if (error) throw error;
-  return data?.rate_per_mile ?? null;
+  return { ratePerMile: data?.rate_per_mile ?? null, hideRateCon: data?.hide_rate_con === true };
 }
 
-export async function updateCompanyDriverContact(driverId, { name, phone, ratePerMile }) {
+export async function updateCompanyDriverContact(driverId, { name, phone, ratePerMile, hideRateCon }) {
   const client = requireSupabase();
-  const { data, error } = await client.rpc('update_driver_contact_and_pay', {
+  const { data, error } = await client.rpc('update_driver_contact_pay_privacy', {
     p_driver_id: driverId,
     p_full_name: name.trim(),
     p_phone: phone.trim() || null,
     p_rate_per_mile: ratePerMile,
+    p_hide_rate_con: hideRateCon,
   });
   if (error) throw error;
   return data;

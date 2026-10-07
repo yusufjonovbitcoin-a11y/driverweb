@@ -1,0 +1,19 @@
+# Deploy source only. Build output must use Vercel's production environment.
+.git
+.github
+.vercel
+.venv
+node_modules
+dist
+dist-ssr
+.env*
+*.local
+*.log
+logs
+output
+tmp
+docs
+scripts
+supabase
+__pycache__
+.DS_Store

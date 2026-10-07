@@ -5,6 +5,7 @@ import { singlePassValueSupported, sourcePrintedDate } from './load-single-pass.
 import { evidenceFromSource } from './pdf-source.ts';
 import { dispatchBlockingFields, dispatchWarningFields } from './load-dispatch-policy.ts';
 import { streetAddressWithoutAppointmentCode } from './load-stop-address.ts';
+import { OPERATIONAL_EXTRACTION_SCOPE, isOperationalExtractionField } from './load-operational-extraction.ts';
 export const FIELD_TYPES = {
   loadNumber: 'string',
   'broker.name': 'string', 'broker.contactName': 'string', 'broker.phone': 'string',
@@ -36,6 +37,7 @@ function set(data: any, path: string, value: unknown) {
 }
 
 export function verifyLoadExtraction(candidate: any, audit: any, singlePass = false) {
+  const operationalOnly = singlePass && candidate?.extractionScope === OPERATIONAL_EXTRACTION_SCOPE;
   const aiPdfDirect = singlePass && candidate?.extractionMode === 'ai_pdf_direct';
   if (singlePass && Array.isArray(candidate?.stops)) candidate = { ...candidate,
     stops: candidate.stops.map((stop: any) => ({ ...stop,
@@ -83,6 +85,7 @@ export function verifyLoadExtraction(candidate: any, audit: any, singlePass = fa
     ['requirements', 'contractTerms'].flatMap(key => (Array.isArray(candidate[key]) ? candidate[key] : []).map((_: unknown, index: number) => [`${key}.${index}`, 'string'])),
   ) };
   for (const [path, type] of Object.entries(paths)) {
+    if (operationalOnly && !isOperationalExtractionField(path)) continue;
     const raw = get(candidate, path);
     let value = typeof raw === 'string' ? raw.trim() : raw;
     if (value == null || value === '') {
@@ -186,7 +189,7 @@ export function verifyLoadExtraction(candidate: any, audit: any, singlePass = fa
   if ((audit.operationalRequirementsComplete !== true || reportedMissing.length > 0)
       && !allReportedDetailsPresent) blockingFields.push('requirements');
   // New-protocol documents must also pass the all-pages completeness audit.
-  if ('contractTerms' in candidate && (audit.documentDetailsComplete !== true || audit.missingDocumentDetails?.length > 0)) blockingFields.push('documentDetails');
+  if ((operationalOnly || 'contractTerms' in candidate) && (audit.documentDetailsComplete !== true || audit.missingDocumentDetails?.length > 0)) blockingFields.push('documentDetails');
   if (/reefer|refrigerat/i.test(safe.equipmentType || '') && safe.temperatureFahrenheit == null) {
     blockingFields.push('temperatureFahrenheit');
   }
@@ -203,8 +206,8 @@ export function verifyLoadExtraction(candidate: any, audit: any, singlePass = fa
       warningFields: dispatchWarningFields(reviewFields), rejectedFields, issues,
       method: aiPdfDirect ? 'ai_pdf_direct' : candidate.sourceManifest ? 'pdf_source_rules' : singlePass ? 'single_pass_rules' : 'independent_model_audit',
       sourceGrounded: Boolean(candidate.sourceManifest), independentAudit: !singlePass },
-    documentDetails: { version: 3, fields, stops: safe.stops, issues, unknownFields: [...new Set([...missingFields, ...rejectedFields])] },
-    driverBrief: { version: 1, fields: driverFields, stops: safe.stops, unknownFields: [...new Set([...missingFields, ...rejectedFields])] },
+    documentDetails: { version: 3, ...(operationalOnly ? { extractionScope: OPERATIONAL_EXTRACTION_SCOPE } : {}), fields, stops: safe.stops, issues, unknownFields: [...new Set([...missingFields, ...rejectedFields])] },
+    driverBrief: { version: 1, ...(operationalOnly ? { extractionScope: OPERATIONAL_EXTRACTION_SCOPE } : {}), fields: driverFields, stops: safe.stops, unknownFields: [...new Set([...missingFields, ...rejectedFields])] },
   };
 }
 

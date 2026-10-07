@@ -254,6 +254,19 @@ try {
   assert.equal(sql('select is_called from net.test_request_ids;'), 'f', 'Final helper never invokes pg_net, including on HTTP errors');
   assert.equal(sql('select count(*) from net.test_requests;'), '0', 'No request headers enter the public pg_net queue');
   console.log('PASS: invalid configuration has no HTTP side effects; pg_net was never called in any success or failure case');
+  const documentMigration = await readFile(path.join(root, 'supabase/migrations/20261006221743_durable_document_check_worker.sql'), 'utf8');
+  const documentCronOffset = documentMigration.indexOf('-- Preserve the existing credential-safe synchronous transport.');
+  assert.ok(documentCronOffset > 0);
+  sql(`set role postgres; ${documentMigration.slice(documentCronOffset)}`);
+  reject('document', 'Cron worker token is missing or invalid');
+  setSecret('document_check_cron_token', 'd'.repeat(64));
+  sql(`update test_support.response set fail=false,status=200,content='{"claimed":1,"completed":1}';`);
+  invoke('document');
+  assert.equal(sql("select request->>'uri' from test_support.requests order by id desc limit 1;"), `${projectUrl}/functions/v1/check-load-document`);
+  assert.equal(sql("select request->'headers'->0->>'value' from test_support.requests order by id desc limit 1;"), 'd'.repeat(64));
+  assert.deepEqual(monitor('document').response_summary, { claimed: 1, completed: 1 });
+  assert.equal(sql("select has_function_privilege('authenticated','worker_cron.invoke(text)','EXECUTE');"), 'f');
+  console.log('PASS: document consumer extends credential-safe Cron transport with its own token and retains private ACLs');
   console.log('PASS: isolated synchronous worker Cron migration checks');
 } finally {
   if (started) checked('pg_ctl', ['-D', `${directory}/data`, '-m', 'fast', '-w', 'stop']);

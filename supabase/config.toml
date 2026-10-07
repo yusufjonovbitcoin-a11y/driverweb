@@ -50,7 +50,8 @@ verify_jwt = true
 verify_jwt = true
 
 [functions.check-load-document]
-verify_jwt = true
+# Explicit user getUser + RLS, or a dedicated Cron worker token, inside handler.
+verify_jwt = false
 
 [functions.calculate-load-route]
 verify_jwt = true

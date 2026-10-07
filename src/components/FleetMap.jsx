@@ -1,5 +1,4 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { unstable_serialize, useSWRConfig } from 'swr';
 import { useTranslation } from 'react-i18next';
 import { ArrowRight, CalendarDays, ChevronDown, ChevronRight, ChevronUp, History, LocateFixed, Route, Search, Truck, X } from 'lucide-react';
 import { useWorkspaceQuery, useWorkspaceView } from '../hooks/WorkspaceCache';
@@ -9,7 +8,7 @@ import { formatCurrency, formatDate } from '../i18n/format';
 import { loadStatusLabel } from '../i18n/labels';
 import { currentDriverLoad, knownLoadStatistics } from './mapLoadStatsModel';
 import { mapboxLineFeatures, validMapCoordinate } from './mapboxMapModel';
-import { driverTrips, filteredTrips, fleetLivePosition, isActiveFleetLoad, loadMapStops, overlayMapPadding, selectedDriverTrip, stopCity, stopStreet, tripTimestamp } from './fleetMapModel';
+import { driverTrips, filteredTrips, fleetLivePosition, isActiveFleetLoad, loadMapStops, overlayMapPadding, selectedDriverTrip, shouldRefreshCompletedTrack, stopCity, stopStreet, tripTimestamp } from './fleetMapModel';
 import './fleet-map.css';
 
 const TrackingMap = React.lazy(() => import('./TrackingMap'));
@@ -59,7 +58,6 @@ export default function FleetMap({ drivers, loads, isVisible = true, onOpenDocs,
   const [focusRequest, setFocusRequest] = useState(0);
   const [detailsId, setDetailsId] = useState(null);
   const { canvasRef, paletteRef, dockRef, padding } = useMapOverlays(isVisible);
-  const { cache } = useSWRConfig();
   const selectedDriver = drivers.find(driver => driver.id === selectedTruckId) || drivers[0];
   const hiddenAtRef = useRef(null);
   const previousTripRef = useRef(null);
@@ -81,13 +79,9 @@ export default function FleetMap({ drivers, loads, isVisible = true, onOpenDocs,
   const routeKey = `${selectedDriver?.id || ''}:${selectedTrip?.id || ''}`;
   const { data: trackPoints, error: trackError, isLoading: trackLoading, mutate: refreshTrack } = useWorkspaceQuery(
     selectedDriver?.id && selectedTrip?.id ? ['driver-track', selectedDriver.id, selectedTrip.id] : null,
-    async (key) => {
-      const previous = cache.get(unstable_serialize(key))?.data || [];
-      const received = await fetchDriverTrack(key[1], key[2], previous.at(-1)?.captured_at || null);
-      const byId = new Map(previous.map(point => [point.id, point]));
-      received.forEach(point => byId.set(point.id, point));
-      return [...byId.values()].sort((a, b) => a.captured_at.localeCompare(b.captured_at) || a.id.localeCompare(b.id));
-    },
+    // Offline batches can arrive with arbitrarily old captured_at values.
+    // Reconcile the complete paged track; capture time is not an ingest cursor.
+    (key) => fetchDriverTrack(key[1], key[2]),
     { staleTime: 60_000, refreshInterval: isVisible && isActiveLoad ? 120_000 : 0,
       revalidateOnFocus: isVisible, isPaused: () => !isVisible },
   );
@@ -103,8 +97,10 @@ export default function FleetMap({ drivers, loads, isVisible = true, onOpenDocs,
   }, [isVisible, refreshSessions, refreshTrack, sessions, trackPoints]);
   useEffect(() => {
     const previous = previousTripRef.current;
-    if (isVisible && previous?.driver === selectedDriver?.id && previous?.load === selectedTrip?.id
-      && previous.active && !isActiveLoad) void refreshTrack().catch(() => {});
+    if (shouldRefreshCompletedTrack(previous, {
+      driverId: selectedDriver?.id, loadId: selectedTrip?.id,
+      isActive: isActiveLoad, isVisible,
+    })) void refreshTrack().catch(() => {});
     previousTripRef.current = { driver: selectedDriver?.id, load: selectedTrip?.id, active: isActiveLoad };
   }, [selectedDriver?.id, selectedTrip?.id, isActiveLoad, isVisible, refreshTrack]);
 

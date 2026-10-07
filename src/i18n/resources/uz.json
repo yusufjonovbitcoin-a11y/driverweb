@@ -1,5 +1,10 @@
 {
   "driverInstructions": {"title":"Haydovchi uchun ko‘rsatmalar","hint":"Milya bo‘yicha to‘lovda bu yerga faqat ish ko‘rsatmalarini yozing. Broker narxi va to‘lov shartlarini qo‘shmang. Brokerning asl hujjati yashirin qoladi.","edit":"Ko‘rsatmalarni tahrirlash","save":"Haydovchi uchun saqlash","saved":"Saqlandi. Biriktirilgan haydovchiga ko‘rinadi.","error":"Saqlash yoki yuklash amalga oshmadi. Yukni yangilang; internet va ruxsatni tekshiring.","conflict":"Yuk o‘zgargan. Qoralamangiz saqlandi. Ma’lumotni yangilab, joriy ko‘rsatmalarni tekshirgach qayta saqlang.","reviewHint":"Quyida hozir saqlangan ko‘rsatmalar ko‘rsatilgan. Yuqoridagi qoralamangiz almashtirilmadi.","serverText":"Hozir saqlangan ko‘rsatmalar","reviewed":"Joriy ko‘rsatmalarni tekshirdim va o‘z qoralamamni saqlamoqchiman."},
+  "driverPrivacy": {
+    "title": "Rate Con maxfiyligi",
+    "hide": "Rate Con va broker narxini yashirish",
+    "hint": "Shu haydovchining barcha yuklariga taalluqli. Rate Con, broker narxi va to‘lov cheklari yashiriladi; BOL/POD qoladi. Fayllar o‘chirilmaydi. Mil bo‘yicha haydovchi haqi ko‘rinadi. Buni o‘chirish belgilangan haq bilan berilgan yuklarda broker shartlarini ochmaydi."
+  },
   "driverPay": {
     "gpsRequired": "Haydovchi ilovadan yangi joylashuvini yuborsin, keyin yukni qayta biriktiring. Masofa taxminan olinmaydi.",
     "recalculate": "Marshrut yoki stavka o‘zgardi. Yangi hisob uchun biriktirishni qayta bajaring.",
@@ -134,7 +139,8 @@
   "missing_source": "Tasdiqlovchi matn yo‘q", "wrong_field": "Qiymat maydonga mos emas", "source_mismatch": "Qiymat va manba mos emas",
   "save": "Tuzatishni saqlash", "saving": "Saqlanmoqda…", "booleanHint": "true (ha) yoki false (yo‘q) kiriting.", "fullText": "To‘liq matn"
 },
-"importDetails": {
+  "importDetails": {
+    "operationalScope": "Faqat yuk ma’lumotlari va haydovchi ko‘rsatmalari ajratiladi. To‘liq to‘lov va yuridik shartlar asl PDFda qoladi. Yuborishdan oldin asl hujjat bilan tekshiring.",
   "title": "Hujjat tafsilotlari",
   "cargo": "Yuk",
   "requirements": "Talablar",
@@ -1271,6 +1277,9 @@
     "fileRequired": "PDF yoki surat tanlang.",
     "fileTooLarge": "Fayl hajmi 20 MB dan oshmasligi kerak.",
     "moduleTitle": "Sahifa modulini yuklab bo‘lmadi",
+    "pageTitle": "Sahifani ko‘rsatib bo‘lmadi",
+    "pageHint": "Sahifani ko‘rsatishda xato yuz berdi. Uni qayta ochib ko‘ring.",
+    "retryPage": "Qayta urinish",
     "moduleHint": "Internet aloqasini tekshiring yoki yangi versiyani qayta yuklang.",
     "reload": "Qayta yuklash",
     "accountCreate": "Hisobni yaratib bo‘lmadi.",

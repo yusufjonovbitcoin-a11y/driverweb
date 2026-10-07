@@ -1,6 +1,12 @@
 const MESSAGE_COLUMNS = 'id,company_id,gmail_connection_id,provider_message_id,provider_thread_id,from_email,subject,received_at,raw_storage_path,status,error_message,created_at';
 const ATTACHMENT_COLUMNS = 'id,message_id,file_name,mime_type,size_bytes,created_at';
 const RELATION_PAGE_SIZE = 500;
+export const BROKER_INBOX_PAGE_SIZE = 100;
+
+export function brokerInboxCursor(rows) {
+  const last = rows.at(-1);
+  return last ? { receivedAt: last.received_at, id: last.id } : null;
+}
 
 async function readRelationPages(buildQuery) {
   const rows = [];
@@ -12,12 +18,26 @@ async function readRelationPages(buildQuery) {
   }
 }
 
-export async function fetchBrokerInboxRows(client) {
-  const { data: messages = [], error } = await client.from('broker_messages')
+export async function fetchBrokerInboxRows(client, before = null) {
+  let query = client.from('broker_messages')
     .select(MESSAGE_COLUMNS)
     .order('received_at', { ascending: false })
     .order('id', { ascending: false })
-    .limit(100);
+    .limit(BROKER_INBOX_PAGE_SIZE);
+  if (before) {
+    // Cursor values come from prior server rows, but validate before embedding
+    // them into PostgREST's filter syntax. Include id for equal timestamps.
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(before.id)
+      || !/^\d{4}-\d{2}-\d{2}T[\d:.]+(?:Z|[+-]\d{2}:\d{2})$/.test(before.receivedAt)
+      || !Number.isFinite(Date.parse(before.receivedAt))) {
+      throw new Error('Invalid inbox cursor');
+    }
+    // Preserve PostgreSQL microseconds; Date.toISOString() truncates them and
+    // would skip messages between the rounded timestamp and this boundary.
+    const at = before.receivedAt;
+    query = query.or(`received_at.lt.${at},and(received_at.eq.${at},id.lt.${before.id})`);
+  }
+  const { data: messages = [], error } = await query;
   if (error) throw error;
   if (!messages?.length) return [];
   const ids = messages.map((message) => message.id);

@@ -238,7 +238,7 @@ Deno.serve((request) => withCors(request, async () => {
           global: { headers: { Authorization: `Bearer ${auth.accessToken}` } },
         });
         if (scope === "chat") {
-          const { data: allowed } = await caller.rpc("can_access_chat_conversation", {
+          const { data: allowed } = await caller.rpc("can_write_chat_conversation", {
             target_conversation_id: contextId,
           });
           if (!allowed) return json({ error: "Chat media access denied" }, 403);

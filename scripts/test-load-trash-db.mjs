@@ -110,6 +110,15 @@ try {
   assert.match(deleted.stderr, /LOAD_TRASH_CONFLICT/);
   sql("select test_assert((select trashed_at is null and version=3 from loads where id='00000000-0000-0000-0000-000000000090'),'stale permanent deletion cannot delete concurrently restored load');");
   console.log('PASS: concurrent restore protects load from stale permanent deletion');
+  if (process.env.BACKEND_AUDIT_TEST === '1') {
+    await migration('202609240001_core_schema.sql', 'create or replace function public.create_load_draft(', 'create or replace function public.approve_load_draft(');
+    await migration('202609250004_ai_document_intelligence.sql', null, 'create or replace function public.apply_ai_import_metadata');
+    await migration('202609270002_semantic_warning_payloads.sql');
+    await migration('20261006221418_atomic_document_import_draft.sql');
+    await migration('20261006221743_durable_document_check_worker.sql', null, '-- Preserve the existing credential-safe synchronous transport.');
+    sql(await readFile(path.join(root, 'scripts/load-trash-test-fixtures/backend-audit-checks.sql'), 'utf8'));
+    console.log('PASS: atomic import rollback/retry, authorization and durable document check recovery');
+  }
   if (process.env.DRIVER_PAY_TEST === '1') {
     await migration('202610010004_update_company_driver_contact.sql');
     await migration('20261006110319_driver_mileage_pay.sql');
@@ -142,6 +151,50 @@ try {
     assert.match(routeRejected.stderr, /Load changed/);
     sql("select test_assert((select count(*)=1 from client_operations where operation_id='00000000-0000-0000-0000-000000000451'),'concurrent route retry commits exactly once');");
     console.log('PASS: concurrent route retry replays and stale mutation is rejected');
+    await migration('20261006180006_driver_rate_con_privacy.sql');
+    // Match PostgREST's STABLE RPC transaction mode, not psql's default write mode.
+    const driverRead = `begin read only; set local role authenticated;
+      set local "request.jwt.claim.sub"='00000000-0000-0000-0000-000000000003';`;
+    sql(`${driverRead} select test_error($$select * from get_driver_load_rows(
+      array['00000000-0000-0000-0000-000000000201'::uuid])$$,'read-only transaction'); rollback;`);
+    await migration('20261006184102_driver_load_rows_read_only_actor.sql');
+    sql(`${driverRead}
+      select test_assert((select count(*)=1 from get_driver_load_rows(
+        array['00000000-0000-0000-0000-000000000201'::uuid])), 'driver load RPC works in READ ONLY');
+      select test_assert(not exists(select 1 from get_driver_load_rows(
+        array['00000000-0000-0000-0000-000000000090'::uuid])), 'unassigned load remains inaccessible');
+      set local "request.jwt.claim.sub"='00000000-0000-0000-0000-000000000001';
+      select test_error($$select * from get_driver_load_rows('{}'::uuid[])$$,'Active driver required');
+      set local "request.jwt.claim.sub"='';
+      select test_error($$select * from get_driver_load_rows('{}'::uuid[])$$,'Active driver required');
+      rollback;`);
+    sql(await readFile(path.join(root, 'scripts/load-trash-test-fixtures/rate-con-privacy-checks.sql'), 'utf8'));
+    console.log('PASS: Rate Con privacy, staff/tenant guards, document access, analytics and reversible settings');
+    await migration('20261006193423_driver_document_stop_projection.sql');
+    sql(await readFile(path.join(root, 'scripts/load-trash-test-fixtures/document-stop-projection-checks.sql'), 'utf8'));
+    console.log('PASS: reviewed PDF stop projection, hidden prices, exact schedules and read-only RPC');
+    if (process.env.SECURITY_AUDIT_TEST === '1') {
+      // Restore real scoped policies omitted by the minimal operational harness.
+      await migration('202609240003_security_workers_and_views.sql',
+        'drop policy if exists assignments_company_read', 'drop policy if exists storage_company_read');
+      await migration('202609300001_driver_tracking.sql',
+        'alter table public.driver_tracking_sessions enable row level security', 'create function public.current_driver_tracking_assignment');
+      sql(`create function storage.foldername(text) returns text[] language sql immutable as $$
+        select (string_to_array($1,'/'))[1:array_length(string_to_array($1,'/'),1)-1] $$;
+        grant delete on storage.objects to authenticated;`);
+      await migration('202609250014_assigned_driver_document_delete.sql');
+      await migration('20261006221228_audit_auth_storage_privacy_hardening.sql');
+      sql(await readFile(path.join(root, 'scripts/load-trash-test-fixtures/security-audit-checks.sql'), 'utf8'));
+      console.log('PASS: security audit active-tenant reads, legacy completion denial, Storage retention and trash/privacy');
+      if (process.env.DOCUMENT_PRIVACY_TEST === '1') {
+        await migration('202609270002_semantic_warning_payloads.sql');
+        // Match production RLS and publication omitted by this focused harness.
+        sql('alter table document_checks enable row level security; create publication supabase_realtime;');
+        await migration('20261006223322_private_document_check_projection.sql');
+        sql(await readFile(path.join(root, 'scripts/load-trash-test-fixtures/document-check-privacy.sql'), 'utf8'));
+        console.log('PASS: historic check JSON protected in raw REST/view, safe status and realtime signal retained');
+      }
+    }
   }
 } finally {
   if (started) run('pg_ctl', ['-D', `${directory}/data`, '-m', 'fast', 'stop']);

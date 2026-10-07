@@ -8,7 +8,8 @@ import { sourcedExtractionSchema, decodeSourcedExtraction } from "../_shared/loa
 import { correctExtraction } from "../_shared/load-corrections.ts";
 import { reusableLoadImport } from "../_shared/load-import-cache.ts";
 import { issueLoadPreviewTicket, verifyLoadPreviewTicket } from "../_shared/load-preview-ticket.ts";
-import { EXTRA_DOCUMENT_FIELDS, EXTRA_DOCUMENT_PROPERTIES, EXTRA_STOP_FIELDS, EXTRA_STOP_PROPERTIES, DOCUMENT_EXTRACTION_VERSION, DOCUMENT_DETAIL_INSTRUCTIONS } from "../_shared/load-document-fields.ts";
+import { EXTRA_DOCUMENT_FIELDS, EXTRA_DOCUMENT_PROPERTIES, EXTRA_STOP_FIELDS, EXTRA_STOP_PROPERTIES, DOCUMENT_EXTRACTION_VERSION } from "../_shared/load-document-fields.ts";
+import { operationalExtractionSchemas, OPERATIONAL_EXTRACTION_SCOPE, OPERATIONAL_DOCUMENT_INSTRUCTIONS, OPERATIONAL_DOCUMENT_REQUEST } from '../_shared/load-operational-extraction.ts';
 
 const corsHeaders = {
   "Access-Control-Allow-Headers":
@@ -347,6 +348,7 @@ function outputText(payload: Record<string, unknown>) {
 }
 
 async function extractLoad(file: File, bytes: Uint8Array, apiKey: string, model: string): Promise<LoadExtraction> {
+  const compact = operationalExtractionSchemas(extractionSchema, stopSchema);
   const base64 = toBase64(bytes);
   const documentInput = file.type === "application/pdf"
     ? { type: "input_file", filename: safeFileName(file.name), file_data: `data:application/pdf;base64,${base64}` }
@@ -357,20 +359,21 @@ async function extractLoad(file: File, bytes: Uint8Array, apiKey: string, model:
     headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
     body: JSON.stringify({
       model, store: false,
-      instructions: DOCUMENT_DETAIL_INSTRUCTIONS,
-      input: [{ role: "user", content: [documentInput, { type: "input_text", text: 'Read the attached original document directly. No separately extracted text is supplied. Use the provided schema: scalar facts are {value,page,quote}; for absent facts set all three null. requirements and contractTerms are {value,page}: value is the FULL verbatim source text itself, so do NOT duplicate it in a quote. Include a page and short exact quote when visible, but never invent a citation. '
-        + 'Do not return a separate evidence list. stops contains ALL stops in printed travel order, including multiple pickups and deliveries; a multi-stop shipment is still singleLoad=true. Put date, booked time, opening hours and call-ahead/FCFS timingNote in separate fields. Keep clauses verbatim with every qualifier. Check the shipment number (not filename), rate, all stop roles, addresses, dates and missing instructions. documentReview.pageCount is the actual page count; allPagesRead must be false if any page was skipped or unreadable.' }] }],
-      text: { format: { type: "json_schema", name: "trucking_load_document", strict: true, schema: sourcedExtractionSchema(extractionSchema, stopSchema) } },
+      instructions: OPERATIONAL_DOCUMENT_INSTRUCTIONS,
+      input: [{ role: "user", content: [documentInput, { type: "input_text", text: OPERATIONAL_DOCUMENT_REQUEST }] }],
+      text: { format: { type: "json_schema", name: "trucking_dispatch_essentials", strict: true, schema: sourcedExtractionSchema(compact.document, compact.stop) } },
     }),
   }).catch(error => { if (error?.name === 'TimeoutError' || error?.name === 'AbortError') throw new Error('AI_DOCUMENT_TIMEOUT'); throw error; });
   const payload = await response.json().catch(() => ({}));
-  console.info(JSON.stringify({ event: "load_import_ai", model, durationMs: Math.round(performance.now() - started),
+  console.info(JSON.stringify({ event: "load_import_ai", model, scope: OPERATIONAL_EXTRACTION_SCOPE, durationMs: Math.round(performance.now() - started),
     status: response.status, inputTokens: payload.usage?.input_tokens, outputTokens: payload.usage?.output_tokens }));
   if (!response.ok) throw new Error(response.status === 429
     ? "AI limiti vaqtincha tugadi. Birozdan keyin qayta urinib ko'ring."
     : "AI hujjatni tahlil qila olmadi. Birozdan keyin qayta urinib ko'ring.");
   if (payload.status !== 'completed') throw new Error('AI javobi to‘liq kelmadi. Hujjat yuborishga tayyor deb belgilanmadi.');
   const candidate = decodeSourcedExtraction(JSON.parse(outputText(payload)));
+  // Server-owned and carried by the signed preview, never selected by the model/client.
+  candidate.extractionScope = OPERATIONAL_EXTRACTION_SCOPE;
   // This server-owned marker is included in the signed preview ticket. The
   // model's page/quote claims are displayed, never treated as PDF verification.
   if (file.type === 'application/pdf') candidate.extractionMode = 'ai_pdf_direct';
@@ -765,8 +768,16 @@ Deno.serve((request) => withCors(request, async () => {
     const snapshot = preparedSnapshot(file, checksum, verified);
     const { extracted, normalizedPickup, normalizedDelivery, normalizedStops,
       pickupCity, deliveryCity, loadNumber, driverBrief, requirements, missingFields } = snapshot;
+    const draft = {
+      load_number: loadNumber.replace(/^#/, ""),
+      broker_name: text(extracted.broker?.name), cargo_description: text(extracted.cargoDescription),
+      equipment_type: text(extracted.equipmentType), weight_lbs: integer(extracted.weightLbs),
+      broker_rate: number(extracted.brokerRate), loaded_miles: number(extracted.loadedMiles),
+      pickup: stopPayload(normalizedPickup), delivery: stopPayload(normalizedDelivery),
+      broker_message_id: typeof brokerMessageId === 'string' ? brokerMessageId : null,
+    };
     const { error: snapshotError } = upgradeExisting ? { error: null } : await adminClient.from('manual_load_imports').update({
-      raw_extraction: { candidate, audit }, extraction_schema_version: extractionVersion,
+      raw_extraction: { candidate, audit, draft }, extraction_schema_version: extractionVersion,
     }).eq('id', importId);
     if (snapshotError) return await fail('Hujjat tekshiruvini saqlab bo‘lmadi.', 500);
 
@@ -775,18 +786,10 @@ Deno.serve((request) => withCors(request, async () => {
     let documentVersionId: string | null = null;
     if (!loadId) {
       const { data: createdLoadId, error: createError } = await callerClient.rpc(
-        "create_load_draft",
+        "create_document_import_draft",
         {
-          load_number: loadNumber.replace(/^#/, ""),
-          broker_name: text(extracted.broker?.name),
-          cargo_description: text(extracted.cargoDescription),
-          equipment_type: text(extracted.equipmentType),
-          weight_lbs: integer(extracted.weightLbs),
-          broker_rate: number(extracted.brokerRate),
-          loaded_miles: number(extracted.loadedMiles),
-          pickup: stopPayload(normalizedPickup),
-          delivery: stopPayload(normalizedDelivery),
-          broker_message_id: typeof brokerMessageId === 'string' ? brokerMessageId : null,
+          target_import_id: importId,
+          expected_checksum: checksum,
         },
       );
       if (createError) return await fail(createError.code === '23505' ? 'LOAD_NUMBER_EXISTS' : createError.message, 409);

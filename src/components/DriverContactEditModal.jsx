@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { LoaderCircle, X } from 'lucide-react';
+import { Eye, EyeOff, LoaderCircle, X } from 'lucide-react';
 import { fetchDriverPaySettings, updateCompanyDriverContact } from '../services/operationsService';
 import { parseDriverMileageRate } from '../services/driverPay.js';
 
@@ -13,12 +13,14 @@ export default function DriverContactEditModal({ driver, onClose, onWorkspaceRef
   const [payLoaded, setPayLoaded] = useState(false);
   const [fixedPay, setFixedPay] = useState(false);
   const [mileageRate, setMileageRate] = useState('');
+  const [hideRateCon, setHideRateCon] = useState(false);
   useEffect(() => {
     let disposed = false;
-    fetchDriverPaySettings(driver.id).then(rate => {
+    fetchDriverPaySettings(driver.id).then(({ ratePerMile: rate, hideRateCon }) => {
       if (disposed) return;
       setFixedPay(rate != null);
       setMileageRate(rate == null ? '' : String(rate));
+      setHideRateCon(hideRateCon);
       setPayLoaded(true);
     }).catch(() => { if (!disposed) setError(t('driverPay.loadError')); });
     return () => { disposed = true; };
@@ -40,7 +42,7 @@ export default function DriverContactEditModal({ driver, onClose, onWorkspaceRef
     setSaving(true);
     setError('');
     try {
-      await updateCompanyDriverContact(driver.id, { name, phone, ratePerMile: rate });
+      await updateCompanyDriverContact(driver.id, { name, phone, ratePerMile: rate, hideRateCon });
       await onWorkspaceRefresh?.();
       onClose();
     } catch {
@@ -60,7 +62,7 @@ export default function DriverContactEditModal({ driver, onClose, onWorkspaceRef
           </div>
           <button type="button" onClick={onClose} disabled={saving} aria-label={t('common.close')} className="rounded-lg p-1 text-zinc-500 hover:bg-zinc-100 disabled:opacity-50 dark:hover:bg-zinc-800"><X className="h-5 w-5" /></button>
         </div>
-        <form onSubmit={save} className="space-y-4 p-5">
+        <form onSubmit={save} className="max-h-[80dvh] space-y-4 overflow-y-auto p-5">
           <label className="block text-xs font-semibold text-zinc-600 dark:text-zinc-300">{t('profile.fullName')}
             <input autoFocus value={name} onChange={(event) => setName(event.target.value)} required minLength={2} maxLength={120} className="mt-1 w-full rounded-lg border border-zinc-200 bg-white px-3 py-2.5 text-sm text-zinc-900 outline-none focus:border-teal-600 focus:ring-2 focus:ring-teal-600/20 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100" />
           </label>
@@ -83,6 +85,19 @@ export default function DriverContactEditModal({ driver, onClose, onWorkspaceRef
                 className="mt-1 w-full rounded-lg border border-zinc-200 bg-white px-3 py-2.5 text-sm dark:border-zinc-700 dark:bg-zinc-800" />
             </label>}
             <p className="text-xs leading-relaxed text-zinc-500 dark:text-zinc-400">{t('driverPay.hint')}</p>
+          </fieldset>
+          <fieldset disabled={!payLoaded || saving} className="space-y-2 rounded-xl border border-zinc-200 p-3 dark:border-zinc-700">
+            <legend className="px-1 text-sm font-semibold">{t('driverPrivacy.title')}</legend>
+            <button type="button" role="switch" aria-checked={hideRateCon}
+              aria-describedby="driver-privacy-hint" onClick={() => setHideRateCon(value => !value)}
+              className="flex w-full items-center gap-3 rounded-lg bg-zinc-50 px-3 py-3 text-left text-sm font-semibold disabled:opacity-50 dark:bg-zinc-800">
+              {hideRateCon ? <EyeOff className="h-5 w-5 shrink-0 text-teal-600" /> : <Eye className="h-5 w-5 shrink-0" />}
+              <span className="flex-1">{t('driverPrivacy.hide')}</span>
+              <span className={`h-6 w-10 shrink-0 rounded-full p-1 ${hideRateCon ? 'bg-teal-700' : 'bg-zinc-400'}`} aria-hidden="true">
+                <span className={`block h-4 w-4 rounded-full bg-white transition-transform ${hideRateCon ? 'translate-x-4' : ''}`} />
+              </span>
+            </button>
+            <p id="driver-privacy-hint" className="text-xs leading-relaxed text-zinc-500 dark:text-zinc-400">{t('driverPrivacy.hint')}</p>
           </fieldset>
           {error && <p role="alert" className="text-xs text-red-600 dark:text-red-400">{error}</p>}
           <div className="flex justify-end gap-2 border-t border-zinc-100 pt-4 dark:border-zinc-800">

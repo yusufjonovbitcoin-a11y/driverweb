@@ -1,0 +1,286 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#10213b">
+  <meta name="description" content="Read the T Fleets mobile app privacy policy, including information about account data, location, communications, and privacy requests.">
+  <meta name="robots" content="noindex, nofollow">
+  <title>Privacy Policy — T Fleets</title>
+  <link rel="canonical" href="https://managefleets.com/privacy">
+  <style>
+    :root { color-scheme: light; --ink:#10213b; --body:#4d5c70; --blue:#235ee8; --line:#e3e9f1; --soft:#f6f8fc; --muted:#647389; --radius:16px; }
+    *, *::before, *::after { box-sizing:border-box; }
+    [hidden] { display:none !important; }
+    html { scroll-behavior:smooth; scroll-padding-top:36px; }
+    body { margin:0; background:#fff; color:var(--body); font-family:Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; font-size:16px; line-height:1.75; -webkit-font-smoothing:antialiased; }
+    a { color:var(--blue); text-decoration-thickness:1px; text-underline-offset:4px; }
+    a:hover { text-decoration-thickness:2px; }
+    a:focus-visible, button:focus-visible, summary:focus-visible { outline:3px solid var(--blue); outline-offset:5px; border-radius:3px; }
+    button, summary { -webkit-tap-highlight-color:transparent; }
+    svg { display:block; }
+    .wrap { width:min(1184px, calc(100% - 96px)); margin-inline:auto; }
+    .skip-link { position:fixed; z-index:20; top:12px; left:12px; padding:10px 18px; background:var(--ink); color:#fff; transform:translateY(-160%); }
+    .skip-link:focus { transform:translateY(0); }
+    .site-header { border-bottom:1px solid var(--line); }
+    .header-row { min-height:88px; display:flex; align-items:center; justify-content:space-between; gap:24px; }
+    .brand { display:inline-flex; align-items:center; gap:12px; color:var(--ink); font-size:22px; font-weight:760; letter-spacing:-.9px; text-decoration:none; }
+    .brand-mark { width:36px; height:36px; }
+    .header-label { display:flex; align-items:center; gap:9px; color:var(--muted); font-size:12px; font-weight:650; letter-spacing:.1em; text-transform:uppercase; }
+    .header-label svg { width:15px; height:17px; color:var(--blue); }
+    .hero { position:relative; padding:73px 0 59px; border-bottom:1px solid var(--line); overflow:hidden; }
+    .hero::after { content:""; position:absolute; z-index:-1; width:340px; height:340px; right:-190px; top:-140px; border:64px solid #f1f5fd; border-radius:50%; }
+    .eyebrow { display:flex; align-items:center; gap:10px; margin:0 0 18px; color:var(--blue); font-size:11px; font-weight:750; text-transform:uppercase; letter-spacing:.18em; }
+    .eyebrow::before { content:""; width:24px; height:2px; background:currentColor; }
+    h1, h2, h3 { color:var(--ink); }
+    h1 { margin:0; font-size:clamp(44px, 5.3vw, 66px); line-height:1.08; font-weight:730; letter-spacing:-3px; }
+    .hero-description { max-width:620px; margin:23px 0 0; font-size:18px; line-height:1.7; }
+    .hero-meta { display:flex; flex-wrap:wrap; gap:12px 24px; margin-top:30px; color:var(--muted); font-size:12px; }
+    .hero-meta span { display:inline-flex; align-items:center; gap:8px; }
+    .meta-dot { width:5px; height:5px; background:#9aa8b9; border-radius:50%; }
+    .draft-notice { display:flex; align-items:flex-start; gap:15px; margin-top:28px; padding:19px 22px; border:1px solid #ecd6a5; border-radius:12px; background:#fffbf2; color:#735321; font-size:13px; line-height:1.65; }
+    .draft-notice svg { flex:none; width:19px; height:19px; margin-top:2px; }
+    .draft-notice strong { display:block; color:#61461c; font-size:13px; margin-bottom:3px; }
+    .draft-notice p { margin:0; }
+    .layout { display:grid; grid-template-columns:230px minmax(0, 1fr); gap:77px; padding-top:58px; padding-bottom:90px; align-items:start; }
+    .sidebar { position:sticky; top:32px; }
+    .nav-heading { margin:0 0 18px; font-size:10px; font-weight:750; color:var(--muted); text-transform:uppercase; letter-spacing:.15em; }
+    .toc { list-style:none; padding:0; margin:0; border-left:1px solid var(--line); }
+    .toc li { margin:0; }
+    .toc a { display:flex; align-items:baseline; gap:11px; position:relative; padding:9px 0 9px 17px; color:var(--muted); font-size:12px; line-height:1.4; text-decoration:none; }
+    .toc a:hover, .toc a[aria-current="location"] { color:var(--blue); }
+    .toc a[aria-current="location"] { font-weight:650; }
+    .toc a[aria-current="location"]::before { content:""; position:absolute; left:-1px; inset-block:4px; width:2px; background:var(--blue); }
+    .toc-number { font-size:10px; font-variant-numeric:tabular-nums; opacity:.75; }
+    .sidebar-note { margin-top:30px; padding-top:22px; border-top:1px solid var(--line); font-size:12px; line-height:1.65; color:var(--muted); }
+    .sidebar-note p { margin:0 0 9px; }
+    .mobile-contents { display:none; }
+    .intro-card { padding:27px 30px; background:var(--soft); border:1px solid var(--line); border-radius:var(--radius); margin-bottom:46px; }
+    .intro-card-heading { display:flex; align-items:center; gap:10px; }
+    .intro-card-heading svg { height:20px; width:20px; color:var(--blue); flex:none; }
+    .intro-card h2 { margin:0; font-size:17px; letter-spacing:-.3px; }
+    .intro-card p { margin:11px 0 0; font-size:14px; line-height:1.8; }
+    .policy-section { padding:0 0 35px; margin:0 0 35px; border-bottom:1px solid var(--line); scroll-margin-top:30px; }
+    .section-heading { display:flex; align-items:baseline; gap:15px; margin:0 0 18px; }
+    .section-number { flex:none; color:var(--blue); font-size:12px; font-weight:650; font-variant-numeric:tabular-nums; }
+    .section-heading h2 { margin:0; font-size:25px; line-height:1.35; letter-spacing:-.65px; font-weight:700; }
+    .policy-section p { margin:0 0 16px; font-size:14px; line-height:1.85; }
+    .policy-section p:last-child { margin-bottom:0; }
+    .policy-section h3 { margin:23px 0 7px; font-size:14px; font-weight:700; }
+    .policy-section ul { padding-left:21px; margin:14px 0 19px; font-size:14px; }
+    .policy-section li { padding-left:5px; margin:9px 0; line-height:1.8; }
+    .policy-section li::marker { color:#92a1b7; }
+    .policy-section strong { color:var(--ink); font-weight:650; }
+    .review-note { display:block; margin-top:20px; padding:12px 15px; border-left:2px solid #d4ae58; background:#fffbf2; color:#7b602e; font-size:12px; line-height:1.7; }
+    .review-note strong { color:#735321; }
+    .data-list { margin:23px 0; border-top:1px solid var(--line); }
+    .data-row { display:grid; grid-template-columns:150px 1fr; gap:24px; padding:17px 0; border-bottom:1px solid var(--line); }
+    .data-row dt { font-size:13px; color:var(--ink); font-weight:650; }
+    .data-row dd { margin:0; font-size:13px; line-height:1.8; }
+    .location-note { display:flex; gap:13px; padding:18px 20px; margin:22px 0; border-radius:10px; background:#f1f5ff; color:#3e567c; }
+    .location-note svg { flex:none; width:19px; height:19px; color:var(--blue); margin-top:3px; }
+    .location-note p { margin:0; font-size:13px; }
+    .contact-card { padding:29px 30px; border:1px solid #d9e3f7; border-radius:var(--radius); background:linear-gradient(120deg, #f5f8ff 0%, #fff 100%); }
+    .contact-card .section-heading { margin-bottom:13px; }
+    .contact-card p { font-size:14px; margin:0 0 14px; }
+    .contact-card .review-note { margin-bottom:0; }
+    .policy-end { display:flex; justify-content:space-between; gap:20px; padding-top:27px; font-size:11px; color:var(--muted); }
+    .back-top { display:inline-flex; align-items:center; gap:7px; text-decoration:none; white-space:nowrap; }
+    .back-top svg { width:13px; height:13px; }
+    .site-footer { border-top:1px solid var(--line); background:#fafbfd; }
+    .footer-row { min-height:97px; display:flex; justify-content:space-between; align-items:center; gap:24px; }
+    .footer-brand { font-size:17px; letter-spacing:-.6px; font-weight:750; color:var(--ink); }
+    .footer-copy { font-size:11px; color:var(--muted); }
+    .footer-right { display:flex; align-items:center; gap:18px; font-size:11px; }
+    .footer-right span { color:var(--ink); }
+    .print-button { display:inline-flex; align-items:center; gap:7px; border:0; padding:5px 0; background:none; color:var(--muted); font:inherit; cursor:pointer; }
+    .print-button svg { width:14px; height:14px; }
+    .print-button:hover { color:var(--blue); }
+    @media (min-width:1500px) { .wrap { width:min(1220px, calc(100% - 120px)); } .layout { grid-template-columns:245px minmax(0, 1fr); gap:100px; } }
+    @media (max-width:1000px) { .wrap { width:calc(100% - 64px); } .layout { grid-template-columns:190px minmax(0, 1fr); gap:40px; } .toc a { font-size:11px; } .data-row { grid-template-columns:125px 1fr; gap:18px; } }
+    @media (max-width:760px) {
+      .wrap { width:calc(100% - 40px); } .header-row { min-height:73px; } .brand { font-size:20px; gap:10px; } .brand-mark { width:32px; height:32px; } .header-label { font-size:9px; letter-spacing:.08em; }
+      .hero { padding:45px 0 35px; } h1 { font-size:46px; letter-spacing:-2px; } .hero-description { font-size:16px; margin-top:18px; } .hero-meta { margin-top:23px; font-size:11px; gap:10px 17px; }
+      .draft-notice { margin-top:24px; padding:16px; gap:12px; font-size:12px; } .draft-notice strong { font-size:12px; }
+      .layout { display:block; padding:27px 0 48px; } .sidebar { display:none; } .mobile-contents { display:block; margin-bottom:27px; border:1px solid var(--line); border-radius:10px; background:#fff; }
+      .mobile-contents summary { padding:15px 17px; font-size:12px; font-weight:650; color:var(--ink); cursor:pointer; } .mobile-contents nav { padding:0 17px 16px; } .mobile-contents .toc a { font-size:12px; padding-block:10px; }
+      .intro-card { padding:21px; margin-bottom:34px; } .intro-card h2 { font-size:16px; } .intro-card p { font-size:13px; }
+      .policy-section { margin-bottom:28px; padding-bottom:28px; } .section-heading { gap:12px; margin-bottom:15px; } .section-heading h2 { font-size:22px; letter-spacing:-.4px; } .section-number { font-size:11px; } .policy-section p, .policy-section ul { font-size:13px; }
+      .data-row { grid-template-columns:1fr; gap:5px; padding:15px 0; } .location-note { padding:16px; gap:11px; } .contact-card { padding:22px; } .contact-card p { font-size:13px; }
+      .policy-end { font-size:10px; } .footer-row { flex-wrap:wrap; padding-block:26px; gap:15px; } .footer-right { gap:15px; } .footer-copy { font-size:10px; }
+    }
+    @media (max-width:360px) { .header-label { font-size:8px; gap:5px; } .header-label svg { width:12px; } h1 { font-size:40px; } .wrap { width:calc(100% - 32px); } }
+    @media (prefers-reduced-motion:reduce) { html { scroll-behavior:auto; } }
+    @media print {
+      @page { margin:18mm; }
+      body { color:#222; font-size:10pt; } .wrap { width:100%; } .skip-link, .sidebar, .mobile-contents, .print-button, .back-top, .header-label { display:none !important; }
+      .header-row { min-height:50px; } .hero { padding:26px 0; } .hero::after { display:none; } h1 { font-size:32pt; } .hero-description { font-size:12pt; }
+      .layout { display:block; padding:25px 0; } .intro-card, .contact-card, .location-note, .draft-notice { background:#fff; } .draft-notice { border-color:#999; }
+      .policy-section { margin-bottom:20px; padding-bottom:20px; } .section-heading, h3 { break-after:avoid; } .policy-section p, .policy-section ul { font-size:10pt; } p, li { orphans:3; widows:3; }
+      .section-heading h2 { font-size:17pt; } a { color:#222; } .review-note { border-color:#888; background:#fff; } .footer-row { min-height:50px; } .site-footer { background:#fff; }
+    }
+  </style>
+</head>
+<body id="top">
+  <a class="skip-link" href="#policy">Skip to privacy policy</a>
+  <header class="site-header">
+    <div class="wrap header-row">
+      <a class="brand" href="#top" aria-label="T Fleets privacy policy, back to top">
+        <svg class="brand-mark" viewBox="0 0 36 36" fill="none" aria-hidden="true"><rect width="36" height="36" rx="10" fill="#235ee8"/><path d="M9 10h20l-3 6h-6v12h-6V16H6l3-6Z" fill="white"/><path d="m22 19 5-1-5 10v-9Z" fill="#92b5ff"/></svg>
+        <span>T Fleets<span style="color:var(--blue)">.</span></span>
+      </a>
+      <div class="header-label"><svg viewBox="0 0 20 22" fill="none" aria-hidden="true"><path d="m10 2 7 3v6c0 4-4.3 7.4-7 9-2.7-1.6-7-5-7-9V5l7-3Z" stroke="currentColor" stroke-width="1.6"/><path d="m6.5 10.5 2.2 2.2 4.8-4.8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>Privacy &amp; transparency</div>
+    </div>
+  </header>
+  <main>
+    <div class="hero">
+      <div class="wrap">
+        <p class="eyebrow">T Fleets mobile app</p>
+        <h1>Privacy Policy</h1>
+        <p class="hero-description">A clear view of the information behind your trips, your communications, and your account.</p>
+        <div class="hero-meta"><span><i class="meta-dot" aria-hidden="true"></i>English</span><span><i class="meta-dot" aria-hidden="true"></i>Draft for review</span><span><i class="meta-dot" aria-hidden="true"></i>Effective date: pending verification</span></div>
+        <aside class="draft-notice" aria-label="Draft policy notice">
+          <svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="m10 2 8 15H2L10 2Z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M10 7v4m0 3v.1" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
+          <div><strong>Draft — operator and contact details require verification.</strong><p>This page is prepared for review. The operator, privacy contact, effective date, and details marked below must be confirmed before this policy is published as final.</p></div>
+        </aside>
+      </div>
+    </div>
+    <div class="wrap layout">
+      <aside class="sidebar" aria-label="Privacy policy navigation">
+        <p class="nav-heading">On this page</p>
+        <nav aria-label="Table of contents"><ol class="toc">
+          <li><a href="#about"><span class="toc-number">01</span>About this policy</a></li>
+          <li><a href="#information"><span class="toc-number">02</span>Information we handle</a></li>
+          <li><a href="#use"><span class="toc-number">03</span>How information is used</a></li>
+          <li><a href="#location"><span class="toc-number">04</span>Location &amp; permissions</a></li>
+          <li><a href="#sharing"><span class="toc-number">05</span>Sharing &amp; providers</a></li>
+          <li><a href="#retention"><span class="toc-number">06</span>Storage &amp; retention</a></li>
+          <li><a href="#choices"><span class="toc-number">07</span>Your choices &amp; rights</a></li>
+          <li><a href="#security"><span class="toc-number">08</span>Security</a></li>
+          <li><a href="#updates"><span class="toc-number">09</span>Policy updates</a></li>
+          <li><a href="#contact"><span class="toc-number">10</span>Contact &amp; requests</a></li>
+        </ol></nav>
+        <div class="sidebar-note"><p>Looking for something specific?</p><a href="#contact">Privacy questions <span aria-hidden="true">↗</span></a></div>
+      </aside>
+      <div class="policy-content" id="policy" tabindex="-1">
+        <details class="mobile-contents"><summary>On this page · 10 sections</summary><nav aria-label="Mobile table of contents"><ol class="toc">
+          <li><a href="#about"><span class="toc-number">01</span>About this policy</a></li><li><a href="#information"><span class="toc-number">02</span>Information we handle</a></li><li><a href="#use"><span class="toc-number">03</span>How information is used</a></li><li><a href="#location"><span class="toc-number">04</span>Location &amp; permissions</a></li><li><a href="#sharing"><span class="toc-number">05</span>Sharing &amp; providers</a></li><li><a href="#retention"><span class="toc-number">06</span>Storage &amp; retention</a></li><li><a href="#choices"><span class="toc-number">07</span>Your choices &amp; rights</a></li><li><a href="#security"><span class="toc-number">08</span>Security</a></li><li><a href="#updates"><span class="toc-number">09</span>Policy updates</a></li><li><a href="#contact"><span class="toc-number">10</span>Contact &amp; requests</a></li>
+        </ol></nav></details>
+        <div class="intro-card">
+          <div class="intro-card-heading"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M8 3h8l4 4v14H4V3h4Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M15 3v5h5M8 12h8M8 16h6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg><h2>Privacy, in context</h2></div>
+          <p>T Fleets connects drivers with their fleet operations. This policy is intended to explain how information relates to accounts, assigned loads, trip location, and communications, and where to direct privacy requests.</p>
+        </div>
+        <section class="policy-section" id="about" aria-labelledby="about-title">
+          <div class="section-heading"><span class="section-number">01</span><h2 id="about-title">About this policy</h2></div>
+          <p>This policy covers the T Fleets mobile application and the information processed in connection with its driver and fleet features. References to “we,” “us,” and “our” will refer to the verified operator of T Fleets.</p>
+          <p>If you use T Fleets through a fleet or employer, that organization may also determine how your work-related information is used. Ask your fleet contact about its own privacy practices and policies.</p>
+          <aside class="review-note"><strong>To be verified:</strong> operator’s full legal name, address, responsibilities, intended users, and applicable regions.</aside>
+        </section>
+        <section class="policy-section" id="information" aria-labelledby="information-title">
+          <div class="section-heading"><span class="section-number">02</span><h2 id="information-title">Information we handle</h2></div>
+          <p>The mobile app processes information you provide, information associated with your fleet work, and information generated when you use its features.</p>
+          <dl class="data-list">
+            <div class="data-row"><dt>Account &amp; profile</dt><dd>Account identifiers, sign-in and contact information, company associations, driver license or CDL information, and vehicle details such as VIN and license plate.</dd></div>
+            <div class="data-row"><dt>Assigned loads</dt><dd>Load assignments, pickup and delivery details, trip status, and operational records associated with a driver’s work.</dd></div>
+            <div class="data-row"><dt>Location</dt><dd>Driver presence and route points, including coordinates, timestamps, and available heading, speed, or accuracy information. See the separate foreground and background uses below.</dd></div>
+            <div class="data-row"><dt>Messages &amp; calls</dt><dd>Chat messages, shared images and files, voice messages, and signaling information used to establish real-time audio or video calls.</dd></div>
+            <div class="data-row"><dt>Documents &amp; media</dt><dd>Photos, bills of lading (BOL), proof of delivery (POD), receipts, and driver credentials you upload, including optional medical certificates. These files may contain personal or sensitive information.</dd></div>
+            <div class="data-row"><dt>AI feature inputs</dt><dd>Driver questions, relevant current-load context, recent conversation history, and uploaded load documents when AI features are used.</dd></div>
+            <div class="data-row"><dt>Device &amp; local data</dt><dd>Notification tokens and app session information, together with on-device caches for loads, chat, unsent messages, and queued location updates.</dd></div>
+          </dl>
+          <p>Upload only information appropriate for your fleet work and authorized for sharing. Documents and messages can contain information about other people.</p>
+        </section>
+        <section class="policy-section" id="use" aria-labelledby="use-title">
+          <div class="section-heading"><span class="section-number">03</span><h2 id="use-title">How information is used</h2></div>
+          <p>Information processed by the app supports its fleet operations features, including:</p>
+          <ul><li>Providing account access and connecting drivers to their organization.</li><li>Displaying assigned loads and coordinating pickup, delivery, and trip progress.</li><li>Supporting driver presence, route tracking, maps, and destination navigation.</li><li>Delivering work-related messages, shared media, audio or video calls, and notifications.</li><li>Extracting information from load documents and providing AI-assisted answers when those features are used.</li><li>Supporting offline work and synchronizing queued information when connectivity returns.</li></ul>
+          <aside class="review-note"><strong>To be verified:</strong> the purposes actually used by the operator and any applicable legal bases for processing.</aside>
+        </section>
+        <section class="policy-section" id="location" aria-labelledby="location-title">
+          <div class="section-heading"><span class="section-number">04</span><h2 id="location-title">Location &amp; permissions</h2></div>
+          <p>T Fleets uses location for two related purposes, subject to device permissions:</p>
+          <h3>Driver presence while the app is open</h3>
+          <p>For a signed-in driver, the app can update driver presence while in the foreground. These updates may occur even when the driver does not have an active load.</p>
+          <h3>Background tracking during an active assignment</h3>
+          <p>For an active assignment, route tracking can continue while the app is in the background. Route points include timestamps, coordinates, and available heading, speed, and accuracy information. Points collected without a connection can be queued on the device and synchronized later.</p>
+          <div class="location-note"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M19 10c0 5-7 11-7 11S5 15 5 10a7 7 0 1 1 14 0Z" stroke="currentColor" stroke-width="1.6"/><circle cx="12" cy="10" r="2.5" stroke="currentColor" stroke-width="1.6"/></svg><p><strong>Your device permissions matter.</strong> You can review or change location access in your device settings. Limiting access may affect trip tracking and other location-dependent features.</p></div>
+          <p>Camera, photo library, microphone, or notification access may be requested when you use the related features. Permissions can be managed through your device settings. If you open Apple Maps or Google Maps for navigation, the selected destination is passed to that service.</p>
+        </section>
+        <section class="policy-section" id="sharing" aria-labelledby="sharing-title">
+          <div class="section-heading"><span class="section-number">05</span><h2 id="sharing-title">Sharing &amp; service providers</h2></div>
+          <p>Work-related information may be available to authorized people in your fleet, such as dispatchers or administrators, depending on their permissions and the app’s features.</p>
+          <p>The mobile app and its supporting services use the following providers:</p>
+          <dl class="data-list">
+            <div class="data-row"><dt>Supabase</dt><dd>Authentication, backend records, real-time updates, and storage of chat media.</dd></div>
+            <div class="data-row"><dt>Cloudinary</dt><dd>Hosting and delivery of uploaded profile media and driver documents.</dd></div>
+            <div class="data-row"><dt>Mapbox</dt><dd>Maps, routes, and geocoding. Location and destination information is processed as needed for these features.</dd></div>
+            <div class="data-row"><dt>Google &amp; Apple</dt><dd>Firebase Cloud Messaging and Apple push services deliver app notifications. Apple Maps or Google Maps may receive a selected destination if you choose external navigation.</dd></div>
+            <div class="data-row"><dt>OpenAI</dt><dd>Relevant load context, driver questions and recent history, and uploaded load documents are sent for processing when AI features run.</dd></div>
+          </dl>
+          <h3>Communications and AI</h3>
+          <p>Audio and video calling uses WebRTC with signaling information handled by the service. Voice messages are stored as part of messaging features. AI processing depends on the feature you use and the information included in your questions or documents.</p>
+          <aside class="review-note"><strong>To be verified:</strong> provider arrangements and processing locations, international transfers, any additional disclosures, and the operator’s commercial data practices. This draft does not make promises about provider retention or AI training.</aside>
+        </section>
+        <section class="policy-section" id="retention" aria-labelledby="retention-title">
+          <div class="section-heading"><span class="section-number">06</span><h2 id="retention-title">Storage &amp; retention</h2></div>
+          <p>Information may be held in backend systems, media storage, and local app storage. The device stores session information and caches for loads, chat, unsent messages, and queued location updates to support sign-in and offline features.</p>
+          <p>The final policy will explain how long account, trip, location, message, and media records are retained, and the criteria used to determine those periods.</p>
+          <p>Retention can depend on the purpose of a record, the fleet’s operational requirements, and applicable obligations. Account closure may not remove every operational record immediately.</p>
+          <aside class="review-note"><strong>To be verified:</strong> retention schedules, backups, deletion handling, legal requirements, and the operator’s actual account-closure process. No retention period has been confirmed for this draft.</aside>
+        </section>
+        <section class="policy-section" id="choices" aria-labelledby="choices-title">
+          <div class="section-heading"><span class="section-number">07</span><h2 id="choices-title">Your choices &amp; rights</h2></div>
+          <p>You can manage the app’s permissions in your device settings. Your fleet contact may be able to help with corrections to work-related information.</p>
+          <p>Depending on your location and the applicable law, you may have rights to request access, correction, deletion, or a copy of your personal information, or to object to or restrict certain processing.</p>
+          <h3>Account and data deletion</h3>
+          <p>The final policy will provide a verified way to request account and personal-data deletion and explain any information that must be retained. Requests may require identity verification.</p>
+          <aside class="review-note"><strong>To be verified:</strong> an accessible request channel, in-app deletion availability, who handles fleet-controlled records, applicable rights, and response procedures.</aside>
+        </section>
+        <section class="policy-section" id="security" aria-labelledby="security-title">
+          <div class="section-heading"><span class="section-number">08</span><h2 id="security-title">Security</h2></div>
+          <p>The final policy should describe safeguards that the operator has verified and maintains for personal information. No method of electronic transmission or storage can be guaranteed to be completely secure.</p>
+          <p>Keep your sign-in credentials private and contact the operator if you believe your account has been accessed without authorization.</p>
+          <aside class="review-note"><strong>To be verified:</strong> implemented technical and organizational safeguards. This draft makes no claim of end-to-end encryption or certification.</aside>
+        </section>
+        <section class="policy-section" id="updates" aria-labelledby="updates-title">
+          <div class="section-heading"><span class="section-number">09</span><h2 id="updates-title">Policy updates</h2></div>
+          <p>This page may be updated to reflect changes in the app or its information practices. The final policy will display its effective date and describe how material changes are communicated where required.</p>
+          <aside class="review-note"><strong>To be verified:</strong> effective date and the operator’s process for notifying users of changes.</aside>
+        </section>
+        <section class="contact-card" id="contact" aria-labelledby="contact-title">
+          <div class="section-heading"><span class="section-number">10</span><h2 id="contact-title">Contact &amp; privacy requests</h2></div>
+          <p>A verified privacy contact for the T Fleets operator will be provided here. It will be the point of contact for questions about this policy and requests concerning personal information.</p>
+          <aside class="review-note"><strong>Contact details pending verification.</strong> Add the operator’s legal name and a monitored privacy email or request form before using this page as the final public Privacy Policy URL.</aside>
+        </section>
+        <div class="policy-end"><span>T Fleets · Privacy Policy · Draft</span><a class="back-top" href="#top">Back to top<svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M8 13V3M4 7l4-4 4 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></a></div>
+      </div>
+    </div>
+  </main>
+  <footer class="site-footer"><div class="wrap footer-row"><div><div class="footer-brand">T Fleets<span style="color:var(--blue)">.</span></div><div class="footer-copy">Driver &amp; fleet operations</div></div><div class="footer-right"><span>Privacy Policy</span><a href="https://managefleets.com/support">Support</a><button class="print-button" type="button" id="print-policy" hidden><svg viewBox="0 0 18 18" fill="none" aria-hidden="true"><path d="M5 6V2h8v4M5 13H2V6h14v7h-3M5 10h8v6H5v-6Z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg>Print policy</button></div></div></footer>
+  <script>
+    (() => {
+      const printButton = document.getElementById('print-policy');
+      printButton.hidden = false;
+      printButton.addEventListener('click', () => window.print());
+      const links = [...document.querySelectorAll('.sidebar .toc a')];
+      const sections = links.map(link => document.querySelector(link.getAttribute('href')));
+      if ('IntersectionObserver' in window) {
+        const visibleSections = new Set();
+        const observer = new IntersectionObserver(entries => {
+          for (const entry of entries) {
+            if (entry.isIntersecting) visibleSections.add(entry.target);
+            else visibleSections.delete(entry.target);
+          }
+          const current = sections.find(section => visibleSections.has(section));
+          if (!current) return;
+          for (const link of links) {
+            if (link.getAttribute('href') === '#' + current.id) link.setAttribute('aria-current', 'location');
+            else link.removeAttribute('aria-current');
+          }
+        }, { rootMargin: '-5% 0px -55% 0px', threshold: 0 });
+        sections.forEach(section => observer.observe(section));
+      }
+    })();
+  </script>
+</body>
+</html>

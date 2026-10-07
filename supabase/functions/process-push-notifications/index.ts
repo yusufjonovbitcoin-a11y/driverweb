@@ -153,15 +153,16 @@ Deno.serve((request) =>
       deadlineAt,
       process: async (delivery) => {
         try {
-          const [leaseResult, notificationResult] = await Promise.all([
+          const [leaseResult, notificationResult, chatSafety] = await Promise.all([
             admin.from("push_deliveries").select("status,locked_by")
               .eq("notification_id", delivery.notification_id).eq("device_id", delivery.device_id)
               .eq("company_id", delivery.company_id).maybeSingle(),
             admin.from("notifications").select("type,title,body,chat_message_id")
               .eq("id", delivery.notification_id).eq("company_id", delivery.company_id)
               .eq("recipient_id", delivery.recipient_id).maybeSingle(),
+            admin.rpc("chat_push_delivery_allowed", { p_notification_id: delivery.notification_id }),
           ]);
-          if (leaseResult.error || notificationResult.error) throw new Error("Push eligibility lookup failed");
+          if (leaseResult.error || notificationResult.error || chatSafety.error) throw new Error("Push eligibility lookup failed");
           const notification = notificationResult.data;
           let message = null;
           if (notification?.chat_message_id) {
@@ -170,7 +171,7 @@ Deno.serve((request) =>
             if (current.error) throw new Error("Chat push eligibility lookup failed");
             message = current.data;
           }
-          if (!shouldSendPush({ workerId, lease: leaseResult.data, notification, message })) {
+          if (chatSafety.data !== true || !shouldSendPush({ workerId, lease: leaseResult.data, notification, message })) {
             // A concurrent delete may already have cancelled/released the lease.
             const { error } = await admin.from("push_deliveries")
               .update({ status: "cancelled", locked_by: null, locked_at: null,

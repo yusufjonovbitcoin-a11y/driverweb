@@ -3,6 +3,7 @@
 import { validMapCoordinate } from './mapboxMapModel.js';
 import { validPhone } from '../../supabase/functions/_shared/load-enrichment.ts';
 import { streetAddressWithoutAppointmentCode } from '../../supabase/functions/_shared/load-stop-address.ts';
+import { OPERATIONAL_EXTRACTION_SCOPE } from '../../supabase/functions/_shared/load-operational-extraction.ts';
 
 export function importedMapState(details, driver) {
   const addressBlocked = details.blockingFields.some(key => /^(pickup|delivery|stops\.\d+)\.(addressLine|city|region|postalCode)$/.test(key));
@@ -45,6 +46,7 @@ export function buildImportedLoad(load = {}) {
   const rate = load.rateKnown === false || unknown.has('brokerRate') ? null : load.documentDetails ? get('brokerRate') : load.rate ?? null;
   const distance = load.distanceKnown === false || unknown.has('loadedMiles') ? null : load.documentDetails ? get('loadedMiles') : load.distanceMiles ?? null;
   return {
+    operationalOnly: snapshot?.extractionScope === OPERATIONAL_EXTRACTION_SCOPE,
     aiDirect: load.review?.method === 'ai_pdf_direct',
     issues: load.review?.issues || [],
     number: get('loadNumber', load.loadNumber),

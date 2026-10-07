@@ -7,9 +7,10 @@ export function createChatRecovery({ load, onState, timeoutMs = 20000, retryDela
   let retryTimer;
   let cancelAttempt;
   let failures = 0;
+  let queued = false;
   function run(automatic = false) {
     if (closed) return Promise.resolve();
-    if (pending) return pending;
+    if (pending) { queued = true; return pending; }
     clearTimeout(retryTimer);
     if (!automatic) failures = 0;
     const token = ++generation;
@@ -28,7 +29,12 @@ export function createChatRecovery({ load, onState, timeoutMs = 20000, retryDela
         onState({ loading: false, error });
         if (failures < retryDelays.length) retryTimer = setTimeout(() => { void run(true); }, retryDelays[failures++]);
       })
-      .finally(() => { clearTimeout(timeout); pending = null; cancelAttempt = null; });
+      .finally(() => {
+        clearTimeout(timeout); pending = null; cancelAttempt = null;
+        // A SUBSCRIBED/focus event after the HTTP snapshot needs a new read,
+        // not just the same pending promise. Coalesce the burst to one rerun.
+        if (queued && !closed) { queued = false; return run(); }
+      });
     return pending;
   }
   return { run: () => run(), dispose() { closed = true; generation++; clearTimeout(retryTimer); cancelAttempt?.(); } };

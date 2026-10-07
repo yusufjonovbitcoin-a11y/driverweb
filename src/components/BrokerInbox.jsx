@@ -11,6 +11,7 @@ import { localizedError } from '../i18n/errors';
 import { useWorkspaceQuery, useWorkspaceView } from '../hooks/WorkspaceCache';
 import { supabase } from '../lib/supabase';
 import { createCoalescedAsyncTrigger } from '../services/realtimeRefresh';
+import { BROKER_INBOX_PAGE_SIZE, brokerInboxCursor } from '../services/brokerInboxQueries';
 
 function StatusIcon({ status }) {
   if (status === 'extracted') return <CheckCircle2 className="w-4 h-4 text-emerald-500" />;
@@ -101,8 +102,10 @@ function MessageBody({ messageId, t }) {
 
 export default function BrokerInbox({ drivers, onPrepareAttachment, onUnreadChange }) {
   const { t } = useTranslation();
+  const [pageCursors, setPageCursors] = useWorkspaceView('inbox.pages', [null]);
+  const cursor = pageCursors.at(-1);
   const { data: items = [], error: requestError, isLoading: loading, mutate } = useWorkspaceQuery(
-    'broker-inbox', fetchBrokerInbox, { refreshInterval: 60_000 },
+    ['broker-inbox', cursor], () => fetchBrokerInbox(cursor), { refreshInterval: 60_000 },
   );
   const error = requestError ? localizedError(t, requestError, 'errors.inboxLoad') : '';
   const [selectedId, setSelectedId] = useWorkspaceView('inbox.selection', null);
@@ -351,6 +354,14 @@ export default function BrokerInbox({ drivers, onPrepareAttachment, onUnreadChan
             ))}
           </div>
         )}
+        <nav className="flex justify-between gap-3 px-5 py-4" aria-label={t('inbox.messages')}>
+          <button type="button" disabled={pageCursors.length === 1 || loading}
+            className="rounded-lg border px-4 py-2 text-sm font-bold disabled:opacity-40"
+            onClick={() => setPageCursors((pages) => pages.slice(0, -1))}>{t('common.back')}</button>
+          <button type="button" disabled={items.length < BROKER_INBOX_PAGE_SIZE || loading || Boolean(requestError)}
+            className="rounded-lg border px-4 py-2 text-sm font-bold disabled:opacity-40"
+            onClick={() => setPageCursors((pages) => [...pages, brokerInboxCursor(items)])}>{t('common.next')}</button>
+        </nav>
       </section>
     </div>
   );

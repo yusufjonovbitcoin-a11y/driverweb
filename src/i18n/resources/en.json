@@ -1,5 +1,10 @@
 {
   "driverInstructions": {"title":"Instructions for the driver","hint":"For fixed-mileage pay, send only operational instructions here. Do not include broker rates or payment terms. The original broker document stays private.","edit":"Edit instructions","save":"Save for driver","saved":"Saved. Available to the assigned driver.","error":"Could not save or load. Refresh the load and retry; check your connection and permissions.","conflict":"This load changed. Your draft is preserved. Refresh and review the current instructions before saving again.","reviewHint":"Current saved instructions are shown below. Your draft above has not been replaced.","serverText":"Current saved instructions","reviewed":"I reviewed the current instructions and want to save my draft."},
+  "driverPrivacy": {
+    "title": "Rate Con privacy",
+    "hide": "Hide Rate Con and broker rate",
+    "hint": "Applies to all this driver's loads. Hides Rate Con, broker pricing and payment receipts; BOL/POD remain available. Documents are not deleted. Fixed-mileage driver pay remains visible. Turning this off does not expose broker terms on fixed-pay assignments."
+  },
   "driverPay": {
     "gpsRequired": "Ask the driver to share a fresh location in the app, then retry assignment. Mileage will not be guessed.",
     "recalculate": "Route or pay settings changed. Retry to calculate a new quote.",
@@ -134,7 +139,8 @@
   "missing_source": "Missing source quote", "wrong_field": "Value does not belong in this field", "source_mismatch": "Value and quote do not match",
   "save": "Save correction", "saving": "Saving…", "booleanHint": "Enter true (yes) or false (no).", "fullText": "Full text"
 },
-"importDetails": {
+  "importDetails": {
+    "operationalScope": "Only load details and driver instructions are extracted. Full payment and legal terms remain in the original PDF. Check the original before dispatch.",
   "title": "Document details",
   "cargo": "Cargo",
   "requirements": "Requirements",
@@ -1269,6 +1275,9 @@
     "fileRequired": "Select a PDF or image.",
     "fileTooLarge": "The file must be 20 MB or smaller.",
     "moduleTitle": "Could not load page module",
+    "pageTitle": "Could not display this page",
+    "pageHint": "An error occurred while displaying the page. Try opening it again.",
+    "retryPage": "Try again",
     "moduleHint": "Check your connection or reload the latest version.",
     "reload": "Reload",
     "accountCreate": "Could not create the account.",

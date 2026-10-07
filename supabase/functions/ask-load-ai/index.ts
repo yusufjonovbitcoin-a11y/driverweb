@@ -1,6 +1,7 @@
 import { withCors } from "../_shared/cors.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { checkDistributedRateLimit, rateLimitResponse } from "../_shared/rate-limit.ts";
+import { loadAiStops } from "../_shared/load-ai-context.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Headers":
@@ -222,7 +223,8 @@ Deno.serve((request) => withCors(request, async () => {
       equipment: load.equipment_type,
       freightMode: load.freight_mode,
       weightLbs: load.weight_lbs,
-      rateUsd: load.driver_pay ? undefined : load.broker_rate,
+      rateUsd: load.driver_pay || load.broker_terms_hidden ? undefined : load.broker_rate,
+      brokerTermsHidden: load.broker_terms_hidden === true,
       driverPayUsd: load.driver_pay?.amount,
       driverPayPerMile: load.driver_pay?.rate_per_mile,
       paidTotalMiles: load.driver_pay?.total_miles,
@@ -237,7 +239,7 @@ Deno.serve((request) => withCors(request, async () => {
       requirements: load.load_requirements,
       updatedAt: load.updated_at,
     }),
-    stops: stopsResult.data ?? [],
+    stops: loadAiStops(load, stopsResult.data ?? []),
     assignment: assignment
       ? compactObject({
         status: assignment.status,

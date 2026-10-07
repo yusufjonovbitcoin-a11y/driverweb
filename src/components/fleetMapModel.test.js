@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   driverTrips, filteredTrips, fleetLivePosition, isActiveFleetLoad, loadMapStops, overlayMapPadding,
-  selectedDriverTrip, stopCity, stopStreet, tripMatchesSearch, tripTimestamp,
+  selectedDriverTrip, shouldRefreshCompletedTrack, stopCity, stopStreet, tripMatchesSearch, tripTimestamp,
 } from './fleetMapModel.js';
 
 const current = { id: 'current', driverId: 'a', loadNumber: '#1103881', status: 'ON_ROAD',
@@ -10,6 +10,41 @@ const current = { id: 'current', driverId: 'a', loadNumber: '#1103881', status: 
   destination: { city: 'Allentown', state: 'PA', address: '7150 Ambassador Dr' } };
 const older = { id: 'older', driverId: 'a', loadNumber: '#3098315', status: 'COMPLETED',
   origin: { city: 'Phoenix', state: 'AZ', date: '2026-09-30T09:00:00Z' } };
+
+test('map mount before workspace data arrives never reads an absent previous trip', () => {
+  for (const previous of [null, undefined, {}]) {
+    assert.equal(shouldRefreshCompletedTrack(previous, { isVisible: true, isActive: false }), false);
+    assert.equal(shouldRefreshCompletedTrack(previous, { driverId: 'a', loadId: 'current', isVisible: true, isActive: true }), false);
+  }
+});
+
+test('completion refresh is restricted to the same visible real driver and trip', () => {
+  const previous = { driver: 'a', load: 'current', active: true };
+  const next = { driverId: 'a', loadId: 'current', isVisible: true, isActive: false };
+  assert.equal(shouldRefreshCompletedTrack(previous, next), true);
+  for (const change of [{ isVisible: false }, { isActive: true }, { driverId: 'b' },
+    { loadId: 'other' }, { driverId: undefined }, { loadId: undefined }]) {
+    assert.equal(shouldRefreshCompletedTrack(previous, { ...next, ...change }), false);
+  }
+  assert.equal(shouldRefreshCompletedTrack({ ...previous, active: false }, next), false);
+  assert.equal(shouldRefreshCompletedTrack({ active: true }, { isVisible: true, isActive: false }), false);
+});
+
+test('workspace loading, completion and subsequent updates produce only one completion refresh', () => {
+  let previous = null;
+  let refreshes = 0;
+  for (const next of [
+    { isVisible: true, isActive: false },
+    { driverId: 'a', isVisible: true, isActive: false },
+    { driverId: 'a', loadId: 'current', isVisible: true, isActive: true },
+    { driverId: 'a', loadId: 'current', isVisible: true, isActive: false },
+    { driverId: 'a', loadId: 'current', isVisible: true, isActive: false },
+  ]) {
+    if (shouldRefreshCompletedTrack(previous, next)) refreshes++;
+    previous = { driver: next.driverId, load: next.loadId, active: next.isActive };
+  }
+  assert.equal(refreshes, 1);
+});
 
 test('search finds load numbers, city/state, street and ZIP without case/punctuation sensitivity', () => {
   for (const query of ['#1103881', '110 3881', 'ALLENTOWN, PA', '7150 ambassador', '01843', 'Lawrence MA']) {

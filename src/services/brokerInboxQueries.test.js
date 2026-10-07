@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createClient } from '@supabase/supabase-js';
-import { fetchBrokerInboxRows, fetchBrokerUnreadCount } from './brokerInboxQueries.js';
+import { brokerInboxCursor, fetchBrokerInboxRows, fetchBrokerUnreadCount } from './brokerInboxQueries.js';
 
 function fixtureClient(tables, failureTable = null) {
   const requests = [];
@@ -115,4 +115,37 @@ test('failed or missing unread counts do not silently reset the badge to zero', 
     const query = { select() { return this; }, is() { return this; }, or() { return Promise.resolve(result); } };
     await assert.rejects(fetchBrokerUnreadCount({ from: () => query }));
   }
+});
+
+test('older pages use stable timestamp/id cursors and join their own attachments', async () => {
+  const newestId = '00000000-0000-0000-0000-000000000100';
+  const oldestId = '00000000-0000-0000-0000-000000000001';
+  const at = '2026-10-06T12:00:00.123456+00:00';
+  let messageRequests = 0;
+  const client = createClient('https://example.supabase.co', 'test-key', {
+    auth: { persistSession: false, autoRefreshToken: false },
+    global: { fetch: async input => {
+      const url = new URL(input); let rows = [];
+      if (url.pathname.endsWith('/broker_messages')) {
+        messageRequests++;
+        assert.equal(url.searchParams.get('limit'), '100');
+        if (messageRequests === 1) {
+          assert.equal(url.searchParams.has('or'), false);
+          rows = [{ id: newestId, received_at: at }];
+        } else {
+          assert.equal(url.searchParams.get('or'), `(received_at.lt.${at},and(received_at.eq.${at},id.lt.${newestId}))`);
+          rows = [{ id: oldestId, received_at: at }];
+        }
+      } else if (url.pathname.endsWith('/broker_attachments')) {
+        const expected = messageRequests === 1 ? newestId : oldestId;
+        assert.equal(url.searchParams.get('message_id'), `in.(${expected})`);
+        rows = [{ id: `pdf-${expected}`, message_id: expected }];
+      }
+      return new Response(JSON.stringify(rows), { status: 200, headers: { 'content-type': 'application/json' } });
+    } },
+  });
+  const first = await fetchBrokerInboxRows(client);
+  const older = await fetchBrokerInboxRows(client, brokerInboxCursor(first));
+  assert.equal(older[0].id, oldestId); assert.equal(older[0].attachments.length, 1);
+  await assert.rejects(fetchBrokerInboxRows(client, { id: 'bad),id.neq.x', receivedAt: at }), /Invalid inbox cursor/);
 });

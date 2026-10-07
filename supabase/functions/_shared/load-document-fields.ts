@@ -13,7 +13,7 @@ export const STAFF_DOCUMENT_FIELDS = new Set([
 export const EXTRA_DOCUMENT_PROPERTIES = Object.fromEntries(EXTRA_DOCUMENT_FIELDS.map(key => [key, { type: ['string', 'null'] }]));
 export const EXTRA_STOP_PROPERTIES = Object.fromEntries(EXTRA_STOP_FIELDS.map(key => [key, { type: ['string', 'null'] }]));
 // Bump when the extraction contract changes so prior cached drafts are re-read.
-export const DOCUMENT_EXTRACTION_VERSION = 18;
+export const DOCUMENT_EXTRACTION_VERSION = 19;
 // English adaptation of the dispatcher-provided extraction rules. The output
 // names below intentionally match the existing strict JSON schema and UI.
 export const DOCUMENT_DETAIL_INSTRUCTIONS = `You extract facts from trucking documents such as rate confirmations, load tenders, carrier information sheets and bills of lading. Read EVERY page, including continuations, payment terms and signature pages, but do not take shipment facts from a signature/certificate page unless that fact is explicitly printed there. Classify the document before extraction. If it is not a logistics document, set documentReview.documentReadable=false and documentReview.singleLoad=false, return null facts and include "documentDetails" in documentReview.uncertainFields. If pages are unreadable or separate shipments/documents are combined, report this honestly with allPagesRead, pageCount, singleLoad and uncertainFields; do not merge separate loads into one.
