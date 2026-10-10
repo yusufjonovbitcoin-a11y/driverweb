@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { 
   X, 
@@ -45,6 +45,8 @@ export default function QuickDriverModal({
   const [selectedDriverIds, setSelectedDriverIds] = useState(() => initialDriverId ? [initialDriverId] : []);
   const [searchQuery, setSearchQuery] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState('');
+  const submittingRef = useRef(false);
   const warningFields = [...new Set([
     ...(loadData?.review?.blockingFields || []), ...(loadData?.review?.warningFields || []),
   ])];
@@ -68,6 +70,9 @@ export default function QuickDriverModal({
   const availableDrivers = isReassignment
     ? drivers.filter((driver) => driver.id !== loadData.currentDriverId)
     : drivers;
+  const fixedDriver = initialDriverId ? availableDrivers.find(driver => driver.id === initialDriverId) : null;
+  const effectiveDriverIds = initialDriverId ? (fixedDriver ? [fixedDriver.id] : [])
+    : selectedDriverIds.filter(id => availableDrivers.some(driver => driver.id === id));
   const filteredDrivers = availableDrivers.filter((d) => {
     if (!searchQuery.trim()) return true;
     const q = searchQuery.toLowerCase();
@@ -80,11 +85,17 @@ export default function QuickDriverModal({
 
   const handleSend = async (e) => {
     e.preventDefault();
-    if (selectedDriverIds.length === 0 || isSubmitting || isClosed) return;
+    if (effectiveDriverIds.length === 0 || submittingRef.current || isClosed) return;
+    submittingRef.current = true;
     setIsSubmitting(true);
+    setSubmitError('');
     try {
-      await onConfirm(selectedDriverIds);
+      const result = await onConfirm(effectiveDriverIds);
+      if (result !== true) setSubmitError(typeof result === 'string' ? result : t('errors.createLoad'));
+    } catch {
+      setSubmitError(t('errors.createLoad'));
     } finally {
+      submittingRef.current = false;
       setIsSubmitting(false);
     }
   };
@@ -106,12 +117,15 @@ export default function QuickDriverModal({
               <p className="text-xs lg:text-sm text-zinc-400">
                 {isReassignment
                   ? t('loads.reassignHint')
-                  : t('loads.selectDriver')}
+                  : initialDriverId ? t('loads.assignToDriver') : t('loads.selectDriver')}
               </p>
             </div>
           </div>
 
           <button
+            type="button"
+            aria-label={t('common.close')}
+            disabled={isSubmitting}
             onClick={onClose}
             className="p-1.5 rounded-lg text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 transition-colors"
           >
@@ -182,8 +196,10 @@ export default function QuickDriverModal({
             </div>
           )}
 
-          {/* Haydovchi(lar)ni tanlash */}
-          <div className="space-y-2.5 pt-1">
+          {initialDriverId ? <div className="rounded-xl border border-zinc-200 bg-zinc-50 p-4 text-sm dark:border-zinc-800 dark:bg-zinc-900">
+            <p className="text-zinc-500">{t('loads.assignToDriver')}</p>
+            <p className="mt-1 font-semibold text-zinc-900 dark:text-zinc-100">{fixedDriver?.name || t('loadsWorkspace.missingDriver')}</p>
+          </div> : <div className="space-y-2.5 pt-1">
             <div className="flex items-center justify-between text-sm">
               <span className="font-bold text-zinc-800 dark:text-zinc-200">
                 {t('loads.selectDriver')}
@@ -273,17 +289,20 @@ export default function QuickDriverModal({
                 })
               )}
             </div>
-          </div>
+          </div>}
+
+          {submitError && <p role="alert" className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800 dark:border-rose-900 dark:bg-rose-950/30 dark:text-rose-200">{submitError}</p>}
 
           {/* Footer */}
           <div className="pt-3.5 border-t border-zinc-100 dark:border-zinc-800 flex items-center justify-between">
             <span className="text-xs text-zinc-400 font-medium">
-              {t('loads.selected', { count: selectedDriverIds.length })}
+              {t('loads.selected', { count: effectiveDriverIds.length })}
             </span>
 
             <div className="flex items-center space-x-2.5">
               <button
                 type="button"
+                disabled={isSubmitting}
                 onClick={onClose}
                 className="px-3.5 py-2 text-xs font-semibold text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200"
               >
@@ -291,7 +310,7 @@ export default function QuickDriverModal({
               </button>
               <button
                 type="submit"
-                disabled={selectedDriverIds.length === 0 || isSubmitting || isClosed}
+                disabled={effectiveDriverIds.length === 0 || isSubmitting || isClosed}
                 className="inline-flex items-center space-x-2 bg-zinc-900 hover:bg-zinc-800 disabled:opacity-50 disabled:cursor-not-allowed text-white dark:bg-zinc-100 dark:hover:bg-white dark:text-zinc-950 px-5 py-2 rounded-xl font-bold text-sm transition-colors shadow-xs"
               >
                 <Send className="w-4 h-4" />

@@ -28,6 +28,7 @@ export default function DriverRoster({
   onOpenDocs,
   onDeleteLoad,
   onTrashLoad,
+  onManageDocument,
   onImportDriverDocument,
   isAiProcessing = false,
   selectedDriverId,
@@ -207,6 +208,7 @@ export default function DriverRoster({
             onOpenDocs={onOpenDocs}
             onDeleteLoad={onDeleteLoad}
             onTrashLoad={onTrashLoad}
+            onManageDocument={onManageDocument}
             onImportDocument={(file) => onImportDriverDocument?.(file, selectedDriver.id)}
             isAiProcessing={isAiProcessing}
           />
@@ -467,6 +469,7 @@ function DriverLoadWorkspace({
   onOpenDocs,
   onDeleteLoad,
   onTrashLoad,
+  onManageDocument,
   onImportDocument,
   isAiProcessing,
 }) {
@@ -478,6 +481,7 @@ function DriverLoadWorkspace({
         onOpenDocs={onOpenDocs}
         onDeleteLoad={onDeleteLoad}
         onTrashLoad={onTrashLoad}
+        onManageDocument={onManageDocument}
         onAssignedDocumentUpload={onImportDocument}
         isAiProcessing={isAiProcessing}
         includeUnassigned={false}

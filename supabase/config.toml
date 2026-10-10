@@ -56,6 +56,10 @@ verify_jwt = false
 [functions.calculate-load-route]
 verify_jwt = true
 
+[functions.calculate-driver-start-pay]
+# Explicit getUser + assignment RLS, or a dedicated constant-time Cron token.
+verify_jwt = false
+
 [functions.decode-vin]
 verify_jwt = true
 
@@ -66,6 +70,11 @@ verify_jwt = true
 verify_jwt = true
 
 [functions.gmail-integration]
+verify_jwt = true
+
+[functions.gmail-sync-worker]
+# Server-role-only handler, plus global and company switches off by default.
+# Deploying this function does NOT schedule or enable Gmail processing.
 verify_jwt = true
 
 [functions.process-broker-attachment]

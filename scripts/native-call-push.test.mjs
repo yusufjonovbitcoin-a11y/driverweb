@@ -24,6 +24,8 @@ test('FCM native call data is high priority and never auto-displays a generic no
  assert.equal(legacy.data.entityType,'chat_call');assert.equal(legacy.data.callId,call);assert.equal(legacy.data.notificationId,call);
  assert.equal(legacy.notification.title,'Incoming call');assert.equal(legacy.apns.headers['apns-push-type'],'alert');
  assert.deepEqual(buildFcmMessage('token',{title:'Chat',body:'Hello'},{type:'chat'}).message.notification,{title:'Chat',body:'Hello'});
+ assert.equal(buildFcmMessage('token',{title:'Chat',body:'Hello'},{type:'chat_message'}).message.webpush.headers.TTL,'3600');
+ assert.equal(buildFcmMessage('token',{title:'Load',body:'Offer'},{type:'load_offer'}).message.webpush.headers.TTL,undefined);
 });
 test('VoIP provider uses ES256, environment-specific APNs, matching bundle and zero expiration', async () => {
  const keys=await crypto.subtle.generateKey({name:'ECDSA',namedCurve:'P-256'},true,['sign','verify']);

@@ -19,13 +19,20 @@ test('quote never accepts client-computed mileage or money', async () => {
     loadId: 'load', driverIds: ['driver'], prepareDriverPay: true,
   } }]]);
 });
-test('failed quote prevents restore and surfaces specific GPS error', async () => {
+test('pending pay response does not block restoring a load without GPS', async () => {
+  let restores=0;
+  const client={functions:{invoke:async()=>({data:{fixedPay:true,pending:true,reason:'gps_unavailable'}})},
+    rpc:async()=>{restores++;return {data:{id:'load',status:'assigned',version:2},error:null};}};
+  await runLoadTrashAction(client,'restore',{id:'load',version:1},'driver');
+  assert.equal(restores,1);
+});
+test('real route failure still prevents restore and surfaces the error', async () => {
   let restores = 0;
   const client = {
     functions: { invoke: async () => ({ error: { message:'Edge failed',
-      context:{ json:async()=>({error:'DRIVER_PAY_GPS_REQUIRED'}) } } }) },
+      context:{ json:async()=>({error:'DRIVER_PAY_ROUTE_UNAVAILABLE'}) } } }) },
     rpc: async () => { restores++; },
   };
-  await assert.rejects(runLoadTrashAction(client,'restore',{id:'load',version:1},'driver'), /GPS_REQUIRED/);
+  await assert.rejects(runLoadTrashAction(client,'restore',{id:'load',version:1},'driver'), /ROUTE_UNAVAILABLE/);
   assert.equal(restores,0);
 });

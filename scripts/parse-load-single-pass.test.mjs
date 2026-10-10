@@ -38,7 +38,7 @@ function harness({role='dispatcher', providerStatus='completed', uncertain=false
     from(name) {
       tables.push(name);
       if (name === 'manual_load_imports') return {select(){return this;},eq(){return this;},
-        gte:async()=>({count:0}),maybeSingle:async()=>({data:existing}),
+        gte:async()=>({count:0}),maybeSingle:async()=>({data:existing ? {created_by:'test-user',...existing} : null}),
         insert(){return {select(){return this;},single:async()=>({data:null,error:{message:'PERSIST_REACHED'}})};}};
       if (name === 'loads') return {select(){return this;},eq(){return this;},
         maybeSingle:async()=>({data:{status:'review',current_assignment_id:null}})};
@@ -153,9 +153,9 @@ test('selecting a PDF returns a browser-only preview without import, load or med
 
 test('confirm upload stores one Rate Con in private Supabase Storage, not Cloudinary',()=>{
   const source = readFileSync(new URL('../supabase/functions/parse-load-document/index.ts',import.meta.url),'utf8');
-  const begin = source.indexOf('"begin_document_upload"');
+  const begin = source.indexOf("'begin_import_document_upload'");
   const upload = source.indexOf('.upload(storagePath, file, { contentType: file.type, upsert: false })');
-  const complete = source.indexOf('"complete_document_upload"');
+  const complete = source.indexOf("'complete_import_document_upload'");
   const link = source.indexOf(".update({ storage_path: storagePath })");
   assert.ok(begin > 0 && upload > begin && complete > upload && link > complete);
   assert.match(source,/uploadPlan\?\.bucket !== 'load-documents'/);
@@ -163,7 +163,9 @@ test('confirm upload stores one Rate Con in private Supabase Storage, not Cloudi
   assert.doesNotMatch(source,/uploadPrivateMedia|bind_document_version_media/);
 });
 
-test('real persist path uploads the original PDF once, completes its version, and links the same path',async()=>{
+for (const confirmWithoutGps of [false, true]) test(confirmWithoutGps
+  ? 'real PDF confirmation assigns a mileage-paid driver without GPS and never creates a zero quote'
+  : 'real persist path uploads the original PDF once, completes its version, and links the same path',async()=>{
   let handler;
   const events=[];
   const storagePath='company/load/document/version/rate.pdf';
@@ -174,8 +176,12 @@ test('real persist path uploads the original PDF once, completes its version, an
       eq(){return this;},gte(){return this;},not(){return this;},order(){return this;},limit(){return this;},
       insert(value){action='insert';events.push(['insert',table,value]);return this;},
       update(value){action='update';events.push(['update',table,value]);return this;},
-      async maybeSingle(){return {data:table==='profiles'
-        ? {id:'test-user',company_id:'company',role:'dispatcher',status:'active'} : null,error:null};},
+      async maybeSingle(){return {data:{
+        profiles:{id:'test-user',company_id:'company',role:'dispatcher',status:'active'},
+        loads:{id:'load-id',current_assignment_id:null},
+        member_directory:{id:'11111111-1111-4111-8111-111111111111',role:'driver',status:'active'},
+        driver_pay_settings:{rate_per_mile:2},
+      }[table] ?? null,error:null};},
       async single(){return {data:action==='insert' && table==='manual_load_imports'
         ? {id:'import-id'} : null,error:null};},
       then(resolve,reject){return Promise.resolve({count:action==='count'?0:null,data:null,error:null}).then(resolve,reject);},
@@ -187,9 +193,11 @@ test('real persist path uploads the original PDF once, completes its version, an
     from:query,
     rpc:async(name,args)=>{
       events.push(['rpc',name,args]);
-      if(name==='consume_edge_rate_limit') return {data:true,error:null};
+      if(name==='consume_edge_rate_limit' || name==='can_access_driver') return {data:true,error:null};
       if(name==='create_document_import_draft') return {data:'load-id',error:null};
-      if(name==='begin_document_upload') return {data:{bucket:'load-documents',storagePath,versionId:'version-id'},error:null};
+      if(name==='begin_import_document_upload') return {data:{bucket:'load-documents',storagePath,
+        documentId:'document-id',versionId:'version-id',alreadyUploaded:false},error:null};
+      if(name==='complete_import_document_upload') return {data:{id:'document-id',load_id:'load-id',current_version_id:'version-id'},error:null};
       return {data:null,error:null};
     },
     storage:{from(bucket){assert.equal(bucket,'load-documents');return {upload:async(path,file,options)=>{
@@ -214,12 +222,32 @@ test('real persist path uploads the original PDF once, completes its version, an
   });
   const form=new FormData();
   form.set('file',new File(['%PDF-1.7\nTest'],'rate.pdf',{type:'application/pdf'}));
+  if (confirmWithoutGps) {
+    const previewForm=new FormData();
+    previewForm.set('file',form.get('file'));
+    previewForm.set('previewOnly','true');
+    const previewResponse=await handler(new Request('https://test.invalid/parse-load-document',{
+      method:'POST',headers:{Authorization:'Bearer test'},body:previewForm,
+    }));
+    const preview=await previewResponse.json();
+    assert.equal(previewResponse.status,200,JSON.stringify(preview));
+    form.set('previewPayload',preview.preparedLoad.previewTicket.payload);
+    form.set('previewSignature',preview.preparedLoad.previewTicket.signature);
+    form.set('confirmDriverId','11111111-1111-4111-8111-111111111111');
+  }
   const response=await handler(new Request('https://test.invalid/parse-load-document',{
     method:'POST',headers:{Authorization:'Bearer test'},body:form,
   }));
   const result=await response.json();
   assert.equal(response.status,200,JSON.stringify(result));
   assert.equal(result.loadId,'load-id');
+  if (confirmWithoutGps) {
+    assert.equal(result.assigned,true);
+    const assignments=events.filter(event=>event[0]==='rpc' && event[1]==='review_and_assign_document_load');
+    assert.equal(assignments.length,1);
+    assert.equal(assignments[0][2].target_driver_id,'11111111-1111-4111-8111-111111111111');
+    assert.equal(events.some(event=>event[0]==='rpc' && event[1]==='prepare_driver_pay_quote'),false);
+  }
   const create = events.findIndex(event=>event[0]==='rpc' && event[1]==='create_document_import_draft');
   const prepared = events.findIndex(event=>event[0]==='update' && event[1]==='manual_load_imports' && event[2].raw_extraction?.draft);
   assert.ok(prepared >= 0 && create > prepared);
@@ -228,9 +256,9 @@ test('real persist path uploads the original PDF once, completes its version, an
     ['upload',storagePath,{name:'rate.pdf',type:'application/pdf',size:13},
       {contentType:'application/pdf',upsert:false}],
   ]);
-  const begin=events.findIndex(event=>event[1]==='begin_document_upload');
+  const begin=events.findIndex(event=>event[1]==='begin_import_document_upload');
   const upload=events.findIndex(event=>event[0]==='upload');
-  const complete=events.findIndex(event=>event[1]==='complete_document_upload');
+  const complete=events.findIndex(event=>event[1]==='complete_import_document_upload');
   const link=events.findIndex(event=>event[0]==='update' && event[1]==='manual_load_imports'
     && event[2].storage_path===storagePath);
   assert.ok(begin>=0 && upload>begin && complete>upload && link>complete);

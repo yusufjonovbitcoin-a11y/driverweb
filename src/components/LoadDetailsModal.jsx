@@ -5,9 +5,10 @@ import { useTranslation } from 'react-i18next';
 import { formatAppointment, formatCurrency, formatNumber } from '../i18n/format';
 import { loadStatusLabel } from '../i18n/labels';
 import { buildLoadDetails } from './loadDetailsModel';
-import DraggableLoadDocument from './DraggableLoadDocument.jsx';
+import LoadDocumentsManager from './LoadDocumentsManager.jsx';
 import LoadTrashAction from './LoadTrashAction.jsx';
 import DriverInstructionsEditor from './DriverInstructionsEditor.jsx';
+import AssignmentDriverPay from './AssignmentDriverPay.jsx';
 import './loadDetails.css';
 
 const LoadDetailsMap = lazy(() => import('./LoadDetailsMap.jsx'));
@@ -16,7 +17,7 @@ const loadPdfTools = () => import('../services/loadDocumentPdf');
 
 const value = (content) => content ?? '—';
 
-export default function LoadDetailsModal({ load, driver, onClose, onOpenDocs, onTrashLoad }) {
+export default function LoadDetailsModal({ load, driver, onClose, onOpenDocs, onTrashLoad, onManageDocument }) {
   const { t } = useTranslation();
   const closeRef = useRef(null);
   const pdfAssetRef = useRef(null);
@@ -34,6 +35,8 @@ export default function LoadDetailsModal({ load, driver, onClose, onOpenDocs, on
     versionId: load.documentMeta?.[document.id]?.current_version_id,
     mimeType: load.documentMeta?.[document.id]?.mimeType,
     fileName: load.documentMeta?.[document.id]?.fileName,
+    documentId: load.documentMeta?.[document.id]?.id,
+    stopId: load.documentMeta?.[document.id]?.stop_id ?? null,
     title: {
       rateCon: t('documents.brokerRateCon'),
       shipperBol: t('documents.shipperBol'),
@@ -185,6 +188,8 @@ export default function LoadDetailsModal({ load, driver, onClose, onOpenDocs, on
             <div><span>{t('drivers.driver')}</span><strong>{details.driverName || t('loads.unassigned')}</strong></div>
             <span className="load-command-equipment">{details.equipment || '—'}</span>
           </section>
+          {load.currentAssignmentId && load.driverId ? <AssignmentDriverPay
+            assignmentId={load.currentAssignmentId} loadId={load.id} driverId={load.driverId} /> : null}
           <div className="load-command-stops">
             {details.stops.map((stop, index) => <StopCard key={index} marker={stop.markerLabel} title={t(stop.role === 'pickup' ? 'inbox.pickup' : 'inbox.delivery')} stop={stop} t={t} />)}
           </div>
@@ -208,14 +213,8 @@ export default function LoadDetailsModal({ load, driver, onClose, onOpenDocs, on
             </DetailSection>
           </div>
         <footer className="load-details-documents load-command-documents">
-          <DetailSection title={t('loads.documents')}>
-            <div className="grid grid-cols-4 gap-3">
-              {documents.map((document) => (
-                <DraggableLoadDocument key={`${load.id}:${document.id}:${document.versionId || document.url || ''}`} document={document} onOpen={() => onOpenDocs(load, document.id)} />
-              ))}
-            </div>
-            <div className="flex items-center justify-end gap-3">
-              {combineError && <p role="alert" className="text-xs font-semibold text-red-600 dark:text-red-400">{combineError}</p>}
+            <div className="load-document-section-header">
+              <div><h3>{t('loads.documents')}</h3><p>{t('documentManagement.formats')}</p></div>
               <button
                 type="button"
                 disabled={isDownloadingPdf || details.documentCount === 0}
@@ -230,7 +229,8 @@ export default function LoadDetailsModal({ load, driver, onClose, onOpenDocs, on
                 <span>{isCombiningPdf ? t('documents.combiningPdf') : t('documents.combinePdf')}</span>
               </button>
             </div>
-          </DetailSection>
+            {combineError ? <p role="alert" className="load-document-error">{combineError}</p> : null}
+            <LoadDocumentsManager key={load.id} load={load} documents={documents} onOpenDocs={onOpenDocs} onManageDocument={onManageDocument} />
         </footer>
           <InstructionPages key={load.id} instructions={details.specialInstructions} requirements={details.requirements} t={t} />
           {onTrashLoad && !load.trashedAt && <DriverInstructionsEditor key={load.id} loadId={load.id} />}

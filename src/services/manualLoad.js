@@ -18,7 +18,7 @@ function amount(value, label, required = false) {
 }
 
 /** Only explicit dispatcher data is persisted. Unknown logistics facts stay null. */
-export function normalizeManualLoad(form, selectedDriverIds, availableDriverIds) {
+export function normalizeManualLoad(form, selectedDriverIds, availableDriverIds, { requireNumberedAddresses = false } = {}) {
   const allowed = new Set(availableDriverIds);
   const targets = [...new Set(selectedDriverIds)].filter((id) => allowed.has(id));
   if (targets.length > 1) {
@@ -38,6 +38,11 @@ export function normalizeManualLoad(form, selectedDriverIds, availableDriverIds)
     lat: null,
     lng: null,
   });
+  const origin = stop('origin', 'Yuklash');
+  const destination = stop('destination', 'Yetkazish');
+  if (requireNumberedAddresses && [origin, destination].some(item => !/^\d+[a-z]?\s+\S/i.test(item.address || ''))) {
+    throw new Error('DRIVER_PAY_START_ADDRESS_REQUIRED');
+  }
   const rate = amount(form.rate, 'Stavka', true);
   const distanceMiles = amount(form.distanceMiles, 'Masofa', true);
   const weightLbs = amount(form.weightLbs, 'Og‘irlik');
@@ -53,8 +58,8 @@ export function normalizeManualLoad(form, selectedDriverIds, availableDriverIds)
     distanceMiles,
     ratePerMile: distanceMiles > 0 ? rate / distanceMiles : null,
     weightLbs,
-    origin: stop('origin', 'Yuklash'),
-    destination: stop('destination', 'Yetkazish'),
+    origin,
+    destination,
     targetDriverIds: targets,
     brokerContact: null,
     brokerPhone: null,
@@ -62,4 +67,14 @@ export function normalizeManualLoad(form, selectedDriverIds, availableDriverIds)
     pallets: null,
     documents: { rateCon: null, shipperBol: null, receiverPod: null },
   };
+}
+
+// Re-read before creating a draft: settings may change while the form is open.
+export async function prepareManualLoad(form, selectedDriverIds, availableDriverIds, readSettings) {
+  const load = normalizeManualLoad(form, selectedDriverIds, availableDriverIds);
+  const settings = await readSettings(load.targetDriverIds[0]);
+  if (!settings || !Object.hasOwn(settings, 'ratePerMile')) throw new Error('DRIVER_PAY_SETTINGS_UNAVAILABLE');
+  return normalizeManualLoad(form, selectedDriverIds, availableDriverIds, {
+    requireNumberedAddresses: settings.ratePerMile != null,
+  });
 }

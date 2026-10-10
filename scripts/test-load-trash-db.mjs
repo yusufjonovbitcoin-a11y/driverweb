@@ -201,6 +201,91 @@ try {
     assert(['BACKEND_AUDIT_TEST','DRIVER_PAY_TEST','SECURITY_AUDIT_TEST','DOCUMENT_PRIVACY_TEST'].every(key => process.env[key] === '1'), 'AUDIT_FIX_TEST requires the complete fixture');
     await runAuditBackendChecks({sql,migration,root});
   }
+  if (process.env.PENDING_DRIVER_PAY_TEST === '1') {
+    assert.equal(process.env.AUDIT_FIX_TEST, '1', 'Pending pay requires the current hardened schema fixture');
+    // Production includes legacy review_fixture snapshots. Their recorded
+    // non-null origin remains valid; this additive migration must not backfill
+    // or reject them merely because the original provider has another name.
+    sql(`insert into assignment_driver_pay(assignment_id,load_id,driver_id,company_id,rate_per_mile,
+      loaded_miles,deadhead_miles,route_fingerprint,origin_latitude,origin_longitude,location_at,provider)
+      select id,load_id,driver_id,company_id,0.25,1,0,'legacy-review',40,-74,now(),'review_fixture'
+      from assignments where load_id='00000000-0000-0000-0000-000000000200' order by assigned_at limit 1;`);
+    // Transport is tested separately with a mocked http extension. This fixture
+    // exercises additive allowlist/idle guard, never an external HTTP request.
+    sql(`create schema worker_cron;
+      create table worker_cron.last_invocations(worker text primary key constraint last_invocations_worker_check check(worker in ('push','media','document','native_calls')));
+      create function worker_cron.invoke(worker_name text) returns bigint language plpgsql as $$
+declare secret_name text; endpoint text;
+begin
+  case worker_name
+    when 'push' then secret_name:='chat_push_cron_token'; endpoint:='process-push-notifications';
+    when 'document' then secret_name:='document_check_cron_token'; endpoint:='check-load-document';
+    when 'native_calls' then secret_name:='chat_push_cron_token'; endpoint:='process-native-call-push';
+    when 'media' then secret_name:='chat_media_cron_token'; endpoint:='process-media-deletions';
+    else raise exception 'Unknown scheduled worker';
+  end case;
+  return 1;
+end $$; revoke all on schema worker_cron from public,anon,authenticated,service_role;`);
+    await migration('20261008092404_assignment_driver_pay_pending.sql');
+    sql(`select test_assert(worker_cron.invoke('driver_pay')=0,'empty payment queue does not send idle HTTP');
+      insert into worker_cron.last_invocations values('push'),('media'),('document'),('native_calls'),('driver_pay');
+      select test_assert((select count(*)=5 from worker_cron.last_invocations),'Cron worker allowlist preserves every existing worker');`);
+    sql("select test_assert((select provider='review_fixture' and amount=0.25 and origin_latitude=40 from assignment_driver_pay where load_id='00000000-0000-0000-0000-000000000200'),'legacy review_fixture snapshot survives unchanged');");
+    sql(await readFile(path.join(root, 'scripts/load-trash-test-fixtures/pending-driver-pay-checks.sql'), 'utf8'));
+    const actor = `set role authenticated; set "request.jwt.claim.sub"='00000000-0000-0000-0000-000000000003';`;
+    const pendingId = sql("select current_assignment_id from loads where id='00000000-0000-0000-0000-000000000809';").match(/[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}/)[0];
+    const version = sql("select version from loads where id='00000000-0000-0000-0000-000000000809';").match(/\n\s*(\d+)\s*\n/)[1];
+    const captured = new Date().toISOString();
+    const command = `select start_driver_load_with_pay('00000000-0000-0000-0000-000000000809','00000000-0000-0000-0000-000000000889',${version},'${captured}',41,-75,8);`;
+    let locked;
+    const lock = new Promise(resolve => { locked = resolve; });
+    const one = asyncSql(`begin; ${actor} ${command} select 'PAY_LOCKED'; select pg_sleep(0.4); commit;`, output => { if (output.includes('PAY_LOCKED')) locked(); });
+    await Promise.race([lock, one.then(result => { if (!result.stdout.includes('PAY_LOCKED')) throw new Error(result.stderr); })]);
+    const two = asyncSql(`${actor} ${command}`);
+    const other = asyncSql(`${actor} ${command.replace('41,-75,8','42,-75,8')}`);
+    const [firstPay, samePay, changedPay] = await Promise.all([one,two,other]);
+    assert.equal(firstPay.code,0,firstPay.stderr);
+    assert.equal(samePay.code,0,samePay.stderr);
+    assert.notEqual(changedPay.code,0);
+    assert.match(changedPay.stderr,/DRIVER_PAY_START_OPERATION_CONFLICT/);
+    sql(`select test_assert((select count(*)=1 from audit_events where entity_id='${pendingId}' and action='driver.pay_start_captured'),'concurrent START creates one origin/job and one audit event');`);
+    let claimLocked;
+    const claimLock = new Promise(resolve => { claimLocked=resolve; });
+    const claimOne = asyncSql(`begin; set role service_role; select claim_driver_pay_calculation('concurrent-worker-one','${pendingId}'); select 'CLAIM_LOCKED'; select pg_sleep(0.4); commit;`, output=>{ if(output.includes('CLAIM_LOCKED')) claimLocked(); });
+    await Promise.race([claimLock,claimOne.then(result=>{if(!result.stdout.includes('CLAIM_LOCKED')) throw new Error(result.stderr);})]);
+    const claimTwo = await asyncSql(`set role service_role; select claim_driver_pay_calculation('concurrent-worker-two','${pendingId}');`);
+    assert.equal(claimTwo.code,0,claimTwo.stderr);
+    assert.doesNotMatch(claimTwo.stdout,/jobId/);
+    assert.equal((await claimOne).code,0);
+    sql(`select test_assert((select attempt_count=1 and locked_by='concurrent-worker-one' from jobs where payload->>'assignmentId'='${pendingId}'),'concurrent worker cannot steal lease or increment attempts');`);
+    const jobId=sql(`select id from jobs where payload->>'assignmentId'='${pendingId}';`).match(/[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}/)[0];
+    let finishLocked;
+    const finishLock=new Promise(resolve=>{finishLocked=resolve;});
+    const finishCommand=`select finish_driver_pay_calculation('${jobId}','concurrent-worker-one',300,20,'mapbox');`;
+    const finishOne=asyncSql(`begin; set role service_role; ${finishCommand} select 'FINISH_LOCKED'; select pg_sleep(0.4); commit;`,output=>{if(output.includes('FINISH_LOCKED')) finishLocked();});
+    await Promise.race([finishLock,finishOne.then(result=>{if(!result.stdout.includes('FINISH_LOCKED')) throw new Error(result.stderr);})]);
+    const finishTwo=asyncSql(`set role service_role; ${finishCommand}`);
+    const [finishedOnce,finishedAgain]=await Promise.all([finishOne,finishTwo]);
+    assert.equal(finishedOnce.code,0,finishedOnce.stderr);
+    assert.equal(finishedAgain.code,0,finishedAgain.stderr);
+    assert.equal(finishedAgain.stdout.trim(),'f');
+    sql(`select test_assert((select count(*)=1 from audit_events where entity_id='${pendingId}' and action='driver.pay_calculated'),'concurrent finish commits exactly one immutable pay snapshot');`);
+    console.log('PASS: START pay preserves immutable GPS/rate/privacy; durable retry, scoped finalization and concurrent idempotency');
+    if (process.env.START_PAY_AUDIT_TEST === '1') {
+      const { runStartPayAuditChecks } = await import('./run-start-pay-audit-checks.mjs');
+      await runStartPayAuditChecks({sql,migration,asyncSql,root});
+    }
+  }
+  if (process.env.STAFF_DOCUMENT_TEST === '1') {
+    assert.equal(process.env.AUDIT_FIX_TEST,'1','Staff documents require current hardened schema fixture');
+    const { runStaffDocumentChecks }=await import('./run-staff-document-checks.mjs');
+    await runStaffDocumentChecks({sql,migration,asyncSql,root});
+  }
+  if (process.env.IMPORT_SOURCE_TEST === '1') {
+    assert.equal(process.env.STAFF_DOCUMENT_TEST,'1','Import source requires current staff document schema');
+    const { runImportSourceChecks }=await import('./run-import-source-checks.mjs');
+    await runImportSourceChecks({sql,migration,asyncSql,root});
+  }
 } finally {
   if (started) run('pg_ctl', ['-D', `${directory}/data`, '-m', 'fast', 'stop']);
   await rm(directory, { recursive: true, force: true });

@@ -46,6 +46,8 @@ try{
  await migration('20261007003612_durable_document_check_worker.sql','-- Preserve the existing credential-safe synchronous transport.');
  await migration('20261007155627_native_incoming_call_delivery.sql');
  sql(await source('scripts/native-call-test-fixtures/checks.sql'));
+ await migration('20261007183600_web_push_category_preferences.sql');
+ sql(await source('scripts/native-call-test-fixtures/web-preference-checks.sql'));
  // Independent device requests with the same recipient JWT: only one claims it.
  const id=sql(`reset role;update chat_calls set status='ended' where status in('ringing','accepted');set role authenticated;set "request.jwt.claim.sub"='00000000-0000-0000-0000-000000000001';select (start_chat_call('00000000-0000-0000-0000-000000000010','audio')).id;`).trim();
  const ids=sql(`reset role;select string_agg(id::text,',' order by token) from push_devices where token in('native-android-a-token','native-android-b-token');`).trim().split(',');

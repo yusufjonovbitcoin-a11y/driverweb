@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { normalizeManualLoad } from './manualLoad.js';
+import { normalizeManualLoad, prepareManualLoad } from './manualLoad.js';
 const form = { loadNumber: 'MANUAL-123', broker: ' Dispatcher broker ', equipment: 'Dry van', originCity: 'New York', originState: 'NY', destinationCity: 'Boston', destinationState: 'MA', rate: '0', distanceMiles: '0', weightLbs: '' };
 const normalize = (overrides = {}, ids = ['driver-a']) => normalizeManualLoad({ ...form, ...overrides }, ids, ['driver-a', 'driver-b']);
 test('manual data preserves explicit zero and never invents missing logistics details', () => {
@@ -42,4 +42,20 @@ test('optional weight matches positive-integer database constraint', () => {
   assert.equal(normalize({ weightLbs: '' }).weightLbs, null);
   assert.equal(normalize({ weightLbs: '41000' }).weightLbs, 41000);
   for (const value of ['0', '0.5', '123.4', '-1']) assert.throws(() => normalize({ weightLbs: value }));
+});
+
+test('paid manual loads require numbered streets; nonpaid city-only loads remain valid', async () => {
+  const reads = [];
+  const paid = id => { reads.push(id); return { ratePerMile: '0.7855' }; };
+  for (const originAddress of ['', 'Phoenix, AZ', '25', 'Warehouse road']) {
+    await assert.rejects(prepareManualLoad({ ...form, originAddress, destinationAddress: '40 Main St' },
+      ['driver-a'], ['driver-a'], paid), /DRIVER_PAY_START_ADDRESS_REQUIRED/);
+  }
+  const load = await prepareManualLoad({ ...form, originAddress: ' 25A Main St ', destinationAddress: '40 North Rd' },
+    ['driver-a'], ['driver-a'], paid);
+  assert.equal(load.origin.address, '25A Main St');
+  const nonpaid = await prepareManualLoad(form, ['driver-a'], ['driver-a'], () => ({ ratePerMile: null }));
+  assert.equal(nonpaid.origin.address, null); assert.ok(reads.every(id => id === 'driver-a'));
+  await assert.rejects(prepareManualLoad(form, ['driver-a'], ['driver-a'], () => undefined), /SETTINGS_UNAVAILABLE/);
+  await assert.rejects(prepareManualLoad(form, ['driver-a'], ['driver-a'], () => { throw Error('offline'); }), /offline/);
 });

@@ -677,7 +677,7 @@ Deno.serve((request) => withCors(request, async () => {
 
   const { data: existing } = await adminClient
     .from("manual_load_imports")
-    .select("id,status,load_id,extracted_result,raw_extraction,error_message,updated_at,extraction_schema_version")
+    .select("id,created_by,status,load_id,extracted_result,raw_extraction,error_message,updated_at,extraction_schema_version")
     .eq("company_id", profile.company_id)
     .eq("checksum_sha256", checksum)
     .maybeSingle();
@@ -687,6 +687,11 @@ Deno.serve((request) => withCors(request, async () => {
       preparedLoad: existing.extracted_result,
       duplicate: true,
     });
+  }
+  // A retry must not rewrite another dispatcher's source before the import-
+  // bound upload command performs its own ownership validation.
+  if (existing && existing.created_by !== profile.id) {
+    return json({ error: 'IMPORT_DOCUMENT_PERMISSION_DENIED' }, 403);
   }
   const upgradeExisting = Boolean(existing?.load_id);
   if (upgradeExisting) {
@@ -852,51 +857,57 @@ Deno.serve((request) => withCors(request, async () => {
     });
     if (stopsSaveError) return await fail(stopsSaveError.message, 409);
 
-    const { data: previousDocument } = await adminClient.from('documents')
-      .select('current_version_id').eq('load_id', loadId).eq('document_type', 'rate_confirmation')
-      .not('current_version_id', 'is', null).order('created_at', { ascending: false }).limit(1).maybeSingle();
-    let storagePath: string;
-    if (!previousDocument?.current_version_id) {
-      const { data: uploadPlan, error: planError } = await callerClient.rpc(
-        "begin_document_upload",
-        {
-          load_id: loadId,
-          stop_id: null,
-          document_type: "rate_confirmation",
-          file_name: file.name,
-          mime_type: file.type,
-          size_bytes: file.size,
-        },
-      );
-      if (planError) return await fail(planError.message, 500);
-      if (uploadPlan?.bucket !== 'load-documents' || !uploadPlan?.storagePath || !uploadPlan?.versionId) {
-        return await fail('DOCUMENT_UPLOAD_PLAN_INVALID', 500);
-      }
-      storagePath = uploadPlan.storagePath;
+    // This is the original import source, not a staff replacement. The import-
+    // bound RPC validates actor, draft, checksum and metadata and resumes the
+    // same upload on retry. General staff uploads must keep their CAS guards.
+    const { data: uploadPlan, error: planError } = await callerClient.rpc(
+      'begin_import_document_upload',
+      { p_import_id: importId, p_expected_checksum: checksum },
+    );
+    if (planError) return await fail(planError.message, 409);
+    if (uploadPlan?.bucket !== 'load-documents' || !uploadPlan?.storagePath
+      || !uploadPlan?.versionId || !uploadPlan?.documentId
+      || typeof uploadPlan.alreadyUploaded !== 'boolean') {
+      return await fail('IMPORT_DOCUMENT_PLAN_INVALID', 500);
+    }
+    const storagePath = uploadPlan.storagePath;
+    let verifyStoredSource = uploadPlan.alreadyUploaded;
+    if (!uploadPlan.alreadyUploaded) {
       const uploadStarted = performance.now();
       const { error: uploadError } = await callerClient.storage
         .from(uploadPlan.bucket)
         .upload(storagePath, file, { contentType: file.type, upsert: false });
-      if (uploadError) return await fail(uploadError.message, 502);
-      console.info(JSON.stringify({ event: 'load_import_stage', importId, stage: 'source_upload', durationMs: Math.round(performance.now() - uploadStarted) }));
-      const { error: completeError } = await callerClient.rpc(
-        "complete_document_upload",
-        {
-          version_id: uploadPlan.versionId,
-          checksum_sha256: checksum,
-        },
-      );
-      if (completeError) return await fail(completeError.message, 500);
-      documentVersionId = uploadPlan.versionId;
-    } else {
-      documentVersionId = previousDocument.current_version_id;
-      const { data: existingVersion, error: versionError } = await adminClient
-        .from('document_versions').select('storage_path').eq('id', documentVersionId).single();
-      if (versionError || !existingVersion?.storage_path) {
-        return await fail('DOCUMENT_VERSION_PATH_UNAVAILABLE', 500);
+      // A previous upload can have succeeded even when its response was lost.
+      // Never overwrite it: completion verifies the exact stored object first.
+      if (uploadError && String(uploadError.statusCode ?? uploadError.status) !== '409') {
+        console.error(JSON.stringify({ event: 'load_import_source_upload_failed', importId,
+          status: uploadError.statusCode ?? uploadError.status ?? null }));
+        return await fail('IMPORT_DOCUMENT_UPLOAD_FAILED', 502);
       }
-      storagePath = existingVersion.storage_path;
+      verifyStoredSource = Boolean(uploadError);
+      console.info(JSON.stringify({ event: 'load_import_stage', importId, stage: 'source_upload', durationMs: Math.round(performance.now() - uploadStarted) }));
     }
+    if (verifyStoredSource) {
+      const { data: storedFile, error: downloadError } = await callerClient.storage
+        .from(uploadPlan.bucket).download(storagePath);
+      if (downloadError || !storedFile) return await fail('IMPORT_DOCUMENT_VERIFY_FAILED', 502);
+      if (storedFile.size !== file.size || await sha256(new Uint8Array(await storedFile.arrayBuffer())) !== checksum) {
+        return await fail('IMPORT_DOCUMENT_SOURCE_MISMATCH', 409);
+      }
+    }
+    // Only the verified Edge caller can attest to the uploaded bytes; a browser
+    // cannot finalize an arbitrary same-size object with a claimed checksum.
+    const { data: sourceDocument, error: completeError } = await adminClient.rpc(
+      'complete_import_document_upload',
+      { p_import_id: importId, p_version_id: uploadPlan.versionId,
+        p_expected_checksum: checksum, p_actor_id: profile.id },
+    );
+    if (completeError) return await fail(completeError.message, 409);
+    if (sourceDocument?.id !== uploadPlan.documentId || sourceDocument?.load_id !== loadId
+      || sourceDocument?.current_version_id !== uploadPlan.versionId) {
+      return await fail('IMPORT_DOCUMENT_COMMIT_INVALID', 500);
+    }
+    documentVersionId = uploadPlan.versionId;
     const { error: pathError } = await adminClient.from('manual_load_imports')
       .update({ storage_path: storagePath }).eq('id', importId);
     if (pathError) return await fail('DOCUMENT_IMPORT_PATH_UNAVAILABLE', 500);

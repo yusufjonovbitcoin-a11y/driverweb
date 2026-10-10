@@ -1,0 +1,12 @@
+{
+  "imports": {
+    "@supabase/supabase-js": "npm:@supabase/supabase-js@2.117.1",
+    "imapflow": "npm:imapflow@2.0.6",
+    "mailparser": "npm:mailparser@3.9.28"
+  },
+  "compilerOptions": {
+    "checkJs": false,
+    "strict": true
+  },
+  "nodeModulesDir": "none"
+}

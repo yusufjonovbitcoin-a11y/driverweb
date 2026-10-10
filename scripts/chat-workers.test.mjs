@@ -30,8 +30,8 @@ const pushCode = await workerCode('process-push-notifications');
 const mediaCode = await workerCode('process-media-deletions');
 const delivery = { notification_id: 'n1', device_id: 'd1', company_id: 'c1', recipient_id: 'u1', push_token: 't1', title: 'stale title', body: 'stale text', notification_type: 'chat_message', entity_id: 'chat1', entity_type: 'chat_conversation', attempt_count: 1 };
 
-function harness(code, { deleted = false, lookupError = false, jobs = [], env = {}, uploadEligible = true, body = {} } = {}) {
-  const rpcs = [], updates = [], sends = [], removals = [], serviceCalls = [];
+function harness(code, { deleted = false, lookupError = false, jobs = [], env = {}, uploadEligible = true, body = {}, notification = {}, message = {}, device = { web_messages_enabled: true }, platform = 'web' } = {}) {
+  const rpcs = [], updates = [], sends = [], removals = [], serviceCalls = [], selects = [];
   const environment = {
     SUPABASE_URL: 'https://test.invalid',
     SUPABASE_SERVICE_ROLE_KEY: 'test-service',
@@ -41,13 +41,14 @@ function harness(code, { deleted = false, lookupError = false, jobs = [], env = 
   };
   const rows = {
     push_deliveries: { status: 'processing', locked_by: 'edge-push-worker' },
-    notifications: { type: 'chat_message', title: 'Current title', body: 'Edited text', chat_message_id: 'm1' },
-    chat_messages: { deleted_at: deleted ? '2026-10-05T00:00:00Z' : null },
+    notifications: { type: 'chat_message', title: 'Current title', body: 'Edited text', chat_message_id: 'm1', created_at: new Date().toISOString(), read_at: null, ...notification },
+    chat_messages: { deleted_at: deleted ? '2026-10-05T00:00:00Z' : null, read_at: null, ...message },
+    push_devices: device,
   };
   const admin = {
     async rpc(name, args) {
       rpcs.push({ name, args });
-      if (name === 'claim_push_deliveries') return { data: [delivery], error: null };
+      if (name === 'claim_push_deliveries') return { data: [{ ...delivery, platform }], error: null };
       if (name === 'claim_jobs') return { data: jobs, error: null };
       if (name === 'can_cleanup_chat_upload') return { data: uploadEligible, error: null };
       return { data: name === 'cleanup_stale_chat_calls' ? 2 : true, error: null };
@@ -56,8 +57,9 @@ function harness(code, { deleted = false, lookupError = false, jobs = [], env = 
       let update;
       const filters = {};
       const query = {
-        select() { return query; },
+        select(columns) { selects.push({ table, columns }); return query; },
         eq(key, value) { filters[key] = value; return query; },
+        is(key, value) { filters[key] = value; return query; },
         update(value) { update = value; return query; },
         maybeSingle: async () => ({ data: rows[table], error: lookupError ? { message: 'unavailable' } : null }),
         then(resolve) { if (update) updates.push({ table, update, filters }); return Promise.resolve({ data: null, error: null }).then(resolve); },
@@ -74,7 +76,7 @@ function harness(code, { deleted = false, lookupError = false, jobs = [], env = 
     Deno: { serve: (fn) => { handler = fn; }, env: { get: (key) => environment[key] } },
   };
   vm.runInNewContext(code, sandbox);
-  return { rpcs, updates, sends, removals, serviceCalls, run: (token = code === pushCode ? 'test-push-worker' : 'test-media-worker') => handler(new Request('https://test.invalid/worker', { method: 'POST', headers: token === null ? {} : { 'X-Worker-Token': token }, body: JSON.stringify(body) })) };
+  return { rpcs, updates, sends, removals, serviceCalls, selects, run: (token = code === pushCode ? 'test-push-worker' : 'test-media-worker') => handler(new Request('https://test.invalid/worker', { method: 'POST', headers: token === null ? {} : { 'X-Worker-Token': token }, body: JSON.stringify(body) })) };
 }
 
 test('orphan worker refuses a referenced or unclaimed upload before Storage removal', async () => {
@@ -188,8 +190,55 @@ test('push worker uses the current notification and acknowledges only its own le
   assert.equal(h.sends[0][3].title, 'Current title');
   assert.equal(h.sends[0][4].conversationId, 'chat1');
   assert.equal(h.sends[0][4].entityId, 'chat1');
+  assert.equal(h.sends[0][4].notificationId, 'n1');
+  assert.equal(h.sends[0][4].recipient_id, 'u1');
+  assert.equal(h.sends[0][4].recipientId, 'u1');
+  assert.equal(h.sends[0][4].chat_message_id, 'm1');
+  assert.equal(h.sends[0][4].chatMessageId, 'm1');
+  assert.ok(Number.isFinite(Date.parse(h.sends[0][4].created_at)));
+  assert.equal(h.sends[0][4].createdAt, h.sends[0][4].created_at);
+  assert.ok(h.selects.some(({ table, columns }) => table === 'notifications' && columns.includes('created_at') && columns.includes('read_at')));
+  assert.ok(h.selects.some(({ table, columns }) => table === 'chat_messages' && columns.includes('read_at')));
   const complete = h.rpcs.find((rpc) => rpc.name === 'complete_push_delivery');
   assert.equal(complete.args.worker_id, 'edge-push-worker');
+});
+
+for (const [reason, changes] of [
+  ['read notification', { notification: { read_at: '2026-10-08T00:00:00Z' } }],
+  ['read message', { message: { read_at: '2026-10-08T00:00:00Z' } }],
+  ['chat older than one hour', { notification: { created_at: new Date(Date.now() - 3_601_000).toISOString() } }],
+]) {
+  test(`push worker cancels ${reason} without sending or deleting message history`, async () => {
+    const h = harness(pushCode, changes);
+    assert.equal((await (await h.run()).json()).cancelled, 1);
+    assert.equal(h.sends.length, 0);
+    assert.equal(h.updates.length, 1);
+    assert.equal(h.updates[0].table, 'push_deliveries');
+    assert.equal(h.updates[0].filters.notification_id, 'n1');
+    assert.equal(h.updates[0].filters.device_id, 'd1');
+    assert.equal(h.updates[0].filters.locked_by, 'edge-push-worker');
+    assert.deepEqual(h.removals, []);
+  });
+}
+
+test('push worker preserves old operational notifications', async () => {
+  const h = harness(pushCode, { notification: { type: 'load_offer', chat_message_id: null, created_at: '2020-01-01T00:00:00Z' } });
+  assert.equal((await (await h.run()).json()).completed, 1);
+  assert.equal(h.sends.length, 1);
+  assert.equal(h.sends[0][4].chatMessageId, '');
+});
+
+test('web message delivery rechecks current category preference and missing endpoint before FCM', async () => {
+  for (const device of [{ web_messages_enabled: false }, null]) {
+    const h = harness(pushCode, { device });
+    assert.equal((await (await h.run()).json()).cancelled, 1);
+    assert.equal(h.sends.length, 0);
+    assert.equal(h.updates[0].table, 'push_deliveries');
+  }
+  const native = harness(pushCode, { device: { web_messages_enabled: false }, platform: 'android' });
+  assert.equal((await (await native.run()).json()).completed, 1);
+  const operational = harness(pushCode, { device: { web_messages_enabled: false }, notification: { type: 'load_offer', chat_message_id: null } });
+  assert.equal((await (await operational.run()).json()).completed, 1);
 });
 
 test('push eligibility lookup failure retries without leaking stale content to FCM', async () => {

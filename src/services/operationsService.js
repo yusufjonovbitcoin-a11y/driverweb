@@ -67,7 +67,8 @@ function toUiLoad(row, offersByLoad, documentsByLoad, warningsByLoad, reviewsByD
   const delivery = splitAppointment(row.delivery_from);
   const offers = offersByLoad.get(row.id) || [];
   const documents = documentsByLoad.get(row.id) || [];
-  const docOfType = (type) => documents.find((document) => document.document_type === type);
+  const docOfType = (type) => documents.find((document) => document.document_type === type && document.current_version_id)
+    || documents.find((document) => document.document_type === type);
   const docUrl = (type) => docOfType(type)?.signedUrl || null;
   const docReview = (type) => {
     const document = docOfType(type);
@@ -142,6 +143,7 @@ function toUiLoad(row, offersByLoad, documentsByLoad, warningsByLoad, reviewsByD
     driverId: row.driver_id,
     targetDriverIds: row.driver_id ? [row.driver_id] : [],
     dispatchedAt: row.updated_at || null,
+    documentItems: documents,
     documents: {
       rateCon: docUrl('rate_confirmation'),
       shipperBol: docUrl('bol'),
@@ -232,7 +234,7 @@ export async function fetchWorkspace() {
     () => readAllRows(() => client.from('load_overview').select('*')),
     () => readAllRows(() => client.from('offers').select('id,load_id,driver_id,status,compatibility_warnings,created_at')),
     () => readAllRows(() => client.from('assignments').select('id,driver_stage').eq('status', 'active')),
-    () => readAllRows(() => client.from('documents').select('id,load_id,document_type,current_version_id')),
+    () => readAllRows(() => client.from('documents').select('id,load_id,document_type,stop_id,current_version_id,current_version:document_versions!documents_current_version_fk(file_name,mime_type)')),
     () => readAllRows(() => client.from('member_directory').select('*')),
     () => fetchDriverPresence(),
     () => readAllRows(() => client.from('warnings').select('id,load_id,code,message,params,created_at').eq('is_active', true)),
@@ -258,7 +260,9 @@ export async function fetchWorkspace() {
   warningsResult.data.sort((a, b) => String(a.created_at).localeCompare(String(b.created_at)));
   // Durable version IDs are sufficient for lists. Resolve private media only
   // when it is opened, not before the entire workspace can become interactive.
-  const documents = documentsResult.data || [];
+  const documents = (documentsResult.data || []).map(({ current_version: version, ...document }) => ({
+    ...document, fileName: version?.file_name || null, mimeType: version?.mime_type || null,
+  }));
   const offersByLoad = new Map();
   for (const offer of offersResult.data || []) {
     const current = offersByLoad.get(offer.load_id) || [];

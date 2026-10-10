@@ -157,21 +157,30 @@ Deno.serve((request) =>
             admin.from("push_deliveries").select("status,locked_by")
               .eq("notification_id", delivery.notification_id).eq("device_id", delivery.device_id)
               .eq("company_id", delivery.company_id).maybeSingle(),
-            admin.from("notifications").select("type,title,body,chat_message_id")
+            admin.from("notifications").select("type,title,body,chat_message_id,created_at,read_at")
               .eq("id", delivery.notification_id).eq("company_id", delivery.company_id)
               .eq("recipient_id", delivery.recipient_id).maybeSingle(),
             admin.rpc("chat_push_delivery_allowed", { p_notification_id: delivery.notification_id }),
           ]);
           if (leaseResult.error || notificationResult.error || chatSafety.error) throw new Error("Push eligibility lookup failed");
           const notification = notificationResult.data;
+          let webMessagesEnabled = true;
+          if (delivery.platform === "web" && notification?.type === "chat_message") {
+            const device = await admin.from("push_devices").select("web_messages_enabled")
+              .eq("id", delivery.device_id).eq("user_id", delivery.recipient_id)
+              .eq("company_id", delivery.company_id).eq("platform", "web")
+              .eq("token", delivery.push_token).is("disabled_at", null).maybeSingle();
+            if (device.error) throw new Error("Push preference lookup failed");
+            webMessagesEnabled = device.data?.web_messages_enabled === true;
+          }
           let message = null;
           if (notification?.chat_message_id) {
-            const current = await admin.from("chat_messages").select("deleted_at")
+            const current = await admin.from("chat_messages").select("deleted_at,read_at")
               .eq("id", notification.chat_message_id).eq("company_id", delivery.company_id).maybeSingle();
             if (current.error) throw new Error("Chat push eligibility lookup failed");
             message = current.data;
           }
-          if (chatSafety.data !== true || !shouldSendPush({ workerId, lease: leaseResult.data, notification, message })) {
+          if (chatSafety.data !== true || !shouldSendPush({ workerId, lease: leaseResult.data, notification, message, webMessagesEnabled })) {
             // A concurrent delete may already have cancelled/released the lease.
             const { error } = await admin.from("push_deliveries")
               .update({ status: "cancelled", locked_by: null, locked_at: null,
@@ -189,6 +198,12 @@ Deno.serve((request) =>
             { title: notification!.title, body: notification!.body },
             {
               notificationId: delivery.notification_id,
+              recipientId: delivery.recipient_id,
+              recipient_id: delivery.recipient_id,
+              createdAt: notification!.created_at,
+              created_at: notification!.created_at,
+              chatMessageId: notification!.chat_message_id ?? "",
+              chat_message_id: notification!.chat_message_id ?? "",
               type: notification!.type,
               entityType: delivery.entity_type ?? "",
               entityId: delivery.entity_id ?? "",

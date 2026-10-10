@@ -1,14 +1,16 @@
 import { supabase } from '../lib/supabase.js';
 import { firebaseVapidKey, getFirebaseApp } from './firebaseConfig.js';
 import { createWebPushController } from './webPushController.js';
+import { emptyPushPreferences, hasPushCategory, legacyPushPreferenceKey, normalizePushPreferences, pushPreferencesEvent, pushPreferencesKey, readPushPreferences, withPushDeadline } from './webPushPreferences.js';
 
 const scope = '/firebase-push/';
 const tokenKey = 'tfleest.push.token';
-const preferenceKey = (id) => `tfleest.push.enabled.${id}`;
+let currentAccount = null;
 let messagingPromise;
 function read(key) { try { return localStorage.getItem(key); } catch { return null; } }
 function write(key, value) { if (value === null) localStorage.removeItem(key); else localStorage.setItem(key, value); }
-export const pushOptedIn = (id) => !!id && read(preferenceKey(id)) === 'true';
+export const getPushPreferences = (id) => readPushPreferences(id, read);
+export const pushOptedIn = (id) => hasPushCategory(getPushPreferences(id));
 export const pushPermission = () => globalThis.Notification?.permission || 'unsupported';
 export function pushSupported() {
   return !!(globalThis.isSecureContext && globalThis.Notification && navigator.serviceWorker && globalThis.PushManager);
@@ -25,9 +27,10 @@ async function registration(create = false) {
   if (!navigator.serviceWorker) return null;
   let registered = await navigator.serviceWorker.getRegistration(scope);
   if (!registered && create) registered = await navigator.serviceWorker.register('/firebase-messaging-sw.js', { scope, updateViaCache: 'none' });
+  else if (registered && create) await registered.update();
   if (!registered) return null;
-  if (registered.active?.state === 'activated') return registered;
   const worker = registered.installing || registered.waiting || registered.active;
+  if (worker?.state === 'activated') return registered;
   await new Promise((resolve, reject) => {
     const timeout = setTimeout(() => { cleanup(); reject(new Error('workerTimeout')); }, 15000);
     const cleanup = () => { clearTimeout(timeout); worker?.removeEventListener('statechange', check); };
@@ -40,31 +43,53 @@ async function registration(create = false) {
   });
   return registered;
 }
-async function setWorkerEnabled(enabled) {
-  const registered = await registration(enabled);
-  if (!registered?.active) return;
-  await new Promise((resolve, reject) => {
+async function sendWorkerMessage(message, create = false) {
+  const registered = await registration(create);
+  if (!registered?.active) {
+    if (create) throw new Error('workerFailed');
+    return;
+  }
+  return new Promise((resolve, reject) => {
     const channel = new MessageChannel();
     const timeout = setTimeout(() => { channel.port1.close(); reject(new Error('workerTimeout')); }, 5000);
-    channel.port1.onmessage = () => { clearTimeout(timeout); channel.port1.close(); resolve(); };
-    registered.active.postMessage({ type: 'TFLEEST_PUSH_PREFERENCES', enabled,
-      locale: document.documentElement.lang.split('-')[0] }, [channel.port2]);
+    channel.port1.onmessage = (event) => {
+      clearTimeout(timeout); channel.port1.close();
+      if (event.data?.ok !== true) reject(new Error('workerFailed'));
+      else if (message.type === 'TFLEEST_PUSH_PREFERENCES' && event.data?.protocolVersion !== 2) reject(new Error('workerProtocol'));
+      else resolve(event.data);
+    };
+    registered.active.postMessage(message, [channel.port2]);
   });
 }
+const setWorkerPreferences = (preferences) => sendWorkerMessage({ type: 'TFLEEST_PUSH_PREFERENCES',
+  ...preferences, locale: document.documentElement.lang.split('-')[0] }, preferences.enabled);
 async function rpc(name, args) {
   if (!supabase) throw new Error('signedOut');
   const { error } = await supabase.rpc(name, args);
   if (error) throw new Error('registrationFailed');
 }
-export const webPush = createWebPushController({
-  lock: (fn) => navigator.locks ? navigator.locks.request('tfleest-push', fn) : fn(),
+const controller = createWebPushController({
+  lock: async (fn) => {
+    if (!navigator.locks) return fn();
+    const abort = new AbortController();
+    const timer = setTimeout(() => abort.abort(), 20_000);
+    try { return await navigator.locks.request('tfleest-push', { signal: abort.signal }, fn); }
+    catch (error) { if (abort.signal.aborted) throw new Error('workerTimeout'); throw error; }
+    finally { clearTimeout(timer); }
+  },
+  readPreferences: getPushPreferences,
   permission: pushPermission,
   requestPermission: () => pushSupported() ? Notification.requestPermission() : Promise.reject(new Error('unsupported')),
   readToken: () => read(tokenKey),
   saveToken: (token) => write(tokenKey, token),
-  saveEnabled: (id, value) => { if (id) { try { write(preferenceKey(id), String(value)); } catch { /* Session-only preference if storage is blocked. */ } } },
-  sessionUserId: async () => (await supabase.auth.getSession()).data.session?.user.id,
-  setWorkerEnabled,
+  savePreferences: (id, value) => {
+    if (!id) return;
+    write(pushPreferencesKey(id), JSON.stringify(normalizePushPreferences(value)));
+    try { write(legacyPushPreferenceKey(id), null); } catch { /* New version takes precedence. */ }
+    window.dispatchEvent(new CustomEvent(pushPreferencesEvent, { detail: { userId: id } }));
+  },
+  sessionUserId: async () => (await supabase?.auth.getSession())?.data.session?.user.id,
+  setWorkerPreferences,
   getToken: async () => {
     if (!firebaseVapidKey) throw new Error('registrationFailed');
     const { sdk, instance } = await messaging();
@@ -82,7 +107,28 @@ export const webPush = createWebPushController({
     const subscription = await registered.pushManager.getSubscription();
     if (subscription && !await subscription.unsubscribe()) throw new Error('disableFailed');
   },
-  register: (token) => rpc('register_push_device', { token, platform: 'web' }),
+  register: async (token, preferences) => {
+    await rpc('register_push_device', { token, platform: 'web' });
+    await rpc('set_web_push_preferences', { p_token: token,
+      p_calls: preferences.calls === true, p_messages: preferences.messages === true });
+  },
   unregister: (token) => rpc('unregister_push_device', { token }),
 });
-export const silenceWebPush = () => setWorkerEnabled(false);
+export const webPush = { ...controller, setAccount(id) { currentAccount = id; controller.setAccount(id); } };
+export const silenceWebPush = (userId = null) => setWorkerPreferences({ ...emptyPushPreferences, enabled: false, userId });
+
+export async function dispatchBrowserNotification(payload) {
+  payload = payload?.data && typeof payload.data === 'object' ? payload.data : payload;
+  const owner = currentAccount;
+  const recipient = payload?.recipient_id ?? payload?.recipientId ?? owner;
+  if (!owner || recipient !== owner || pushPermission() !== 'granted') return false;
+  const category = payload?.event === 'incoming_call' ? 'calls' : 'messages';
+  if (!getPushPreferences(owner)[category]) return false;
+  const sessionId = (await withPushDeadline(supabase?.auth.getSession()))?.data.session?.user.id;
+  if (currentAccount !== owner || sessionId !== owner) return false;
+  return sendWorkerMessage({ type: 'TFLEETS_NOTIFY', payload: { ...payload, recipient_id: owner } });
+}
+export async function closeBrowserCallNotification(callId) {
+  if (!currentAccount || !callId) return false;
+  return sendWorkerMessage({ type: 'TFLEETS_CLOSE_CALL', callId, userId: currentAccount });
+}

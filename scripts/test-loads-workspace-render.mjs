@@ -106,8 +106,8 @@ try {
     assert.ok(delivered.includes(`class="driver-trip-stage stage-on_road">${translated('loads.awaitingCompletion')}</span>`), `${locale}: delivered retains awaiting-completion label`);
     const onRoadColumn = html.split('class="kanban-column driver-board-column stage-on_road')[1].split('class="kanban-column')[0];
     assert.ok(onRoadColumn.includes('TEST-ON-ROAD') && onRoadColumn.includes('TEST-DELIVERED'), `${locale}: delivered load remains in the on-road column`);
-    assert.ok(!cards(html).some(markup => markup.includes('TEST-UNASSIGNED')), `${locale}: old unassigned card stays outside the board`);
-    assert.ok(html.includes('saved-load-recovery') && html.includes(translated('loadRecovery.resume')), `${locale}: saved draft has a separate recovery action`);
+    assert.ok(!html.includes('TEST-UNASSIGNED'), `${locale}: old unassigned record is absent from workspace markup`);
+    assert.ok(!html.includes('saved-load-recovery'), `${locale}: no separate saved-drafts panel`);
     assert.ok(!html.includes('class="fleet-load-assign"'), `${locale}: no legacy assign action`);
     assert.ok(!html.includes('class="fleet-load-delete"'), `${locale}: no hidden-draft delete action`);
     assert.ok(!html.includes(text(i18n.t('loads.offeredDrivers', { count: 2 }))), `${locale}: no offered-driver count`);
@@ -129,12 +129,30 @@ try {
   const manualWithoutDriver = renderMarkup(React.createElement(CreateLoadModal, { isOpen:true, drivers, onClose:action, onCreateLoad:action }));
   assert.match(manualWithoutDriver, /<button[^>]*type="submit"[^>]*disabled=""/);
   const manualWithDriver = renderMarkup(React.createElement(CreateLoadModal, { isOpen:true, drivers, onClose:action, onCreateLoad:action, initialDriverId:'driver-a' }));
-  assert.ok(!/<button[^>]*type="submit"[^>]*disabled=""/.test(manualWithDriver), 'known driver enables manual creation');
+  assert.match(manualWithDriver, /<button[^>]*type="submit"[^>]*disabled=""/, 'known driver must finish the scoped pay-settings check before manual creation');
   const savedDraft = renderMarkup(React.createElement(QuickDriverModal, { isOpen:true, drivers, onClose:action, onConfirm:action, initialDriverId:'driver-a',
     loadData:{...loads[0], lifecycleStatus:'draft', databaseStatus:'draft', source:'saved'},
   }));
   assert.ok(!savedDraft.includes(translated('loads.closedCannotOffer')), 'manual draft remains assignable through approval recovery');
   assert.ok(!/<button[^>]*type="submit"[^>]*disabled=""/.test(savedDraft));
+  assert.ok(savedDraft.includes('Test Driver Alpha'), 'fixed driver remains visible');
+  assert.ok(!savedDraft.includes('Test Driver Beta'), 'fixed-driver recovery does not offer another driver');
+  assert.ok(!savedDraft.includes('role="radiogroup"'), 'fixed-driver recovery does not render a driver picker');
+  assert.ok(!savedDraft.includes(`placeholder="${translated('drivers.searchPlaceholder')}"`), 'fixed-driver recovery does not render driver search');
+
+  const missingFixedDriver = renderMarkup(React.createElement(QuickDriverModal, { isOpen:true, drivers, onClose:action, onConfirm:action, initialDriverId:'missing-driver',
+    loadData:{...loads[0], lifecycleStatus:'draft', databaseStatus:'draft', source:'saved'},
+  }));
+  assert.match(missingFixedDriver, /<button[^>]*type="submit"[^>]*disabled=""/, 'missing fixed driver cannot be submitted');
+  assert.ok(!missingFixedDriver.includes('role="radiogroup"'), 'missing fixed driver does not silently fall back to another driver');
+
+  const selectableDriver = renderMarkup(React.createElement(QuickDriverModal, { isOpen:true, drivers, onClose:action, onConfirm:action,
+    loadData:{...loads[0], lifecycleStatus:'draft', databaseStatus:'draft', source:'saved'},
+  }));
+  assert.ok(selectableDriver.includes('role="radiogroup"'), 'driver picker remains available without fixed context');
+  assert.ok(selectableDriver.includes(`placeholder="${translated('drivers.searchPlaceholder')}"`), 'unbound recovery retains driver search');
+  assert.ok(selectableDriver.includes('Test Driver Alpha') && selectableDriver.includes('Test Driver Beta'), 'unbound recovery offers available drivers');
+  assert.match(selectableDriver, /<button[^>]*type="submit"[^>]*disabled=""/, 'unbound recovery requires a driver selection');
 
   const emptyHtml = render({ loads: [], drivers: [] });
   assert.equal(cards(emptyHtml).length, 0);
@@ -150,11 +168,8 @@ try {
   assert.ok(draftOnlyHtml.includes('--board-column-count:4'), 'Draft-only board keeps four columns');
   assert.equal(cards(draftOnlyHtml).length, 0, 'Draft and offer records never appear as dispatched cards');
   assert.equal(draftOnlyHtml.split('class="driver-board-empty"').length - 1, 4);
-  assert.ok(draftOnlyHtml.includes('saved-load-recovery'), 'Legacy records remain reachable outside the board');
-  for (const status of ['draft', 'review', 'ready_for_offer', 'offered']) assert.ok(draftOnlyHtml.includes(`HIDDEN-${status}`), `${status} can be recovered`);
-  const failedSaveHtml = render({ loads: [], recoveryLoads: loads, recoveryRequest: 1 });
-  assert.match(failedSaveHtml, /<details[^>]*open=""[^>]*class="saved-load-recovery/);
-  assert.ok(failedSaveHtml.includes('TEST-UNASSIGNED'), 'failed-save recovery is independent of active board search');
+  assert.ok(!draftOnlyHtml.includes('saved-load-recovery'), 'Draft-only workspace has no separate saved-drafts panel');
+  for (const status of ['draft', 'review', 'ready_for_offer', 'offered']) assert.ok(!draftOnlyHtml.includes(`HIDDEN-${status}`), `${status} record stays out of workspace markup`);
   assertSummary(draftOnlyHtml, { total: 0, active: 0, completed: 0, driverCount: 0 }, 'Draft-only board');
   assert.ok(draftOnlyHtml.includes(translated('loadsWorkspace.importPdf')), 'Draft-only board retains PDF import');
   assert.ok(draftOnlyHtml.includes(translated('loadTrash.title')), 'Draft-only board retains trash');
@@ -199,7 +214,7 @@ try {
   assert.ok(!driverHtml.includes('fleet-load-card-footer'));
   assert.ok(!driverHtml.includes('<table'));
   assert.equal(networkAttempts, 0);
-  console.log('LoadsWorkspace render: 3 locales, 4 dispatched stages, visible-only totals, excluded drafts/offers, grouped delivered loads, PDF/busy/trash, empty/missing fields and driver board passed; no network.');
+  console.log('LoadsWorkspace render: 3 locales, 4 dispatched stages, visible-only totals, no saved-drafts panel or draft/offer records, fixed/unbound driver recovery, grouped delivered loads, PDF/busy/trash, empty/missing fields and driver board passed; no network.');
 } finally {
   globalThis.fetch = previousFetch;
   if (storageDescriptor) Object.defineProperty(globalThis, 'localStorage', storageDescriptor);

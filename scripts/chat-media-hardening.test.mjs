@@ -10,7 +10,7 @@ async function moduleFrom(relative) {
   return import(`data:text/javascript;base64,${Buffer.from(output[0].code).toString('base64')}`);
 }
 const { parseMediaCleanupPayload, deleteCloudinaryMedia } = await moduleFrom('../supabase/functions/_shared/media-cleanup.ts');
-const { shouldSendPush } = await moduleFrom('../supabase/functions/_shared/push-delivery-guard.ts');
+const { shouldSendPush, CHAT_PUSH_MAX_AGE_MS } = await moduleFrom('../supabase/functions/_shared/push-delivery-guard.ts');
 
 test('chat cleanup accepts only an explicit message identity and its private bucket', () => {
   const job = { provider: 'supabase_storage', messageId: 'message-1', bucket: 'chat-media', storagePath: 'company/conversation/client/photo.png' };
@@ -33,7 +33,7 @@ test('legacy Cloudinary chat cleanup remains idempotent and invalidates delivery
 });
 
 test('push guard refuses deleted, missing, cancelled or stolen-lease notifications', () => {
-  const candidate = { workerId: 'worker', lease: { status: 'processing', locked_by: 'worker' }, notification: { type: 'chat_message', title: 'Driver', body: 'Hello', chat_message_id: 'm1' }, message: { deleted_at: null } };
+  const candidate = { workerId: 'worker', lease: { status: 'processing', locked_by: 'worker' }, notification: { type: 'chat_message', title: 'Driver', body: 'Hello', chat_message_id: 'm1', created_at: new Date().toISOString() }, message: { deleted_at: null } };
   assert.equal(shouldSendPush(candidate), true);
   assert.equal(shouldSendPush({ ...candidate, message: { deleted_at: '2026-10-05' } }), false);
   assert.equal(shouldSendPush({ ...candidate, message: null }), false);
@@ -41,6 +41,23 @@ test('push guard refuses deleted, missing, cancelled or stolen-lease notificatio
   assert.equal(shouldSendPush({ ...candidate, lease: { status: 'cancelled', locked_by: null } }), false);
   assert.equal(shouldSendPush({ ...candidate, workerId: 'other' }), false);
   assert.equal(shouldSendPush({ ...candidate, notification: { type: 'load_offer', title: 'Load', body: 'Ready' }, message: null }), true);
+});
+
+test('chat push expires after one hour or either read marker, without expiring operational alerts', () => {
+  const now = Date.parse('2026-10-08T12:00:00Z');
+  const candidate = { now, workerId: 'worker', lease: { status: 'processing', locked_by: 'worker' },
+    notification: { type: 'chat_message', title: 'Driver', body: 'Hello', chat_message_id: 'm1',
+      created_at: new Date(now - CHAT_PUSH_MAX_AGE_MS).toISOString(), read_at: null },
+    message: { deleted_at: null, read_at: null } };
+  assert.equal(CHAT_PUSH_MAX_AGE_MS, 3_600_000);
+  assert.equal(shouldSendPush(candidate), true, 'exactly one hour remains eligible');
+  assert.equal(shouldSendPush({ ...candidate, now: now + 1 }), false);
+  assert.equal(shouldSendPush({ ...candidate, notification: { ...candidate.notification, read_at: '2026-10-08' } }), false);
+  assert.equal(shouldSendPush({ ...candidate, message: { ...candidate.message, read_at: '2026-10-08' } }), false);
+  for (const created_at of [null, '', 'invalid']) {
+    assert.equal(shouldSendPush({ ...candidate, notification: { ...candidate.notification, created_at } }), false);
+  }
+  assert.equal(shouldSendPush({ ...candidate, notification: { type: 'load_offer', title: 'Load', body: 'Ready', created_at: '2020-01-01' }, message: null }), true);
 });
 
 const storageBundle = await rolldown({

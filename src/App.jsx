@@ -37,12 +37,14 @@ import { localizedError } from './i18n/errors';
 import { runLoadTrashAction, loadTrashMetadata, partitionTrashedLoads } from './services/loadTrashActions.js';
 import { isRecoverableLoad, recoverSavedLoad } from './services/savedLoadRecovery.js';
 import { loadBoardStatus } from './services/loadBoardStatus.js';
+import { applyStaffDocumentResult, refreshOpenDocumentLoad } from './services/staffLoadDocuments.js';
 import { loadImportFileError } from './services/loadImportFile';
 import { createDocumentImportRunner, mergeDocumentImportResult, continueDocumentImport, shouldCancelImportOnNavigation, findExistingFinalizedLoad } from './services/documentImportSession';
 import { setAppLocale } from './i18n';
 import { changeLocaleWithProfileSync } from './i18n/localeSync';
 import { supabase } from './lib/supabase';
 import { useWebPush } from './hooks/useWebPush';
+import { useBrowserNotifications } from './hooks/useBrowserNotifications';
 import { syncAnalyticsPrivacy, trackPage } from './services/firebaseAnalytics';
 import { createCoalescedAsyncTrigger } from './services/realtimeRefresh';
 import { createSerializedRefresh } from './services/serializedRefresh';
@@ -93,6 +95,7 @@ export default function App() {
     return () => window.removeEventListener('storage', syncPrivacy);
   }, []);
   const browserPush = useWebPush(auth.currentUser?.companyId ? auth.currentUser.id : null, auth.loading);
+  useBrowserNotifications(auth.currentUser?.companyId ? auth.currentUser.id : null, browserPush.status === 'on');
   const scope = JSON.stringify([auth.currentUser?.id, auth.currentUser?.companyId, auth.currentUser?.roleCode]);
   return <WorkspaceCache key={scope}><Workspace auth={auth} browserPush={browserPush} /></WorkspaceCache>;
 }
@@ -130,7 +133,6 @@ function Workspace({ auth, browserPush }) {
   const [selectedDriverForLoad, setSelectedDriverForLoad] = useState(null);
   const [selectedDriverId, setSelectedDriverId] = useState(null);
   const [driverProfileRequest, setDriverProfileRequest] = useState(0);
-  const [draftRecoveryRequest, setDraftRecoveryRequest] = useState(0);
   const [profileEditDriverId, setProfileEditDriverId] = useState(null);
   const [chatDriverId, setChatDriverId] = useState(null);
   const [chatSelectionRequest, setChatSelectionRequest] = useState(0);
@@ -167,6 +169,8 @@ function Workspace({ auth, browserPush }) {
   const inboxRefreshRef = useRef(null);
   const workspaceActiveRef = useRef(true);
   const workspaceGenerationRef = useRef(0);
+  const staffDocumentManagerRef = useRef(null);
+  useEffect(() => () => staffDocumentManagerRef.current?.dispose(), []);
   const presenceUpdatesRef = useRef(new Map());
   const foregroundRefreshCountRef = useRef(0);
   const inlineChatVisible = activeTab === 'drivers' && Boolean(inlineChatDriverId);
@@ -260,6 +264,11 @@ function Workspace({ auth, browserPush }) {
       const partition = partitionTrashedLoads(workspace.loads);
       setLoads(partition.active);
       setTrashedLoads(partition.trash);
+      setSelectedLoadForDocs(current => {
+        if (!current) return null;
+        const fresh = workspace.loads.find(load => load.id === current.id);
+        return fresh ? refreshOpenDocumentLoad(current, fresh) : null;
+      });
       setDrivers(previous => preserveWorkspaceAvatars(
         refreshDriverPresence(workspace.drivers, presenceUpdatesRef.current), previous,
       ));
@@ -495,8 +504,8 @@ function Workspace({ auth, browserPush }) {
         await refreshWorkspace({ quiet: true });
         setIsCreateModalOpen(false);
         setSelectedDriverForLoad(null);
-        handleSelectTab('kanban');
-        setDraftRecoveryRequest(request => request + 1);
+        setAiPreparedLoad({ ...newLoad, id: error.loadId, databaseStatus: 'draft',
+          lifecycleStatus: 'draft', source: 'saved', preferredDriverId: newLoad.targetDriverIds[0] });
         showToast(t('toasts.loadSavedApprovalFailed'));
         return;
       }
@@ -514,8 +523,8 @@ function Workspace({ auth, browserPush }) {
       await assignLoadDirectly(loadId, newLoad.targetDriverIds[0]);
       showToast(t('loads.assignedDirectly'));
     } catch (error) {
-      handleSelectTab('kanban');
-      setDraftRecoveryRequest(request => request + 1);
+      setAiPreparedLoad({ ...newLoad, id: loadId, databaseStatus: 'ready_for_offer',
+        lifecycleStatus: 'ready_for_offer', source: 'saved', preferredDriverId: newLoad.targetDriverIds[0] });
       showToast(t('toasts.loadSavedOfferFailed', {
         reason: localizedError(t, error, 'errors.createLoad'),
       }));
@@ -662,6 +671,29 @@ function Workspace({ auth, browserPush }) {
   };
   const canManageLoads = ['company_admin', 'dispatcher'].includes(currentUser?.roleCode);
   const handleTrashLoad = canManageLoads ? (load) => handleLoadTrashAction('trash', load) : undefined;
+  const handleManageDocument = canManageLoads ? async (load, request) => {
+    if (!staffDocumentManagerRef.current) {
+      const { makeStaffDocumentManager } = await import('./services/staffLoadDocumentService.js');
+      if (!workspaceActiveRef.current) throw new Error('STAFF_DOCUMENT_REQUEST_ABORTED');
+      staffDocumentManagerRef.current ||= makeStaffDocumentManager(currentUserId);
+    }
+    try {
+      const row = await staffDocumentManagerRef.current.run(load, request);
+      if (!workspaceActiveRef.current) return row;
+      workspaceGenerationRef.current += 1;
+      // Acknowledged mutation remains successful even if workspace refresh is
+      // offline. All open cards/viewers drop the superseded URL immediately.
+      setLoads(current => current.map(item => applyStaffDocumentResult(item, row)));
+      setSelectedLoadForDocs(current => current ? refreshOpenDocumentLoad(current, applyStaffDocumentResult(current, row)) : null);
+      void refreshWorkspace({ quiet: true });
+      return row;
+    } catch (error) {
+      if (workspaceActiveRef.current && /STAFF_DOCUMENT_(CONFLICT|PERMISSION_DENIED)/.test(error?.message || '')) {
+        void refreshWorkspace({ quiet: true });
+      }
+      throw error;
+    }
+  } : undefined;
 
   const handleSendAiOffer = async (driverIds) => {
     if (!aiPreparedLoad) return;
@@ -692,8 +724,6 @@ function Workspace({ auth, browserPush }) {
       const message = localizedError(t, error, 'errors.createLoad');
       if ((aiPreparedLoad?.source === 'saved' && isRecoverableLoad(aiPreparedLoad)) || /ASSIGN_FAILED_DRAFT_SAVED/.test(error?.code || '') || /ASSIGN_FAILED_DRAFT_SAVED/.test(error?.message || '')) {
         await refreshWorkspace({ quiet: true });
-        handleSelectTab('kanban');
-        setDraftRecoveryRequest(request => request + 1);
       }
       showToast(message);
       return message;
@@ -865,16 +895,14 @@ function Workspace({ auth, browserPush }) {
           {activeTab === 'kanban' && (
             <LoadsWorkspace
               loads={filteredLoads}
-              recoveryRequest={draftRecoveryRequest}
-              recoveryLoads={loads}
               drivers={drivers}
               onAdvanceStatus={() => showToast(t('toasts.statusFromMobile'))}
               onOpenDocs={handleOpenDocs}
               onTrashLoad={handleTrashLoad}
+              onManageDocument={handleManageDocument}
               trashedLoads={trashedLoads}
               onRestoreLoad={canManageLoads ? (load, driverId) => handleLoadTrashAction('restore', load, driverId) : undefined}
               onPermanentlyDeleteLoad={canManageLoads ? (load) => handleLoadTrashAction('delete', load) : undefined}
-              onSendOffer={(load) => setAiPreparedLoad({ ...load, lifecycleStatus: load.databaseStatus, source: 'saved' })}
               onDropOnOffer={(file) => handleAiDocument(file, null, null, true)}
               isAiProcessing={aiProcessing}
             />
@@ -888,6 +916,7 @@ function Workspace({ auth, browserPush }) {
               onOpenChat={handleOpenDriverChat}
               onOpenDocs={handleOpenDocs}
               onTrashLoad={handleTrashLoad}
+              onManageDocument={handleManageDocument}
               onImportDriverDocument={(file, driverId) => handleAiDocument(file, driverId)}
               isAiProcessing={aiProcessing}
               unreadChatsByDriver={unreadChatsByDriver}
@@ -945,7 +974,7 @@ function Workspace({ auth, browserPush }) {
           {mapWasOpened && <div className={activeTab === 'map' && !importPageVisible ? 'h-full min-h-0' : 'hidden'}>
             <LazyRouteBoundary>
               <React.Suspense fallback={<div className="grid h-full place-items-center"><LoaderCircle className="h-7 w-7 animate-spin" /></div>}>
-                <FleetMap drivers={drivers} loads={loads} isVisible={activeTab === 'map' && !importPageVisible} onOpenDocs={handleOpenDocs} onTrashLoad={handleTrashLoad} />
+                <FleetMap drivers={drivers} loads={loads} isVisible={activeTab === 'map' && !importPageVisible} onOpenDocs={handleOpenDocs} onTrashLoad={handleTrashLoad} onManageDocument={handleManageDocument} />
               </React.Suspense>
             </LazyRouteBoundary>
           </div>}

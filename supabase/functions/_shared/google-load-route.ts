@@ -1,5 +1,31 @@
 import { decodePolyline, freshPosition, routeMetrics, matchesPlaceAddress } from './load-enrichment.ts';
 
+// These are safe, deterministic input failures, not provider diagnostics.
+// Keep the address rule aligned with private.driver_pay_route_is_routable in SQL.
+export class DriverPayRouteError extends Error {
+  readonly code: 'DRIVER_PAY_ROUTE_ADDRESS_INCOMPLETE' | 'DRIVER_PAY_ROUTE_INVALID';
+
+  constructor(code: 'DRIVER_PAY_ROUTE_ADDRESS_INCOMPLETE' | 'DRIVER_PAY_ROUTE_INVALID', message: string) {
+    super(message);
+    this.name = 'DriverPayRouteError';
+    this.code = code;
+  }
+}
+
+export function validateDriverPayStops(stops: unknown): asserts stops is any[] {
+  if (!Array.isArray(stops) || stops.length < 2 || stops.length > 25 ||
+      stops.some(stop => !stop || !['pickup', 'delivery'].includes(stop.type)) ||
+      stops[0].type !== 'pickup' || stops.at(-1).type !== 'delivery') {
+    throw new DriverPayRouteError('DRIVER_PAY_ROUTE_INVALID', 'Route requires 2–25 ordered pickup/delivery stops');
+  }
+  if (stops.some(stop => typeof stop.address_line !== 'string' ||
+      !/^[0-9]+[a-z]?\s+\S/i.test(stop.address_line) ||
+      typeof stop.city !== 'string' || !stop.city.trim() ||
+      typeof stop.region !== 'string' || !stop.region.trim())) {
+    throw new DriverPayRouteError('DRIVER_PAY_ROUTE_ADDRESS_INCOMPLETE', 'A numbered street address, city and region are required for mileage pay');
+  }
+}
+
 async function locateWithMapbox(stop: any, token: string, fetcher: typeof fetch) {
   if (!stop.address_line || !stop.city || !stop.region) throw new Error(`${stop.type}: stop address is incomplete`);
   const query = new URLSearchParams({
@@ -144,4 +170,21 @@ export async function previewLoadRoute(stops: any[], presence: any[], driverIds:
       totalMiles: target.deadheadMeters == null ? null : Math.round((loaded.distanceMeters + target.deadheadMeters) / 1609.344 * 100) / 100 })),
     provider: loaded.provider, usedFallback: loaded.fallback === true, fallbackReason: loaded.fallbackReason,
     calculatedAt: new Date(now).toISOString(), vehicleMode: 'DRIVE' };
+}
+
+// Unlike a live map preview, payable mileage starts at an immutable GPS fix
+// captured by the driver's START transaction. Retries use that same origin.
+export async function calculateStartDriverPayRoute(stops: any[], origin: any, apiKey: string,
+  fetcher: typeof fetch = fetch, mapboxToken = '') {
+  if (!origin || !Number.isFinite(origin.latitude) || !Number.isFinite(origin.longitude) ||
+      Math.abs(origin.latitude) > 90 || Math.abs(origin.longitude) > 180 ||
+      !Number.isFinite(Date.parse(origin.capturedAt))) {
+    throw new DriverPayRouteError('DRIVER_PAY_ROUTE_INVALID', 'Invalid saved START origin');
+  }
+  // Validate all stops before spending API requests. Never approximate a missing
+  // street address with a city centre or overwrite the immutable START snapshot.
+  validateDriverPayStops(stops);
+  const loaded = await previewLoadRoute(stops, [], [], apiKey, fetcher, Date.now(), mapboxToken, 'mapbox');
+  const deadhead = await road(origin, loaded.pickup, apiKey, fetcher, mapboxToken, loaded.provider);
+  return { loadedMiles: loaded.loadedMiles, deadheadMiles: deadhead.distanceMiles, provider: loaded.provider };
 }

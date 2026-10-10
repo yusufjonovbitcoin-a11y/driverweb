@@ -1,7 +1,8 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { LoaderCircle, Paperclip, Search, Send, X } from 'lucide-react';
-import { normalizeManualLoad } from '../services/manualLoad';
+import { prepareManualLoad } from '../services/manualLoad';
+import { fetchDriverPaySettings } from '../services/operationsService';
 import { localizedError } from '../i18n/errors';
 
 const inputClass = 'mt-1 w-full rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm text-zinc-900 outline-none focus:border-blue-500 dark:border-zinc-700 dark:bg-zinc-900 dark:text-white';
@@ -18,12 +19,27 @@ export default function CreateLoadModal({ isOpen, onClose, drivers = [], onCreat
   const [driverSearch, setDriverSearch] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
+  const [paySettings, setPaySettings] = useState(null);
+  const [settingsAttempt, setSettingsAttempt] = useState(0);
   const dialogRef = useRef(null);
   const busyRef = useRef(false);
   const availableIds = drivers.map((driver) => driver.id);
   const targetDriverIds = initialDriverId ? [initialDriverId] : selectedDriverIds;
   const selectedIds = targetDriverIds.filter((id) => availableIds.includes(id));
+  const selectedDriverId = selectedIds.length === 1 ? selectedIds[0] : null;
+  const currentSettings = paySettings?.driverId === selectedDriverId && paySettings?.attempt === settingsAttempt ? paySettings : null;
+  const settingsReady = Boolean(selectedDriverId && currentSettings && !currentSettings.error);
+  const needsStreetAddress = settingsReady && paySettings.ratePerMile != null;
   const filteredDrivers = drivers.filter((driver) => [driver.name, driver.driverNumber, driver.truck].some((value) => value?.toLowerCase().includes(driverSearch.trim().toLowerCase())));
+
+  useEffect(() => {
+    if (!isOpen || !selectedDriverId) return;
+    let disposed = false;
+    fetchDriverPaySettings(selectedDriverId).then(settings => {
+      if (!disposed) setPaySettings({ driverId: selectedDriverId, attempt: settingsAttempt, ...settings });
+    }).catch(() => { if (!disposed) setPaySettings({ driverId: selectedDriverId, attempt: settingsAttempt, error: true }); });
+    return () => { disposed = true; };
+  }, [isOpen, selectedDriverId, settingsAttempt]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -43,23 +59,23 @@ export default function CreateLoadModal({ isOpen, onClose, drivers = [], onCreat
   }, [isOpen, onClose]);
 
   const update = (event) => setForm((current) => ({ ...current, [event.target.name]: event.target.value }));
-  const field = (name, label, { required = false, type = 'text' } = {}) => (
+  const field = (name, label, { required = false, type = 'text', pattern } = {}) => (
     <label className="block text-xs font-semibold text-zinc-600 dark:text-zinc-300">
       {label}{required && ' *'}
-      <input name={name} value={form[name]} onChange={update} type={type} required={required} min={name === 'weightLbs' ? '1' : type === 'number' ? '0' : undefined} step={name === 'weightLbs' ? '1' : type === 'number' ? 'any' : undefined} className={inputClass} />
+      <input name={name} value={form[name]} onChange={update} type={type} required={required} pattern={pattern} min={name === 'weightLbs' ? '1' : type === 'number' ? '0' : undefined} step={name === 'weightLbs' ? '1' : type === 'number' ? 'any' : undefined} className={inputClass} />
     </label>
   );
 
   const submit = async (event) => {
     event.preventDefault();
-    if (busyRef.current) return;
+    if (busyRef.current || !settingsReady) return;
     setError('');
-    let load;
-    try { load = normalizeManualLoad(form, targetDriverIds, availableIds); }
-    catch (cause) { setError(localizedError(t, cause)); return; }
     busyRef.current = true;
     setSubmitting(true);
-    try { await onCreateLoad(load); }
+    try {
+      const load = await prepareManualLoad(form, targetDriverIds, availableIds, fetchDriverPaySettings);
+      await onCreateLoad(load);
+    }
     catch (cause) { setError(localizedError(t, cause, 'errors.createLoad')); }
     finally { busyRef.current = false; setSubmitting(false); }
   };
@@ -98,9 +114,10 @@ export default function CreateLoadModal({ isOpen, onClose, drivers = [], onCreat
               {field('broker', t('loads.broker'), { required: true })}
             </div>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              <div className="space-y-3 rounded-xl border border-zinc-200 p-3 dark:border-zinc-800"><h3 className="text-sm font-bold text-blue-700 dark:text-blue-300">A · {t('inbox.pickup')}</h3>{field('originCity', t('loads.city'), { required: true })}{field('originState', t('loads.region'), { required: true })}{field('originAddress', t('loads.address'))}</div>
-              <div className="space-y-3 rounded-xl border border-zinc-200 p-3 dark:border-zinc-800"><h3 className="text-sm font-bold text-red-600 dark:text-red-400">B · {t('inbox.delivery')}</h3>{field('destinationCity', t('loads.city'), { required: true })}{field('destinationState', t('loads.region'), { required: true })}{field('destinationAddress', t('loads.address'))}</div>
+              <div className="space-y-3 rounded-xl border border-zinc-200 p-3 dark:border-zinc-800"><h3 className="text-sm font-bold text-blue-700 dark:text-blue-300">A · {t('inbox.pickup')}</h3>{field('originCity', t('loads.city'), { required: true })}{field('originState', t('loads.region'), { required: true })}{field('originAddress', t('loads.address'), { required: needsStreetAddress, pattern: needsStreetAddress ? '[0-9]+[a-zA-Z]?\\s+\\S.*' : undefined })}</div>
+              <div className="space-y-3 rounded-xl border border-zinc-200 p-3 dark:border-zinc-800"><h3 className="text-sm font-bold text-red-600 dark:text-red-400">B · {t('inbox.delivery')}</h3>{field('destinationCity', t('loads.city'), { required: true })}{field('destinationState', t('loads.region'), { required: true })}{field('destinationAddress', t('loads.address'), { required: needsStreetAddress, pattern: needsStreetAddress ? '[0-9]+[a-zA-Z]?\\s+\\S.*' : undefined })}</div>
             </div>
+            {needsStreetAddress ? <p className="text-xs text-zinc-500">{t('driverPay.addressRequired')}</p> : null}
             <div className="grid grid-cols-2 gap-3">{field('equipment', t('loads.equipment'), { required: true })}{field('rate', t('loads.rate'), { required: true, type: 'number' })}{field('distanceMiles', t('loads.distance'), { required: true, type: 'number' })}</div>
           <details className="rounded-xl border border-zinc-200 p-3 dark:border-zinc-800"><summary className="cursor-pointer text-sm font-semibold text-zinc-700 dark:text-zinc-300">{t('loads.additionalDetails')}</summary><div className="mt-3 grid grid-cols-2 gap-3">{field('weightLbs', t('loads.weightLbs'), { type: 'number' })}{field('commodity', t('loads.commodity'))}{field('originFacility', t('loads.originFacility'))}{field('destinationFacility', t('loads.destinationFacility'))}</div></details>
             {!initialDriverId && <div className="space-y-2">
@@ -112,8 +129,11 @@ export default function CreateLoadModal({ isOpen, onClose, drivers = [], onCreat
               </div>
             </div>}
           </fieldset>
+          {selectedDriverId && !settingsReady ? <div className="mt-3 text-sm text-zinc-500">
+            {currentSettings?.error ? <><p role="alert">{t('driverPay.settingsCheckError')}</p><button type="button" disabled={submitting} onClick={() => setSettingsAttempt(value => value + 1)} className="mt-2 rounded-lg border px-3 py-2">{t('common.refresh')}</button></> : <p role="status">{t('common.loading')}</p>}
+          </div> : null}
           {error && <p role="alert" className="mt-3 rounded-lg bg-red-50 p-3 text-sm text-red-700 dark:bg-red-950/30 dark:text-red-300">{error}</p>}
-          <footer className="mt-4 flex justify-end gap-3 border-t border-zinc-200 pt-4 dark:border-zinc-800"><button type="button" onClick={onClose} disabled={submitting} className="rounded-lg px-3 py-2 text-sm text-zinc-500 disabled:opacity-50">{t('common.cancel')}</button><button type="submit" disabled={submitting || selectedIds.length !== 1} className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-50">{submitting ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}{submitting ? t('loads.preparing') : t('loads.createAndAssign')}</button></footer>
+          <footer className="mt-4 flex justify-end gap-3 border-t border-zinc-200 pt-4 dark:border-zinc-800"><button type="button" onClick={onClose} disabled={submitting} className="rounded-lg px-3 py-2 text-sm text-zinc-500 disabled:opacity-50">{t('common.cancel')}</button><button type="submit" disabled={submitting || !settingsReady} className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-50">{submitting ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}{submitting ? t('loads.preparing') : t('loads.createAndAssign')}</button></footer>
         </form>
       </section>
     </div>

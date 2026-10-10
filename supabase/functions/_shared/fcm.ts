@@ -125,7 +125,7 @@ export function buildFcmMessage(
       data,
       android: { priority: "high" },
       apns: { headers: { "apns-priority": "10" } },
-      webpush: { headers: { Urgency: "high" } },
+      webpush: { headers: { Urgency: "high", ...(data.type === "chat_message" ? { TTL: "3600" } : {}) } },
     },
   };
 }
