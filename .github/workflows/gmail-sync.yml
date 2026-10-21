@@ -17,6 +17,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
+      GMAIL_BUSINESS_POLICY_BY_COMPANY: ${{ secrets.GMAIL_BUSINESS_POLICY_BY_COMPANY }}
       GMAIL_COMPANY_ID: ${{ secrets.GMAIL_COMPANY_ID }}
       GMAIL_WORKER_TOKEN: ${{ secrets.GMAIL_WORKER_TOKEN }}
       SUPABASE_URL: ${{ secrets.SUPABASE_URL }}

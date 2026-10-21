@@ -56,8 +56,10 @@ import {
   resolveLocaleForProfile,
 } from './i18n/locales';
 
-const tabs = ['kanban', 'drivers', 'map', 'analytics', 'docs', 'inbox', 'chat', 'profile'];
+const tabs = ['kanban', 'drivers', 'map', 'arrivals', 'analytics', 'accounting', 'docs', 'inbox', 'chat', 'profile'];
 const routeLoaders = {
+  arrivals: () => import('./components/ArrivalBoard'),
+  accounting: () => import('./components/AccountingOverview'),
   analytics: () => import('./components/AnalyticsOverview'),
   chat: () => import('./components/DispatchChat'),
   kanban: () => import('./components/LoadsWorkspace'),
@@ -71,6 +73,8 @@ function prefetchRoute(tab) {
   if (tab === 'map') return Promise.all([routeLoaders.map(), import('./components/TrackingMap')]);
   return routeLoaders[tab]?.();
 }
+const AccountingOverview = React.lazy(routeLoaders.accounting);
+const ArrivalBoard = React.lazy(routeLoaders.arrivals);
 const AnalyticsOverview = React.lazy(routeLoaders.analytics);
 const DispatchChat = React.lazy(routeLoaders.chat);
 const AuthView = React.lazy(() => import('./components/AuthView'));
@@ -123,6 +127,7 @@ function Workspace({ auth, browserPush }) {
   const [loads, setLoads] = useState([]);
   const [trashedLoads, setTrashedLoads] = useState([]);
   const [drivers, setDrivers] = useState([]);
+  const [rosterDrivers, setRosterDrivers] = useState([]);
   const [members, setMembers] = useState([]);
   const [refreshLoading, setRefreshLoading] = useState(false);
   const [workspaceReady, setWorkspaceReady] = useState(false);
@@ -175,8 +180,8 @@ function Workspace({ auth, browserPush }) {
   const foregroundRefreshCountRef = useRef(0);
   const inlineChatVisible = activeTab === 'drivers' && Boolean(inlineChatDriverId);
   const selectedDriver = useMemo(
-    () => drivers.find((driver) => driver.id === selectedDriverId) || null,
-    [drivers, selectedDriverId],
+    () => rosterDrivers.find((driver) => driver.id === selectedDriverId) || null,
+    [rosterDrivers, selectedDriverId],
   );
   const currentUserId = currentUser?.id;
   const currentUserRoleCode = currentUser?.roleCode;
@@ -220,10 +225,18 @@ function Workspace({ auth, browserPush }) {
     // oxlint-disable-next-line react-hooks/exhaustive-deps
   }, [currentUserId, currentUserRoleCode, workspaceReady]);
 
-  const showToast = useCallback((message) => {
-    setToast({ show: true, message });
-    window.setTimeout(() => setToast((previous) => ({ ...previous, show: false })), 4500);
+  const toastTimerRef = useRef(null);
+  const dismissToast = useCallback(() => {
+    window.clearTimeout(toastTimerRef.current);
+    toastTimerRef.current = null;
+    setToast(previous => ({ ...previous, show: false }));
   }, []);
+  useEffect(() => () => window.clearTimeout(toastTimerRef.current), []);
+  const showToast = useCallback((message) => {
+    window.clearTimeout(toastTimerRef.current);
+    setToast({ show: true, message });
+    toastTimerRef.current = window.setTimeout(dismissToast, 4500);
+  }, [dismissToast]);
 
   const handleOpenDocs = useCallback((load, documentTab = 'rateCon') => {
     setSelectedDocumentTab(documentTab);
@@ -272,11 +285,15 @@ function Workspace({ auth, browserPush }) {
       setDrivers(previous => preserveWorkspaceAvatars(
         refreshDriverPresence(workspace.drivers, presenceUpdatesRef.current), previous,
       ));
+      setRosterDrivers(previous => preserveWorkspaceAvatars(
+        refreshDriverPresence(workspace.rosterDrivers, presenceUpdatesRef.current), previous,
+      ));
       setMembers(previous => preserveWorkspaceAvatars(workspace.members, previous));
       setWorkspaceReady(true);
       setWorkspaceError('');
-      void hydrateWorkspaceAvatars(workspace.members, fetchWorkspaceAvatar, (member, avatar) => {
+      void hydrateWorkspaceAvatars([...workspace.members, ...workspace.rosterMembers.filter(member => !workspace.members.some(active => active.id === member.id))], fetchWorkspaceAvatar, (member, avatar) => {
         setDrivers(previous => applyWorkspaceAvatar(previous, member, avatar));
+        setRosterDrivers(previous => applyWorkspaceAvatar(previous, member, avatar));
         setMembers(previous => applyWorkspaceAvatar(previous, member, avatar));
       }, isCurrent);
     } catch (error) {
@@ -321,32 +338,30 @@ function Workspace({ auth, browserPush }) {
     localStorage.setItem('apex_theme', theme);
   }, [theme]);
 
+  const applyTabNavigation = useCallback((tab) => {
+    if (shouldCancelImportOnNavigation(importTabRef.current, tab)) cancelDocumentImport();
+    setInlineChatDriverId(null);
+    if (tab !== 'profile') {
+      setProfileEditDriverId(null);
+      setSelectedDriverId(null);
+      setDriverProfileRequest(0);
+    }
+    if (tab === 'chat') setChatWasOpened(true);
+    if (tab === 'map') setMapWasOpened(true);
+    setActiveTab(tab);
+  }, [cancelDocumentImport]);
+
   useEffect(() => {
     const handleHash = () => {
       const hash = window.location.hash.replace('#', '');
       const nextTab = currentUser?.roleCode === 'super_admin' ? 'profile' : tabs.includes(hash) ? hash : 'kanban';
-      if (shouldCancelImportOnNavigation(importTabRef.current, nextTab)) cancelDocumentImport();
-      if (currentUser?.roleCode === 'super_admin') {
-        setInlineChatDriverId(null);
-        setActiveTab('profile');
-        window.history.replaceState(null, '', '#profile');
-        return;
-      }
-      if (tabs.includes(hash)) {
-        setInlineChatDriverId(null);
-        if (hash === 'chat') setChatWasOpened(true);
-        if (hash === 'map') setMapWasOpened(true);
-        setActiveTab(hash);
-        return;
-      }
-      setInlineChatDriverId(null);
-      setActiveTab('kanban');
-      window.history.replaceState(null, '', '#kanban');
+      applyTabNavigation(nextTab);
+      if (hash !== nextTab) window.history.replaceState(null, '', `#${nextTab}`);
     };
     handleHash();
     window.addEventListener('hashchange', handleHash);
     return () => window.removeEventListener('hashchange', handleHash);
-  }, [currentUser?.roleCode, cancelDocumentImport]);
+  }, [currentUser?.roleCode, applyTabNavigation]);
 
   useEffect(() => {
     if (!currentUserId || ['driver', 'super_admin'].includes(currentUserRoleCode)) return undefined;
@@ -363,6 +378,7 @@ function Workspace({ auth, browserPush }) {
       if (payload.eventType !== 'DELETE' && latest && presenceTimestamp(latest) > presenceTimestamp(row)) return;
       presenceUpdatesRef.current.set(id, payload.eventType === 'DELETE' ? null : row);
       setDrivers(previous => refreshDriverPresence(previous, presenceUpdatesRef.current));
+      setRosterDrivers(previous => refreshDriverPresence(previous, presenceUpdatesRef.current));
     };
     const refreshPresence = createCoalescedAsyncTrigger(async () => {
       try {
@@ -373,12 +389,16 @@ function Workspace({ auth, browserPush }) {
         // writes which retained the same last_seen_at value.
         presenceUpdatesRef.current = mergePresenceSnapshot(presenceUpdatesRef.current, atStart, rows);
         setDrivers(previous => refreshDriverPresence(previous, presenceUpdatesRef.current));
+      setRosterDrivers(previous => refreshDriverPresence(previous, presenceUpdatesRef.current));
       } catch { /* Keep last known data; the local TTL still expires online state. */ }
     });
     const unsubscribe = subscribeWorkspace(() => refreshWorkspace({ quiet: true }), updatePresence);
     // Presence expires without a database event. A foreground wake also handles
     // suspended background timers; the occasional small read repairs missed events.
-    const expirePresence = () => setDrivers(previous => refreshDriverPresence(previous));
+    const expirePresence = () => {
+      setDrivers(previous => refreshDriverPresence(previous));
+      setRosterDrivers(previous => refreshDriverPresence(previous));
+    };
     const onVisible = () => {
       if (document.visibilityState === 'visible') { expirePresence(); refreshPresence(); }
     };
@@ -462,16 +482,11 @@ function Workspace({ auth, browserPush }) {
   }, [currentUserId, currentUserRoleCode]);
 
   const handleSelectTab = useCallback((tab) => {
-    if (currentUser?.roleCode === 'super_admin' && tab !== 'profile') return;
-    if (tab === 'chat') setChatWasOpened(true);
-    if (tab === 'map') setMapWasOpened(true);
-    setInlineChatDriverId(null);
-    cancelDocumentImport();
-    if (tab !== 'profile') setProfileEditDriverId(null);
-    if (tab !== 'profile') { setSelectedDriverId(null); setDriverProfileRequest(0); }
-    setActiveTab(tab);
-    window.location.hash = tab;
-  }, [currentUser, cancelDocumentImport]);
+    if (!tabs.includes(tab) || (currentUser?.roleCode === 'super_admin' && tab !== 'profile')) return;
+    applyTabNavigation(tab);
+    // The state transition already ran; hashchange is reserved for browser navigation.
+    if (window.location.hash !== `#${tab}`) window.history.pushState(null, '', `#${tab}`);
+  }, [currentUser?.roleCode, applyTabNavigation]);
 
   const handleOpenDriverProfile = useCallback((driverOrId) => {
     const driverId = typeof driverOrId === 'string' ? driverOrId : driverOrId?.id;
@@ -535,6 +550,7 @@ function Workspace({ auth, browserPush }) {
   };
 
   const handleOpenCreateLoad = (driver = null) => {
+    if (driver && !drivers.some((active) => active.id === driver.id)) return;
     setSelectedDriverForLoad(driver);
     setIsCreateModalOpen(true);
   };
@@ -628,10 +644,8 @@ function Workspace({ auth, browserPush }) {
 
   const handleBrokerAttachment = async (message, attachment, preferredDriverId) => {
     if (!message?.id || !attachment?.id || !preferredDriverId || importRunnerRef.current.busy) return;
-    setInlineChatDriverId(null);
+    handleSelectTab('drivers');
     setSelectedDriverId(preferredDriverId);
-    setActiveTab('drivers');
-    window.location.hash = 'drivers';
     await handleAiDocument(null, preferredDriverId, {
       messageId: message.id, attachmentId: attachment.id, fileName: attachment.file_name,
     });
@@ -836,7 +850,7 @@ function Workspace({ auth, browserPush }) {
       />
 
       <div className="flex-1 flex flex-col min-w-0 h-screen overflow-hidden">
-        {activeTab !== 'chat' && (
+        {activeTab !== 'chat' && (activeTab !== 'profile' || importPageVisible) && (
           <TopHeader
             activeTab={activeTab}
             searchQuery={searchQuery}
@@ -849,20 +863,22 @@ function Workspace({ auth, browserPush }) {
             avgRPM={metrics.avgRPM}
             theme={theme}
             toggleTheme={() => setTheme((value) => value === 'dark' ? 'light' : 'dark')}
-            onExitDriver={activeTab === 'drivers' && selectedDriverId
+            onExitDriver={importPageVisible ? cancelDocumentImport : activeTab === 'drivers' && selectedDriverId
               ? () => inlineChatVisible ? setInlineChatDriverId(null) : setSelectedDriverId(null)
               : undefined}
+            backLabel={importPageVisible ? t('loadImport.back') : undefined}
+            backDisabled={importPageVisible && operationLoading}
             selectedDriver={activeTab === 'drivers' ? selectedDriver : null}
             onOpenDriverChat={selectedDriver ? () => handleOpenInlineChat(selectedDriver) : undefined}
             selectedDriverUnreadCount={selectedDriver ? unreadChatsByDriver[selectedDriver.id] || 0 : 0}
           />
         )}
 
-        {(toast.show || workspaceError) && (
+        {((toast.show && !workspaceError) || (workspaceReady && workspaceError)) && (
           <div className="px-5 pt-2.5">
-            <div className={`${workspaceError ? 'border-red-200 text-red-700 dark:border-red-900 dark:text-red-300' : 'border-zinc-200 text-zinc-700 dark:border-zinc-800 dark:text-zinc-300'} bg-white dark:bg-zinc-900 border rounded-lg px-3 py-2 flex items-center justify-between text-xs shadow-xs`}>
+            <div role={workspaceError ? 'alert' : 'status'} aria-atomic="true" className={`${workspaceError ? 'border-red-200 text-red-700 dark:border-red-900 dark:text-red-300' : 'border-zinc-200 text-zinc-700 dark:border-zinc-800 dark:text-zinc-300'} bg-white dark:bg-zinc-900 border rounded-lg px-3 py-2 flex items-center justify-between text-xs shadow-xs`}>
               <span>{workspaceError || toast.message}</span>
-              <button onClick={() => { setToast((value) => ({ ...value, show: false })); setWorkspaceError(''); }}>
+              <button type="button" aria-label={t('common.dismiss')} onClick={() => { dismissToast(); setWorkspaceError(''); }}>
                 <X className="w-3.5 h-3.5" />
               </button>
             </div>
@@ -875,6 +891,19 @@ function Workspace({ auth, browserPush }) {
               <LoaderCircle className="w-7 h-7 animate-spin text-zinc-700 dark:text-zinc-300" />
             </div>
           )}
+          {!workspaceReady && currentUser.roleCode !== 'super_admin' ? (
+            <section className="grid min-h-64 place-content-center gap-4 p-6 text-center" aria-busy={refreshLoading}>
+              {workspaceError ? <>
+                <div role="alert">
+                  <h2 className="text-lg font-semibold">{t('workspace.loadFailedTitle')}</h2>
+                  <p className="mt-2 text-sm text-zinc-600 dark:text-zinc-300">{workspaceError}</p>
+                </div>
+                <button type="button" className="rounded-lg border px-4 py-2 font-medium focus-visible:outline-2 focus-visible:outline-offset-2 disabled:opacity-50" disabled={refreshLoading} onClick={() => refreshWorkspace()}>
+                  {t(refreshLoading ? 'common.loading' : 'common.retry')}
+                </button>
+              </> : <p role="status">{t('common.loading')}</p>}
+            </section>
+          ) : <>
           <LazyRouteBoundary key={activeTab}>
           <React.Suspense fallback={<div className="grid min-h-48 place-items-center"><LoaderCircle className="h-7 w-7 animate-spin" /></div>}>
           {importPageVisible ? <ImportedLoadPage
@@ -908,9 +937,13 @@ function Workspace({ auth, browserPush }) {
             />
           )}
           {activeTab === 'analytics' && <AnalyticsOverview />}
+          {activeTab === 'arrivals' && <ArrivalBoard drivers={rosterDrivers} loads={loads} searchQuery={searchQuery} timeZone={displayTimeZone} onOpenChat={handleOpenDriverChat} onOpenLoad={handleOpenDocs} onClearSearch={() => setSearchQuery('')} />}
+          {activeTab === 'accounting' && <AccountingOverview key={currentUserId} company={currentUser?.company} canManageAccounting={currentUserRoleCode === 'company_admin'} loads={loads} drivers={rosterDrivers} onOpenLoad={handleOpenDocs} />}
           {activeTab === 'drivers' && !inlineChatVisible && (
             <DriverRoster
-              drivers={drivers}
+              onWorkspaceRefresh={refreshWorkspace}
+              canManageDriver={currentUserRoleCode === 'company_admin'}
+              drivers={rosterDrivers}
               loads={loads}
               onAssignLoad={handleOpenCreateLoad}
               onOpenChat={handleOpenDriverChat}
@@ -994,6 +1027,7 @@ function Workspace({ auth, browserPush }) {
               </React.Suspense>
             </LazyRouteBoundary>
           </div>}
+          </>}
         </main>
       </div>
 
@@ -1035,6 +1069,7 @@ function Workspace({ auth, browserPush }) {
             onClose={() => setSelectedLoadForDocs(null)}
             load={selectedLoadForDocs}
             initialDocumentTab={selectedDocumentTab}
+            onManageDocument={handleManageDocument}
           />}
         </React.Suspense>
       </LazyRouteBoundary>

@@ -1,0 +1,15 @@
+do $$begin if not exists(select 1 from pg_roles where rolname='anon') then create role anon;end if;if not exists(select 1 from pg_roles where rolname='authenticated') then create role authenticated;end if;end$$;
+create schema auth; create function auth.uid() returns uuid language sql stable as $$select nullif(current_setting('test.user',true),'')::uuid$$;
+create table public.companies(id uuid primary key);
+create table public.profiles(id uuid primary key,company_id uuid references companies(id),role text,status text,full_name text);
+create function public.current_profile() returns public.profiles language sql stable as $$select p from public.profiles p where id=auth.uid()$$;
+create function public.current_company_id() returns uuid language sql stable as $$select company_id from public.profiles where id=auth.uid()$$;
+create table public.loads(id uuid primary key,company_id uuid,load_number text,status text,broker_name text,broker_rate numeric,loaded_miles numeric,driver_brief jsonb,current_assignment_id uuid,trashed_at timestamptz,created_at timestamptz default now());
+create table public.assignments(id uuid primary key,company_id uuid,driver_id uuid,load_id uuid,accepted_price_snapshot_id uuid,requires_reconfirmation boolean default false,ended_at timestamptz);
+create table public.load_price_snapshots(id uuid primary key,company_id uuid,load_id uuid,broker_rate numeric,loaded_miles numeric);
+create table public.assignment_driver_pay(assignment_id uuid primary key,company_id uuid,load_id uuid,driver_id uuid,amount numeric);
+create table public.load_accounting(load_id uuid primary key,company_id uuid,driver_pay numeric,broker_paid numeric);
+create table public.documents(id uuid primary key,load_id uuid,company_id uuid,document_type text,current_version_id uuid);
+create table public.audit_events(id uuid default gen_random_uuid(),company_id uuid,actor_id uuid,action text,entity_type text,entity_id uuid,new_value jsonb);
+create function public.can_access_load(uuid) returns boolean language sql stable as $$select true$$;
+grant usage on schema public,auth to authenticated; grant select on profiles to authenticated; grant execute on function auth.uid(),current_company_id() to authenticated;

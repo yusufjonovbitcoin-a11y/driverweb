@@ -22,7 +22,7 @@ export async function validateStaffDocumentFile(file) {
 // Read only this load's document metadata; never pre-sign every private file.
 export async function fetchStaffLoadDocumentContext(client, loadId, signal) {
   const [documents, stops] = await Promise.all([
-    client.from('documents').select('id,load_id,document_type,stop_id,current_version_id,current_version:document_versions!documents_current_version_fk(file_name,mime_type)')
+    client.from('documents').select('id,load_id,document_type,stop_id,current_version_id,current_version:document_versions!documents_current_version_fk(file_name,mime_type,size_bytes,uploaded_at)')
       .eq('load_id', loadId).order('id').abortSignal(signal),
     client.from('load_stops').select('id,type,sequence,city,region,address_line,facility_name')
       .eq('load_id', loadId).order('sequence').order('id').abortSignal(signal),
@@ -31,10 +31,20 @@ export async function fetchStaffLoadDocumentContext(client, loadId, signal) {
   if (stops.error) throw stops.error;
   return {
     documentItems: (documents.data || []).map(({ current_version: version, ...row }) => ({
-      ...row, fileName: version?.file_name || null, mimeType: version?.mime_type || null, url: null,
+      ...row, fileName: version?.file_name || null, mimeType: version?.mime_type || null,
+      sizeBytes: version?.size_bytes ?? null, uploadedAt: version?.uploaded_at ?? null, url: null,
     })),
     stops: stops.data || [],
   };
+}
+
+export async function fetchStaffDocumentHistory(client, documentId, signal, offset = 0) {
+  const { data, error } = await client.from('document_versions')
+    .select('id,document_id,version_number,file_name,mime_type,size_bytes,uploaded_at,superseded_at')
+    .eq('document_id', documentId).is('upload_lease_started_at', null)
+    .order('version_number', { ascending: false }).range(offset, offset + 19).abortSignal(signal);
+  if (error) throw error;
+  return data || [];
 }
 
 function bounded(work, signal, timeoutMs) {

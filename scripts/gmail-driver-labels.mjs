@@ -3,6 +3,7 @@ import { simpleParser } from 'mailparser';
 export function validGmailLabel(value) {
   const label = String(value || '').trim();
   return label.length > 0 && label.length <= 100
+  // oxlint-disable-next-line no-control-regex -- Reject control characters in untrusted display names or mailbox labels.
     && !/[\u0000-\u001f\u007f]/.test(label)
     && !/^(inbox|\[gmail\]|\[googlemail\])(\/|$)/i.test(label);
 }

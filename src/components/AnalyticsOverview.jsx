@@ -80,7 +80,7 @@ export default function AnalyticsOverview() {
   const invalidate = useWorkspaceInvalidation();
   const [editing, setEditing] = useState(null);
   const [saved, setSaved] = useState(false);
-  const [mode, setMode] = useWorkspaceView('analytics.mode', 'mock');
+  const [mode, setMode] = useWorkspaceView('analytics.mode', 'real');
   const [selectedMockLoad, setSelectedMockLoad] = useState(null);
   const [mockLoadGroup, setMockLoadGroup] = useWorkspaceView('analytics.mockGroup', 'active');
   const tableArea = useRef(null);

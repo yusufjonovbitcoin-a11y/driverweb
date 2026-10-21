@@ -28,9 +28,15 @@ try {
     assert.ok(empty.includes(i18n.t('profile.noSettingsFound')));
     const page = renderToString(React.createElement(Profile, { ...props, loads: [], drivers: [] }));
     assert.ok(page.includes('profile-center-layout'));
-    assert.ok(page.includes('profile-identity-card'));
+    assert.ok(!page.includes('profile-identity-card'), 'settings use full-width content instead of a second sidebar');
     assert.ok(!page.includes('profile-logistics-banner'));
-    assert.ok(!page.includes('profile-center-heading'), 'removed settings header');
+    assert.ok(!page.includes('profile-center-heading'), 'visible settings/account header removed');
+    assert.ok(page.includes(`<h1 class="profile-settings-title">${i18n.t('profile.settingsTitle')}</h1>`), 'settings title remains visible above the top tabs');
+    assert.ok(page.includes('role="tablist"'));
+    assert.ok(page.includes('id="profile-tab-settings"'));
+    assert.ok(page.includes('role="tabpanel" aria-labelledby="profile-tab-settings"'));
+    assert.ok(page.includes('profile-company-summary'));
+    assert.ok(!page.includes('id="profile-tab-integrations"'), 'integration tab remains admin-only');
     assert.ok(!page.includes('profile-center-search'), 'removed settings search');
     const mixedLoads = [
       { id: 'saved-draft', status: 'UNASSIGNED', databaseStatus: 'draft' },
@@ -68,7 +74,9 @@ try {
     const notifications = renderToString(React.createElement(ProfileNotificationsPanel, { unreadChatCount: 3, unreadInboxCount: 2 }));
     assert.ok(notifications.includes(i18n.t('profile.newNotifications', { count: 5 })));
     assert.equal((notifications.match(/class="profile-notification-row"/g) || []).length, 2);
-    assert.ok(!notifications.includes('role="switch"'), 'no disconnected preference switches');
+    const pushSwitches = [...notifications.matchAll(/<button(?=[^>]*role="switch")[^>]*>/g)];
+    assert.equal(pushSwitches.length, 2, 'existing browser push category controls remain present');
+    assert.ok(pushSwitches.every(([button]) => button.includes('disabled=""')), 'push controls stay disabled when browserPush is unavailable');
     const contact = renderToString(React.createElement(ProfileContactPanel, accountProps));
     assert.ok(contact.includes('America/Chicago'));
     for (const html of [personal, security, notifications, contact]) assert.ok(!/profile\.[a-zA-Z]+/.test(html), 'no untranslated profile keys');

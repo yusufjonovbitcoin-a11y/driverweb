@@ -5,21 +5,21 @@
 .trip-heading p, .trip-editor header p, .trip-help, .trip-analytics small { color: var(--muted, #667b8b); font-size: 12px; line-height: 1.5; }
 .trip-heading p { margin-top: 5px; font-size: 14px; }
 .trip-analytics button { display: inline-flex; gap: 8px; align-items: center; justify-content: center; border: 1px solid var(--line, #e1e8ec); border-radius: 9px; padding: 9px 13px; background: var(--surface, white); font-size: 13px; font-weight: 600; cursor: pointer; }
-.trip-analytics button:hover:not(:disabled) { border-color: #278c8c; }
+.trip-analytics button:hover:not(:disabled) { border-color: var(--accent); }
 .trip-analytics button:disabled { opacity: .45; cursor: default; }
-.trip-analytics :is(button, input, textarea):focus-visible { outline: 2px solid #278c8c; outline-offset: 3px; }
+.trip-analytics :is(button, input, textarea):focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 .trip-filters { display: flex; flex-wrap: wrap; align-items: end; gap: 12px; }
 .trip-analytics label { display: grid; gap: 6px; font-size: 12px; font-weight: 600; }
 .trip-search { flex: 1; min-width: 220px; }
 .trip-analytics input, .trip-analytics textarea { border: 1px solid var(--line, #e1e8ec); background: var(--surface, white); color: inherit; border-radius: 8px; padding: 10px 12px; width: 100%; font-weight: 400; font-size: 14px; }
 .trip-tabs { display: flex; flex-wrap: wrap; gap: 8px; }
-.trip-tabs button[aria-pressed=true], .trip-analytics .trip-primary { background: #167e7b; border-color: #167e7b; color: white; }
+.trip-tabs button[aria-pressed=true], .trip-analytics .trip-primary { background: var(--action-bg); border-color: var(--action-bg); color: var(--action-ink); }
 .trip-tabs span { border-radius: 5px; background: #82979b22; padding: 1px 6px; font-variant-numeric: tabular-nums; }
 .trip-metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
-.trip-metrics article { display: grid; gap: 7px; background: var(--surface, white); border: 1px solid var(--line, #e1e8ec); border-radius: 14px; padding: 18px; }
+.trip-metrics article { display: grid; gap: 7px; background: var(--surface, white); border: 1px solid var(--line, #e1e8ec); border-radius: var(--dispatch-radius-card); padding: 18px; }
 .trip-metrics article > span { font-size: 12px; color: var(--muted, #667b8b); }
 .trip-metrics strong { font-size: clamp(20px, 2vw, 28px); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
-.trip-table-wrap { overflow-x: auto; border: 1px solid var(--line, #e1e8ec); border-radius: 14px; background: var(--surface, white); }
+.trip-table-wrap { overflow-x: auto; border: 1px solid var(--line, #e1e8ec); border-radius: var(--dispatch-radius-card); background: var(--surface, white); }
 .trip-analytics table { border-collapse: collapse; width: 100%; font-size: 13px; }
 .trip-analytics th { text-align: left; font-size: 11px; color: var(--muted, #667b8b); background: #82979b0c; }
 .trip-analytics :is(th, td) { padding: 14px 12px; border-bottom: 1px solid var(--line, #e1e8ec); vertical-align: top; }
@@ -61,21 +61,21 @@
 .ad-date-picker > div { position: absolute; right: 0; top: calc(100% + 8px); width: 280px; max-width: 80vw; display: grid; gap: 10px; background: var(--surface); border: 1px solid var(--line); box-shadow: 0 10px 35px #142b3820; border-radius: 12px; padding: 16px; }
 .ad-toolbar { display: flex; align-items: center; gap: 10px; }
 .ad-toolbar .trip-tabs { gap: 3px; }
-.ad-toolbar .trip-tabs button { border: 0; background: transparent; border-radius: 24px; padding: 9px 19px; }
-.ad-toolbar .trip-tabs button[aria-pressed=true] { background: #0e7167; color: white; }
+.ad-toolbar .trip-tabs button { border: 0; background: transparent; border-radius: var(--dispatch-radius-control); padding: 9px 19px; }
+.ad-toolbar .trip-tabs button[aria-pressed=true] { background: var(--action-bg); color: var(--action-ink); }
 .ad-toolbar select { margin-left: auto; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; color: var(--ink); font-size: 12px; max-width: 210px; }
 .ad-toolbar .ad-search { width: 240px; min-width: 80px; padding: 8px 10px; font-size: 12px; }
 .ad-demo-badge { color: #a25f0c; background: #fff0cb; border-radius: 6px; padding: 5px 8px; font-size: 11px; }
 .analytics-dashboard .trip-metrics { grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; }
-.analytics-dashboard .trip-metrics article { padding: clamp(10px, 1.2vw, 18px); display: flex; align-items: flex-start; gap: 12px; border-radius: 12px; min-width: 0; box-shadow: 0 3px 12px #142b3803; }
+.analytics-dashboard .trip-metrics article { padding: clamp(10px, 1.2vw, 18px); display: flex; align-items: flex-start; gap: 12px; border-radius: 12px; min-width: 0; box-shadow: none; }
 .trip-metrics article > div { display: grid; gap: 4px; min-width: 0; }
 .trip-metrics article > div > span { font-size: 12px; color: var(--muted); }
 .analytics-dashboard .trip-metrics strong { font-size: clamp(19px, 2vw, 29px); line-height: 1.2; letter-spacing: -.025em; }
 .analytics-dashboard .trip-metrics small { font-size: 10px; }
-.trip-metrics .ad-metric-icon { color: #128672; background: #e9f6f2; border-radius: 50%; width: 44px; height: 44px; display: grid; place-items: center; flex: 0 0 44px; }
-.trip-metrics .tone-2, .trip-metrics .tone-4 { color: #287fe8; background: #eaf2ff; }
+.trip-metrics .ad-metric-icon { color: var(--accent); background: var(--accent-soft); border-radius: 50%; width: 44px; height: 44px; display: grid; place-items: center; flex: 0 0 44px; }
+.trip-metrics .tone-2, .trip-metrics .tone-4 { color: var(--accent); background: var(--accent-soft); }
 .ad-panels { flex: 1; min-height: 0; display: grid; grid-template-columns: 1.1fr 1fr 1fr; grid-template-rows: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; }
-.ad-panel { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 15px; display: flex; flex-direction: column; min-width: 0; min-height: 0; box-shadow: 0 4px 14px #142b3803; }
+.ad-panel { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 15px; display: flex; flex-direction: column; min-width: 0; min-height: 0; box-shadow: none; }
 .ad-panel header { display: flex; align-items: center; justify-content: space-between; gap: 6px; flex-shrink: 0; }
 .ad-panel header h2 { font-size: 14px; letter-spacing: -.025em; min-width: 0; }
 .ad-panel header button { padding: 3px; border: 0; background: transparent; }

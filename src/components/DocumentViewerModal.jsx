@@ -1,7 +1,9 @@
+import useModalFocus from '../hooks/useModalFocus';
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import { BadgeCheck, FileText, LoaderCircle, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { formatCurrency } from '../i18n/format';
+import DocumentViewerActions from './DocumentViewerActions.jsx';
 import ImageDocumentViewer from './ImageDocumentViewer';
 import { resolveTripDocumentSource, fetchTripDocument, saveDocumentBlob } from '../services/tripDocumentAccess.js';
 import { openChatAttachment } from '../services/openChatAttachment';
@@ -13,8 +15,14 @@ export default function DocumentViewerModal({
   onClose,
   load,
   initialDocumentTab = 'rateCon',
+  onManageDocument,
 }) {
   const { t } = useTranslation();
+  const dialogRef = useRef(null);
+  const uploadButtonRef = useRef(null);
+  const [documentBusy, setDocumentBusy] = useState(false);
+  const [uploadAvailable, setUploadAvailable] = useState(false);
+  useModalFocus(dialogRef, { open: isOpen && Boolean(load), onClose, busy: documentBusy });
   const [activeDocTab, setActiveDocTab] = useState(initialDocumentTab);
 
   if (!isOpen || !load) return null;
@@ -52,16 +60,18 @@ export default function DocumentViewerModal({
       versionId: load.documentMeta?.receipt?.current_version_id,
       review: load.documentChecks?.receipt,
     },
-  ].map((document) => ({ ...document, fileName: load.documentMeta?.[document.id]?.fileName, available: Boolean(document.url || document.versionId) }));
+  ].map((document) => ({ ...document, documentId: load.documentMeta?.[document.id]?.id, stopId: load.documentMeta?.[document.id]?.stop_id, fileName: load.documentMeta?.[document.id]?.fileName, available: Boolean(document.url || document.versionId) }));
 
   const currentDoc = docs.find((document) => document.id === activeDocTab) || docs[0];
   const handleClose = () => {
-    onClose();
+    if (!documentBusy) onClose();
   };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-1 backdrop-blur-xs sm:p-2 dark:bg-black/80">
       <section
+        ref={dialogRef}
+        tabIndex={-1}
         role="dialog"
         aria-modal="true"
         aria-labelledby="document-viewer-title"
@@ -82,14 +92,19 @@ export default function DocumentViewerModal({
             </p>
           </div>
 
+          <div className="flex min-w-0 items-center gap-2">
+          <DocumentViewerActions load={load} document={currentDoc} onManageDocument={onManageDocument}
+            onBusyChange={setDocumentBusy} uploadButtonRef={uploadButtonRef} onUploadAvailable={setUploadAvailable} />
           <button
             type="button"
+            disabled={documentBusy}
             onClick={handleClose}
             aria-label={t('common.close')}
             className="rounded-md p-2 text-zinc-500 transition-colors hover:bg-zinc-100 hover:text-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
           >
             <X className="h-5 w-5" />
           </button>
+          </div>
         </header>
 
         {currentDoc.available && <DocumentCheckSummary review={currentDoc.review} t={t} />}
@@ -102,7 +117,7 @@ export default function DocumentViewerModal({
               <div className="space-y-2.5 p-8 text-zinc-400 dark:text-zinc-500">
                 <FileText className="mx-auto h-10 w-10 text-zinc-400 dark:text-zinc-600" />
                 <div className="text-sm font-semibold text-zinc-700 dark:text-zinc-300">{t('documents.notUploaded')}</div>
-                <p className="text-xs text-zinc-500">{t('documents.uploadHint')}</p>
+                {onManageDocument && !load.trashedAt && currentDoc.id !== 'receipt' ? <button type="button" disabled={!uploadAvailable} onClick={() => uploadButtonRef.current?.click()} className="rounded-lg border border-blue-600 px-4 py-2 text-xs font-semibold text-blue-600 disabled:opacity-50">{t('documentManagement.add')}</button> : <p className="text-xs text-zinc-500">{t('documentManagement.viewOnly')}</p>}
               </div>
             </div>
           )}
@@ -115,6 +130,7 @@ export default function DocumentViewerModal({
               <button
                 key={document.id}
                 type="button"
+                disabled={documentBusy}
                 onClick={() => setActiveDocTab(document.id)}
                 className={`flex shrink-0 items-center space-x-2 border-t-2 px-3.5 py-3 text-sm font-medium transition-colors ${
                   isActive
@@ -133,7 +149,7 @@ export default function DocumentViewerModal({
   );
 }
 
-function FreshDocumentViewer({ document: doc }) {
+export function FreshDocumentViewer({ document: doc, presentation }) {
   const { t } = useTranslation();
   const [source, setSource] = useState(null);
   const [failed, setFailed] = useState(false);
@@ -195,8 +211,8 @@ function FreshDocumentViewer({ document: doc }) {
   const loading = <div role="status" className="flex h-full items-center justify-center gap-2 text-sm text-zinc-500"><LoaderCircle className="h-5 w-5 animate-spin" />{t('documents.loadingPdf')}</div>;
   if (!source) return loading;
   return source.mimeType === 'application/pdf' || /\.pdf(?:$|\?)/i.test(source.mediaUrl)
-    ? <Suspense fallback={loading}><PdfDocumentViewer key={attempt} url={source.mediaUrl} title={doc.title} onOpenOriginal={openOriginal} onRetrySource={retry} onSourceError={recoverSource} onDownload={download} downloading={downloading} actionError={actionError} /></Suspense>
-    : <ImageDocumentViewer key={attempt} url={source.mediaUrl} title={doc.title} onOpenOriginal={openOriginal} onRetrySource={retry} onSourceError={recoverSource} onDownload={download} downloading={downloading} actionError={actionError} />;
+    ? <Suspense fallback={loading}><PdfDocumentViewer key={attempt} url={source.mediaUrl} title={doc.fileName || doc.title} presentation={presentation} onOpenOriginal={openOriginal} onRetrySource={retry} onSourceError={recoverSource} onDownload={download} downloading={downloading} actionError={actionError} /></Suspense>
+    : <ImageDocumentViewer key={attempt} url={source.mediaUrl} title={doc.fileName || doc.title} presentation={presentation} onOpenOriginal={openOriginal} onRetrySource={retry} onSourceError={recoverSource} onDownload={download} downloading={downloading} actionError={actionError} />;
 }
 
 function DocumentCheckSummary({ review, t }) {

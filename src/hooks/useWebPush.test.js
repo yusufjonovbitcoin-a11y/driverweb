@@ -1,9 +1,10 @@
+import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import vm from 'node:vm';
 import { rolldown } from 'rolldown';
 
-const bundle = await rolldown({ input: new URL('./useWebPush.js', import.meta.url).pathname,
+const bundle = await rolldown({ input: fileURLToPath(new URL('./useWebPush.js', import.meta.url)),
   plugins: [{ name: 'isolated-hook-effects', resolveId(id) {
     if (id === 'react') return '\0react';
     if (id.endsWith('/webPush.js')) return '\0push';

@@ -10,7 +10,6 @@ import {
   Moon,
   ShieldCheck,
   Sun,
-  Truck,
 } from 'lucide-react';
 
 export default function AuthView({ onLogin, externalError, theme, toggleTheme }) {
@@ -44,9 +43,8 @@ export default function AuthView({ onLogin, externalError, theme, toggleTheme })
     <main className="auth-shell">
       <section className="auth-brand-panel" aria-label={t('auth.about')}>
         <div className="auth-brand">
-          <span className="auth-logo" aria-hidden="true"><Truck size={22} /></span>
           <div>
-            <strong>DRIVEX</strong>
+            <strong>T Fleets</strong>
             <span>TRANSPORT MANAGEMENT</span>
           </div>
         </div>
@@ -65,7 +63,7 @@ export default function AuthView({ onLogin, externalError, theme, toggleTheme })
 
       <section className="auth-form-panel">
         <div className="auth-form-topbar">
-          <span>DRIVEX TMS</span>
+          <span>T Fleets TMS</span>
           <button
             type="button"
             onClick={toggleTheme}

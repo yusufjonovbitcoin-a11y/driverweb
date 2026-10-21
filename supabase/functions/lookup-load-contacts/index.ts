@@ -1,3 +1,4 @@
+import { persistStopContact } from '../_shared/load-contact-persistence.ts';
 import { loadContactAccess } from '../_shared/load-contact-access.ts';
 import { withCors } from "../_shared/cors.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
@@ -124,20 +125,19 @@ Deno.serve((request) => withCors(request, async () => {
       findStopContact(stop, googlePlacesKey)
     ),
   );
-  await Promise.all(
-    stopResults.map((result, index) => {
-      const stop = (stops ?? [])[index] as StopRow;
-      if (!result.placeId || stop.contact_place_id) return Promise.resolve();
-      return adminClient
-        .from("load_stops")
-        .update({ contact_place_id: result.placeId })
-        .eq("id", stop.id)
-        .is("contact_place_id", null);
-    }),
-  );
+  try {
+    await Promise.all(stopResults.map((result, index) =>
+      persistStopContact(adminClient, loadId, stops[index] as StopRow, result)));
+  } catch (error) {
+    const code = error && typeof error === 'object' && 'code' in error ? String(error.code) : 'CONTACT_SAVE_FAILED';
+    console.error(JSON.stringify({ event: 'load_contact_persistence_failed', code: /^[A-Z0-9_]{5,32}$/.test(code) ? code : 'CONTACT_SAVE_FAILED' }));
+    return json({ error: 'Could not save route contacts. Retry the lookup.' }, 503);
+  }
+
 
   const contacts: RouteContact[] = [
-    ...stopResults.map((result, index) => ({ ...result.contact, stopId: stops[index].id, sequence: index + 1 })),
+    ...stopResults.map((result, index) => ({ ...result.contact, stopId: stops[index].id, sequence: index + 1,
+      address: stops[index].address_line, city: stops[index].city, state: stops[index].region, postalCode: stops[index].postal_code })),
     {
       role: "dispatcher",
       status: dispatcher?.phone ? "found" : "not_found",

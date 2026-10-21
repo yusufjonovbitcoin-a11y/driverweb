@@ -17,14 +17,14 @@ export default function PdfDocumentViewer({ url, title, onOpenOriginal, onRetryS
   return <PdfSession key={`${url}:${attempt}`} url={url} title={title} onOpenOriginal={onOpenOriginal} {...actions} onRetry={onRetrySource || (() => setAttempt((value) => value + 1))} />;
 }
 
-function PdfSession({ url, title, onRetry, onOpenOriginal, onSourceError, onDownload, downloading, actionError }) {
+function PdfSession({ url, title, onRetry, onOpenOriginal, onSourceError, onDownload, downloading, actionError, presentation }) {
   const { t } = useTranslation();
   const [pdf, setPdf] = useState(null);
   const [pages, setPages] = useState([]);
   const [error, setError] = useState(null);
   const [pageNumber, setPageNumber] = useState(1);
   const [zoom, setZoom] = useState(1);
-  const [sidebarOpen, setSidebarOpen] = useState(() => window.matchMedia('(min-width: 640px)').matches);
+  const [sidebarOpen, setSidebarOpen] = useState(() => presentation !== 'workspace' && window.matchMedia('(min-width: 640px)').matches);
   const viewportRef = useRef(null);
   const containerRef = useRef(null);
   const viewerElementRef = useRef(null);
@@ -141,7 +141,7 @@ function PdfSession({ url, title, onRetry, onOpenOriginal, onSourceError, onDown
   };
 
   return (
-    <DocumentViewerFrame url={url} title={title} onOpenOriginal={onOpenOriginal} onDownload={onDownload} downloading={downloading} actionError={actionError} pageNumber={pageNumber} pageCount={pdf?.numPages || 0} zoom={zoom} onZoomChange={changeZoom}
+    <DocumentViewerFrame presentation={presentation} url={url} title={title} onOpenOriginal={onOpenOriginal} onDownload={onDownload} downloading={downloading} actionError={actionError} pageNumber={pageNumber} pageCount={pdf?.numPages || 0} zoom={zoom} onZoomChange={changeZoom}
       onPageChange={goToPage} sidebarOpen={sidebarOpen} onSidebarToggle={() => setSidebarOpen((open) => !open)} thumbnailsRef={thumbnailsRef} viewportRef={viewportRef}
       thumbnails={pdf && pages.map((page) => (
         <DocumentThumbnail key={page.number} number={page.number} total={pdf.numPages} active={pageNumber === page.number} onClick={() => goToPage(page.number)}>

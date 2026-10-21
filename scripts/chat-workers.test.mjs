@@ -1,3 +1,4 @@
+import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import vm from 'node:vm';
@@ -6,7 +7,7 @@ import { rolldown } from 'rolldown';
 // Execute the production handlers, replacing only external service boundaries.
 async function workerCode(name) {
   const bundle = await rolldown({
-    input: new URL(`../supabase/functions/${name}/index.ts`, import.meta.url).pathname,
+    input: fileURLToPath(new URL(`../supabase/functions/${name}/index.ts`, import.meta.url)),
     plugins: [{
       name: 'isolated-worker-services',
       resolveId(id) {

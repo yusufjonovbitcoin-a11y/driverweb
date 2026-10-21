@@ -1,8 +1,9 @@
+import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { rolldown } from 'rolldown';
 
-const bundle = await rolldown({ input: new URL('../src/services/operationsService.js', import.meta.url).pathname,
+const bundle = await rolldown({ input: fileURLToPath(new URL('../src/services/operationsService.js', import.meta.url)),
   plugins: [{ name: 'isolated-workspace', resolveId(id) {
     if (id.endsWith('/lib/supabase')) return '\0client';
     if (id.endsWith('/workspaceMediaResolver')) return '\0media';

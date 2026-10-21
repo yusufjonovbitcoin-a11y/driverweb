@@ -15,6 +15,7 @@ test('route uses geocoded addresses and road geometry, without producing documen
   const route = await fetchImportRoute('Pickup', 'Delivery', 'test-token', signal, fetcher);
   assert.equal(urls.length, 3);
   assert.equal(route.points.length, 3);
+  assert.deepEqual(route.stops, [{ longitude: -112, latitude: 33 }, { longitude: -118, latitude: 34 }]);
   assert.equal(route.distanceMiles, undefined);
 });
 test('weak, missing or invalid geocoding never draws a fabricated route', async () => {
@@ -40,6 +41,7 @@ test('unsaved preview routes every stop in order and computes miles without pers
     { id: 'driver', position: { lat: 32, lng: -110 } }, undefined, fetcher);
   assert.equal(result.loadedMiles, 2);
   assert.equal(result.points.length, 3);
+  assert.deepEqual(result.stops, [{ longitude: -112, latitude: 33 }, { longitude: -115, latitude: 34 }, { longitude: -118, latitude: 35 }]);
   assert.deepEqual(result.legs.map(item => item.distanceMiles), [1, 1]);
   assert.equal(result.targets[0].deadheadMiles, 0.5);
   assert.equal(result.targets[0].totalMiles, 2.5);

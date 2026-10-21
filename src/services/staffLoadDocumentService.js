@@ -1,6 +1,8 @@
 import { requireSupabase } from '../lib/supabase';
 import { uploadCloudinaryMedia } from './cloudinaryMediaService';
-import { createStaffDocumentManager, fetchStaffLoadDocumentContext } from './staffLoadDocuments.js';
+import { createStaffDocumentManager, fetchStaffLoadDocumentContext, fetchStaffDocumentHistory } from './staffLoadDocuments.js';
+
+export const loadStaffDocumentHistory = (documentId, signal, offset) => fetchStaffDocumentHistory(requireSupabase(), documentId, signal, offset);
 
 export const makeStaffDocumentManager = ownerId => createStaffDocumentManager({
   client: requireSupabase(), ownerId, uploadMedia: uploadCloudinaryMedia,

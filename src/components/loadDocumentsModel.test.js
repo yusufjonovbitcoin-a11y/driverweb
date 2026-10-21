@@ -1,6 +1,7 @@
+import { documentViewerActionChoices } from './loadDocumentsModel.js';
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { documentChoices, documentViewerLoad, documentActionSnapshot, documentUploadError, documentMutationError } from './loadDocumentsModel.js';
+import { documentChoices, documentViewerLoad, documentActionSnapshot, documentUploadError, documentMutationError, documentWorkspaceEntries, selectedWorkspaceEntry, documentRegistryEntries, documentRegistrySummary, filterDocumentRegistry } from './loadDocumentsModel.js';
 
 const base = { id: 'shipperBol', title: 'Shipper BOL', available: true, versionId: 'old-first', url: 'old-first-url' };
 const stops = [{ id: 'pickup-a', type: 'pickup', sequence: 1, city: 'Phoenix' },
@@ -75,4 +76,70 @@ test('server failures map to localized semantic keys instead of exposing raw pay
     ['STAFF_DOCUMENT_INVALID_RESULT', 'saveError']]) assert.equal(documentMutationError({ code: 'P0001', message: code }), key);
   assert.equal(documentMutationError({ status: 403 }), 'permissionError');
   assert.equal(documentMutationError(new Error('private backend detail')), 'saveError');
+});
+
+
+test('viewer mutations target only the displayed document and exact version', () => {
+  const context = { stops: [{ id: 'p1', type: 'pickup', sequence: 1 }, { id: 'p2', type: 'pickup', sequence: 2 }],
+    documentItems: [{ id: 'first', document_type: 'bol', stop_id: 'p1', current_version_id: 'v1' },
+      { id: 'second', document_type: 'bol', stop_id: 'p2', current_version_id: 'v2' }] };
+  const base = { id: 'shipperBol', available: true, documentId: 'second', versionId: 'v2' };
+  const choices = documentViewerActionChoices(base, context);
+  assert.equal(choices.length, 1);
+  assert.equal(choices[0].document.stopId, 'p2');
+  assert.equal(documentViewerActionChoices({ ...base, versionId: 'superseded' }, context).length, 0);
+  assert.equal(documentViewerActionChoices({ id: 'shipperBol', available: true }, context).length, 0);
+  assert.deepEqual(documentViewerActionChoices({ id: 'shipperBol', available: false }, context).map(choice => choice.document.stopId), ['p1', 'p2']);
+});
+
+test('workspace lists independent files and add targets for multiple pickups and deliveries', () => {
+  const context = { stops: [...stops, { id: 'delivery-b', type: 'delivery', sequence: 4, city: 'Dallas' }],
+    documentItems: [row('a', 'pickup-a'), row('b', 'pickup-b'), row('c', 'pickup-b'),
+      row('pod-a', 'delivery-a', { document_type: 'pod' }), row('pod-b', 'delivery-b', { document_type: 'pod' }),
+      row('receipt', null, { document_type: 'receipt' })] };
+  const entries = documentWorkspaceEntries([base, { ...base, id: 'receiverPod' }, { ...base, id: 'receipt' }], context);
+  assert.equal(new Set(entries.map(entry => entry.key)).size, entries.length);
+  assert.deepEqual(entries.filter(entry => entry.document.available).map(entry => [entry.document.documentId, entry.marker]),
+    [['a', 'P1'], ['b', 'P2'], ['c', 'P2'], ['pod-a', 'D1'], ['pod-b', 'D2'], ['receipt', null]]);
+  assert.deepEqual(entries.filter(entry => entry.add).map(entry => [entry.document.id, entry.document.stopId]),
+    [['shipperBol', 'pickup-a'], ['shipperBol', 'pickup-b'], ['receiverPod', 'delivery-a'], ['receiverPod', 'delivery-b']]);
+  const selected = selectedWorkspaceEntry(entries, 'receiverPod:document:pod-b');
+  assert.equal(selected.document.versionId, 'version-pod-b');
+  assert.equal(documentActionSnapshot({}, selected.document, 'remove').stopId, 'delivery-b');
+});
+
+test('selection survives replacement and safely falls back after removal; file metadata is retained', () => {
+  const context = { stops, documentItems: [row('a', 'pickup-b', { current_version_id: 'new-a', sizeBytes: 1024, uploadedAt: '2026-10-21T00:00:00Z' })] };
+  const entries = documentWorkspaceEntries([base], context);
+  const selected = selectedWorkspaceEntry(entries, 'shipperBol:document:a');
+  assert.equal(selected.document.versionId, 'new-a');
+  assert.equal(selected.document.sizeBytes, 1024);
+  assert.equal(selected.document.uploadedAt, '2026-10-21T00:00:00Z');
+  const empty = documentWorkspaceEntries([base], { stops, documentItems: [] });
+  assert.equal(selectedWorkspaceEntry(empty, selected.key).document.available, false);
+  assert.equal(selectedWorkspaceEntry(empty, selected.key).document.versionId, null);
+  assert.equal(selectedWorkspaceEntry([], null), null);
+});
+
+test('registry counts stop coverage without counting another-file targets as missing documents', () => {
+  const entries = documentWorkspaceEntries([base, { id: 'receiverPod' }, { id: 'receipt' }], { stops,
+    documentItems: [row('a', 'pickup-a'), row('b', 'pickup-a'), row('c', 'pickup-b')] });
+  const rows = documentRegistryEntries(entries);
+  assert.equal(rows.filter(entry => entry.add).length, 1, 'only delivery is missing; occupied pickup Add slots are hidden');
+  assert.equal(rows.length, 5);
+  assert.deepEqual(documentRegistrySummary(entries), { total: 4, uploaded: 2, pending: 2, percent: 50 });
+  const addKey = entries.find(entry => entry.add && entry.document.stopId === 'pickup-b').key;
+  assert.equal(documentRegistryEntries(entries, addKey).length, 6);
+});
+
+test('registry searches non-first stop/files and filters/sorts without mutating the source', () => {
+  const entries = documentRegistryEntries(documentWorkspaceEntries([base, { id: 'receiverPod' }], { stops,
+    documentItems: [row('z-file', 'pickup-a', { sizeBytes: 200 }), row('a-file', 'pickup-b', { sizeBytes: 100 })] }));
+  assert.deepEqual(filterDocumentRegistry(entries, { query: 'tucson' }).map(entry => entry.document.documentId), ['a-file']);
+  assert.deepEqual(filterDocumentRegistry(entries, { query: 'P2' }).map(entry => entry.document.documentId), ['a-file']);
+  assert.equal(filterDocumentRegistry(entries, { query: 'does-not-exist' }).length, 0);
+  assert.equal(filterDocumentRegistry(entries, { filter: 'pending' }).length, 1);
+  assert.deepEqual(filterDocumentRegistry(entries, { filter: 'uploaded', sort: 'size', direction: -1 }).map(entry => entry.document.documentId), ['z-file', 'a-file']);
+  assert.deepEqual(filterDocumentRegistry(entries, { filter: 'uploaded', sort: 'file' }).map(entry => entry.document.documentId), ['a-file', 'z-file']);
+  assert.equal(entries[0].document.documentId, 'z-file');
 });

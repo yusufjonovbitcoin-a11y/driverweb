@@ -16,6 +16,7 @@ let queue = Promise.resolve();
 const identifier = (value) => typeof value === 'string' && /^[A-Za-z0-9_-]{1,128}$/.test(value) ? value : null;
 const accountOf = (data) => identifier(data?.recipient_id ?? data?.recipientId);
 const safeName = (value) => typeof value === 'string'
+  // oxlint-disable-next-line no-control-regex -- Reject control characters in untrusted display names or mailbox labels.
   ? value.replace(/[\u0000-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069]/g, '').replace(/\s+/g, ' ').trim().slice(0, 80) : '';
 const emptyState = () => ({ version: 2, enabled: false, userId: null, calls: false, messages: false, locale: 'en', seen: [] });
 function serialize(operation) {

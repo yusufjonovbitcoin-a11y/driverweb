@@ -1,3 +1,4 @@
+import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import vm from 'node:vm';
@@ -7,7 +8,7 @@ import { rolldown } from 'rolldown';
 // replaced. The stateful fake models commits surviving a failed HTTP response;
 // SQL authorization and object metadata checks have separate database tests.
 const bundle = await rolldown({
-  input: new URL('../supabase/functions/parse-load-document/index.ts', import.meta.url).pathname,
+  input: fileURLToPath(new URL('../supabase/functions/parse-load-document/index.ts', import.meta.url)),
   plugins: [{ name: 'isolated-supabase', resolveId(id) {
     if (id.startsWith('https://esm.sh/@supabase/')) return '\0isolated-supabase';
   }, load(id) {

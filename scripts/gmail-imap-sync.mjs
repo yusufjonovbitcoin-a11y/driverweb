@@ -1,4 +1,5 @@
 import dotenv from 'dotenv';
+import { businessMailPolicy } from '../supabase/functions/gmail-sync-worker/business-policy.mjs';
 import { normalizeMessageLimit, selectPendingUids } from './gmail-sync-cursor.mjs';
 import { extractMessageBody } from './gmail-message-body.mjs';
 import { drainGmailLabelJobs } from './gmail-driver-labels.mjs';
@@ -16,6 +17,7 @@ for (const key of required) {
 }
 
 const companyId = process.env.GMAIL_COMPANY_ID.trim();
+const isBusinessMail = businessMailPolicy(process.env.GMAIL_BUSINESS_POLICY_BY_COMPANY, companyId);
 const legacyMailboxEmail = process.env.GMAIL_IMAP_USER?.trim().toLowerCase() || '';
 const legacyAppPassword = process.env.GMAIL_IMAP_APP_PASSWORD?.replace(/\s+/g, '') || '';
 const maxMessages = normalizeMessageLimit(process.env.GMAIL_MAX_MESSAGES || 25);
@@ -54,7 +56,7 @@ async function loadMailboxConfiguration() {
 
   const { data: connection, error: connectionError } = await admin
     .from('gmail_connections')
-    .select('id,mailbox_email,status,secret_reference,provider_history_id,configuration_version')
+    .select('id,mailbox_email,status,secret_reference,provider_history_id,configuration_version,uid_validity')
     .eq('company_id', companyId)
     .maybeSingle();
   if (connectionError) throw connectionError;
@@ -162,6 +164,7 @@ async function backfillMessageBodies(connectionId, limit = 20) {
     .select('id,raw_storage_path')
     .eq('company_id', companyId)
     .eq('gmail_connection_id', connectionId)
+    .in('from_email', isBusinessMail.senders)
     .is('body_text', null)
     .not('raw_storage_path', 'is', null)
     .order('received_at', { ascending: false })
@@ -172,7 +175,9 @@ async function backfillMessageBodies(connectionId, limit = 20) {
   for (const message of messages || []) {
     try {
       const source = await downloadRawMessage(message.raw_storage_path);
-      await saveMessageBody(message.id, await simpleParser(source));
+      const parsed = await simpleParser(source);
+      if (!isBusinessMail(parsed)) continue;
+      await saveMessageBody(message.id, parsed);
       backfilled += 1;
     } catch (backfillError) {
       failed += 1;
@@ -220,7 +225,15 @@ async function processBrokerAttachment(attachmentId, { retryFailed = false } = {
 }
 
 async function processPendingBrokerAttachments(limit = 10) {
-  const attachments = await findPendingBrokerAttachments(admin, companyId, [...supportedAttachmentTypes], limit);
+  const candidates = await findPendingBrokerAttachments(admin, companyId, [...supportedAttachmentTypes], limit, Date.now(), isBusinessMail.senders);
+  const attachments = [];
+  for (const candidate of candidates) {
+    const { data: attachment, error } = await admin.from('broker_attachments').select('message_id').eq('id', candidate.id).eq('company_id', companyId).maybeSingle();
+    if (error) throw error;
+    const { data: message, error: messageError } = await admin.from('broker_messages').select('from_email').eq('id', attachment?.message_id).eq('company_id', companyId).maybeSingle();
+    if (messageError) throw messageError;
+    if (isBusinessMail({ from: { value: [{ address: message?.from_email }] } })) attachments.push(candidate);
+  }
   let processed = 0;
   let failed = 0;
   for (const attachment of attachments || []) {
@@ -256,12 +269,12 @@ async function getConnection() {
       created_by: creator.id,
       status: 'active',
     })
-    .select('id,provider_history_id,configuration_version')
+    .select('id,provider_history_id,configuration_version,uid_validity')
     .maybeSingle();
   if (createError?.code === '23505') {
     const { data: racedConnection, error: reloadError } = await admin
       .from('gmail_connections')
-      .select('id,mailbox_email,status,secret_reference,provider_history_id,configuration_version')
+      .select('id,mailbox_email,status,secret_reference,provider_history_id,configuration_version,uid_validity')
       .eq('company_id', companyId)
       .maybeSingle();
     if (reloadError) throw reloadError;
@@ -278,6 +291,7 @@ async function getConnection() {
 
 async function ingestMessage(connectionId, message) {
   const parsed = await simpleParser(message.source);
+  if (!isBusinessMail(parsed)) return { documentCount: 0, processedCount: 0, failedCount: 0, skipped: true };
   const providerMessageId = parsed.messageId || `imap:${mailboxEmail}:${message.uid}`;
   const receivedAt = (parsed.date || message.envelope?.date || new Date()).toISOString();
   const rawPath = await uploadWorkerMedia({
@@ -289,7 +303,7 @@ async function ingestMessage(connectionId, message) {
     fallbackPath: `${companyId}/gmail/raw/${message.uid}.eml`,
   });
 
-  const fromEmail = parsed.from?.value?.[0]?.address || message.envelope?.from?.[0]?.address || mailboxEmail;
+  const fromEmail = String(parsed.from.value[0].address).toLowerCase();
   const { data: messageId, error: messageError } = await admin.rpc('ingest_broker_message_guarded', {
     gmail_connection_id: connectionId,
     expected_configuration_version: activeConnection.configuration_version,
@@ -376,13 +390,16 @@ try {
   const gmailLabels = await drainGmailLabelJobs({
     admin, client, companyId, connectionId: connection.id,
   });
-  const lock = await client.getMailboxLock('INBOX');
+  const lock = await client.getMailboxLock(isBusinessMail.folder);
   let synced = 0;
   let documents = 0;
   let processed = 0;
   let failed = 0;
   let lastUid = Number(connection.provider_history_id || 0);
   try {
+    if (!connection.uid_validity || String(client.mailbox?.uidValidity || '') !== String(connection.uid_validity)) {
+      throw new Error('GMAIL_BUSINESS_FOLDER_BASELINE_REQUIRED');
+    }
     const candidates = lastUid > 0
       ? await client.search({ uid: `${lastUid + 1}:*` }, { uid: true })
       : await client.search({ seen: false }, { uid: true });

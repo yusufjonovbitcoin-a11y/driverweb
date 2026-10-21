@@ -5,8 +5,9 @@ import { importContactsRequest, startImportContacts } from '../services/importCo
 // Contacts and road routing have separate lifecycles and never gate the PDF UI.
 export function useImportContacts(loadId, previewTicket, enabled) {
   const [result, setResult] = useState(null);
+  const [attempt, setAttempt] = useState(0);
   const request = importContactsRequest(loadId, previewTicket);
-  const key = request?.key;
+  const key = request ? `${request.key}:${attempt}` : null;
   const payload = request?.previewTicket?.payload;
   const signature = request?.previewTicket?.signature;
   useEffect(() => {
@@ -15,5 +16,5 @@ export function useImportContacts(loadId, previewTicket, enabled) {
       : fetchImportPreviewContacts({ payload, signature }, signal),
     state => setResult({ key, ...state }));
   }, [loadId, key, payload, signature, enabled]);
-  return enabled && result?.key === key ? result : null;
+  return enabled && result?.key === key ? { ...result, retry: () => setAttempt(value => value + 1) } : null;
 }

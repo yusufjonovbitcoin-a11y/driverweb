@@ -23,7 +23,7 @@ create table public.jobs (
 );
 create table public.broker_messages (
   id uuid primary key, company_id uuid not null references public.companies(id),
-  gmail_connection_id uuid, status text not null default 'queued'
+  gmail_connection_id uuid, from_email text, status text not null default 'queued'
 );
 create table public.broker_attachments (
   id uuid primary key, company_id uuid not null references public.companies(id),

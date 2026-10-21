@@ -7,7 +7,6 @@ import {
 } from '../services/operationsService';
 import { 
   Building2, 
-  Phone, 
   Mail, 
   MapPin, 
   Plus, 
@@ -17,13 +16,8 @@ import {
   Search,
   Truck,
   UserPlus,
-  Settings,
-  Bell,
-  ShieldCheck,
   Users,
   ChevronRight,
-  Link2,
-  UserRound,
   UserCog,
   Plug,
   Eye,
@@ -142,20 +136,18 @@ export default function ProfileView({
     requestAnimationFrame(() => addFormToggleRef.current?.focus());
   };
 
-  const changeSection = (sectionId, { focusPanel = false } = {}) => {
+  const changeSection = (sectionId, { focusPanel = false, scrollPanel = false } = {}) => {
     if (activeSection === 'integrations' && sectionId !== 'integrations') {
       setGmailAppPassword('');
       setGmailPasswordVisible(false);
       setGmailError('');
     }
     setActiveSection(sectionId);
-    if (focusPanel) {
+    if (focusPanel || scrollPanel) {
       requestAnimationFrame(() => {
         const panel = document.getElementById('profile-section-panel');
-        panel?.focus({ preventScroll: true });
-        const target = window.matchMedia('(max-width: 1000px)').matches
-          ? panel : document.querySelector('.profile-center-layout');
-        target?.scrollIntoView({ block: 'start', behavior: 'instant' });
+        if (focusPanel) panel?.focus({ preventScroll: true });
+        panel?.scrollIntoView({ block: 'start', behavior: 'instant' });
       });
     }
   };
@@ -323,73 +315,80 @@ export default function ProfileView({
   });
 
   const sections = [
-    { id: 'overview', label: t('profile.personal'), icon: UserRound },
-    { id: 'company', label: t('common.company'), icon: Building2 },
-    { id: 'contact', label: t('profile.contact'), icon: Link2 },
-    ...(canManageIntegrations ? [{ id: 'integrations', label: t('profile.integrations'), icon: Plug }] : []),
-    { id: 'security', label: t('profile.security'), icon: ShieldCheck },
-    { id: 'notifications', label: t('profile.notifications'), icon: Bell },
-    { id: 'settings', label: t('profile.settings'), icon: Settings },
+    { id: 'settings', label: t('profile.generalTab') },
+    { id: 'company', label: t('profile.teamTab') },
+    { id: 'overview', label: t('profile.personal') },
+    ...(canManageIntegrations ? [{ id: 'integrations', label: t('profile.integrations') }] : []),
+    { id: 'contact', label: t('profile.contact') },
+    { id: 'security', label: t('profile.security') },
+    { id: 'notifications', label: t('profile.notifications') },
   ];
 
 
   return (
     <div className="profile-center w-full">
       
-      {/* Success Notification Toast */}
+      <div className="profile-topbar">
+      <h1 className="profile-settings-title">{t('profile.settingsTitle')}</h1>
+      <div role="tablist" aria-label={t('profile.sections')} className="profile-center-nav" onKeyDown={event => {
+        if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+        const tabs = [...event.currentTarget.querySelectorAll('[role="tab"]')];
+        const current = tabs.indexOf(document.activeElement);
+        if (current < 0) return;
+        event.preventDefault();
+        const next = event.key === 'Home' ? 0 : event.key === 'End' ? tabs.length - 1
+          : (current + (event.key === 'ArrowRight' ? 1 : -1) + tabs.length) % tabs.length;
+        tabs[next].focus();
+      }}>
+        {sections.map(section => <button key={section.id} id={`profile-tab-${section.id}`} type="button" role="tab"
+          aria-selected={activeSection === section.id} tabIndex={activeSection === section.id ? 0 : -1} aria-controls="profile-section-panel"
+          onClick={() => { changeSection(section.id, { scrollPanel: true }); if (section.id === 'integrations') refreshGmailConnection(); }}>
+          {section.label}{section.id === 'notifications' && notificationCount > 0 && <span className="profile-tab-count">{notificationCount}</span>}
+        </button>)}
+      </div>
+      </div>
+
       {successToast && (
-        <div role="status" aria-live="polite" className="bg-emerald-500 text-white px-5 py-3 rounded-xl shadow-lg flex items-center justify-between text-sm font-bold animate-in fade-in slide-in-from-top duration-200">
+        <div role="status" aria-live="polite" className="workspace-success-banner mb-6 px-5 py-3 rounded-xl shadow-lg flex items-center justify-between text-sm font-bold animate-in fade-in slide-in-from-top duration-200">
           <div className="flex items-center space-x-3">
             <CheckCircle2 className="w-5 h-5 flex-shrink-0" />
             <span>{successToast}</span>
           </div>
-              <button aria-label={t('profile.closeNotification')} onClick={() => setSuccessToast('')} className="rounded opacity-80 hover:opacity-100 p-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white">
+          <button aria-label={t('profile.closeNotification')} onClick={() => setSuccessToast('')} className="rounded opacity-80 hover:opacity-100 p-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white">
             <X className="w-4 h-4" />
           </button>
         </div>
       )}
 
       <div className="profile-center-layout">
-        <aside className="profile-identity-card">
-          <div className="profile-identity-top">
-            <span className="profile-identity-avatar">{currentUser?.avatarInitial || currentUser?.name?.charAt(0) || 'D'}</span>
-            <h2>{currentUser?.name || '—'}</h2>
-            <p>{roleLabel(t, currentUser?.roleCode || currentUser?.role)}</p>
-          </div>
-          <div className="profile-identity-company"><Building2 size={21} /><div><strong>{currentUser?.company || t('common.notProvided')}</strong><span>{t('profile.companyTeam')}</span></div></div>
-          <div className="profile-identity-contacts">
-            <p><Mail size={16} /><span>{currentUser?.email || t('profile.emailMissing')}</span></p>
-            <p><Phone size={16} /><span>{currentUser?.phone || t('profile.phoneMissing')}</span></p>
-          </div>
-          <div className="profile-identity-stats">
-            <span><strong>{totalDrivers}</strong>{t('nav.drivers')}</span>
-            <span><strong>{activeLoads}</strong>{t('profile.activeLoads')}</span>
-            <span><strong>{completedLoads}</strong>{t('profile.completed')}</span>
-          </div>
-          <nav aria-label={t('profile.sections')} className="profile-center-nav">
-            {sections.map(section => {
-              const Icon = section.icon;
-              return <button key={section.id} type="button" aria-pressed={activeSection === section.id} aria-controls="profile-section-panel"
-                onClick={() => { changeSection(section.id, { focusPanel: true }); if (section.id === 'integrations') refreshGmailConnection(); }}>
-                <Icon size={17} aria-hidden="true" /><span>{section.label}</span><ChevronRight size={15} aria-hidden="true" />
-              </button>;
-            })}
-          </nav>
-        </aside>
 
       <div
         id="profile-section-panel"
-        role="region"
-        aria-label={t('profile.sectionLabel', { section: sections.find((section) => section.id === activeSection)?.label || t('nav.profile') })}
-        tabIndex={-1}
+        role="tabpanel"
+        aria-labelledby={`profile-tab-${activeSection}`}
+        tabIndex={0}
         className={`profile-section-content profile-section-${activeSection} space-y-6 focus:outline-none`}
       >
-        {activeSection === 'settings' && <ProfileSettingsHub currentUser={currentUser}
+        {activeSection === 'settings' && <>
+          <section className="profile-company-summary" aria-label={t('common.company')}>
+            <span className="profile-company-symbol"><Building2 size={28} aria-hidden="true" /></span>
+            <div className="profile-company-summary-copy"><h2>{currentUser?.company || t('common.notProvided')}</h2>
+              <dl><div><dt>{t('common.email')}</dt><dd>{currentUser?.email || '—'}</dd></div><div><dt>{t('common.phone')}</dt><dd>{currentUser?.phone || '—'}</dd></div></dl>
+            </div>
+            <div className="profile-identity-stats">
+              <span><strong>{totalDrivers}</strong>{t('nav.drivers')}</span>
+              <span><strong>{activeLoads}</strong>{t('profile.activeLoads')}</span>
+              <span><strong>{completedLoads}</strong>{t('profile.completed')}</span>
+            </div>
+            <button type="button" className="profile-summary-edit" onClick={() => changeSection('overview', { focusPanel: true })}><Pencil size={14} aria-hidden="true" />{t('common.edit')}</button>
+          </section>
+          <ProfileSettingsHub currentUser={currentUser}
           locale={locale} localeSaving={localeSaving} timeZone={timeZone} theme={theme} toggleTheme={toggleTheme}
           notificationCount={notificationCount} canManageIntegrations={canManageIntegrations} gmailConnection={gmailConnection}
           onSection={section => { changeSection(section, { focusPanel: true }); if (section === 'integrations') refreshGmailConnection(); }}
           onLocaleChange={handleLocaleChange}
-          onTimeZoneChange={onTimeZoneChange} />}
+          onTimeZoneChange={onTimeZoneChange} />
+        </>}
 
         {activeSection === 'overview' && (
           <ProfilePersonalPanel currentUser={currentUser} locale={locale} localeSaving={localeSaving} timeZone={timeZone}
@@ -450,7 +449,7 @@ export default function ProfileView({
               <div>
                 <div className="mb-1.5 flex items-center justify-between gap-3">
                   <label htmlFor="gmail-app-password" className="text-xs font-bold text-zinc-600 dark:text-zinc-300">{t('profile.googleAppPassword')}</label>
-                  <a href="https://myaccount.google.com/apppasswords" target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-700 hover:underline dark:text-emerald-300">{t('profile.getAppPassword')} <ExternalLink className="h-3 w-3" aria-hidden="true" /></a>
+                  <a href="https://myaccount.google.com/apppasswords" target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-[11px] font-semibold workspace-link hover:underline">{t('profile.getAppPassword')} <ExternalLink className="h-3 w-3" aria-hidden="true" /></a>
                 </div>
                 <div className="relative">
                   <input id="gmail-app-password" type={gmailPasswordVisible ? 'text' : 'password'} autoComplete="new-password" required aria-describedby="gmail-app-password-help gmail-vault-help" value={gmailAppPassword} onChange={(event) => setGmailAppPassword(event.target.value)} placeholder="xxxx xxxx xxxx xxxx" className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3.5 py-3 pr-11 font-mono text-sm tracking-wider text-zinc-900 outline-none transition placeholder:tracking-normal placeholder:text-zinc-400 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 disabled:cursor-not-allowed dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100" />
@@ -469,7 +468,7 @@ export default function ProfileView({
                       <Unplug className="h-3.5 w-3.5" aria-hidden="true" /> {t('profile.disconnect')}
                     </button>
                   )}
-                  <button type="submit" disabled={gmailSaving || gmailLoading} className="inline-flex items-center justify-center gap-2 rounded-lg bg-emerald-700 px-4 py-2.5 text-xs font-bold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-emerald-600 dark:hover:bg-emerald-500">
+                  <button type="submit" disabled={gmailSaving || gmailLoading} className="inline-flex items-center justify-center gap-2 rounded-lg workspace-action px-4 py-2.5 text-xs font-bold transition disabled:cursor-not-allowed disabled:opacity-60">
                     {gmailSaving ? <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" /> : <Plug className="h-4 w-4" aria-hidden="true" />}
                     {gmailConnection && gmailConnection.status !== 'disabled' ? t('profile.updateConnection') : t('profile.connectGmail')}
                   </button>
@@ -534,7 +533,6 @@ export default function ProfileView({
         ) : (
         <section className="profile-panel profile-company-panel">
           <ProfileSectionHeading title={t('common.company')} description={t('profile.companyTeamHint')} />
-          <div className="profile-company-identity"><span className="profile-row-icon"><Building2 size={23} aria-hidden="true" /></span><div><strong>{currentUser?.company || t('common.notProvided')}</strong><p>{t('profile.companyTeam')}</p></div></div>
           {formError && <p id="member-form-error" role="alert" className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-600 dark:border-red-900 dark:bg-red-950/30 dark:text-red-400">{formError}</p>}
 
       {/* 2. HAYDOVCHILARNI BOSHQARISH & AMALLAR PANELI */}

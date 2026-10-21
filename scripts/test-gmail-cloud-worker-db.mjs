@@ -48,8 +48,10 @@ try {
   started = true;
   sql(await source('scripts/gmail-cloud-test-fixtures/bootstrap.sql'));
   sql(await source('supabase/migrations/20261007214350_gmail_cloud_worker_paused.sql'));
+  sql(await source('supabase/migrations/20261013221758_gmail_business_pending_scope.sql'));
   sql(await source('scripts/gmail-cloud-test-fixtures/checks.sql'));
   sql(await source('scripts/gmail-cloud-test-fixtures/maintenance.sql'));
+  sql(await source('scripts/gmail-cloud-test-fixtures/business-maintenance.sql'));
   assert.equal(sql('select count(*) from public.gmail_connections;').trim(), '0', 'fixture transaction must roll back');
   const company = '10000000-0000-0000-0000-000000000001';
   const connectionId = '20000000-0000-0000-0000-000000000001';

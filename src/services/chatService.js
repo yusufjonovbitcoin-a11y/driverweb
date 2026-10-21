@@ -60,13 +60,14 @@ async function withMediaUrl(client, message) {
   const key = `${await actorKey(client)}:${message.storage_path}`;
   const cached = mediaUrls.get(key);
   if (cached && cached.until > Date.now()) {
-    try { return { ...message, mediaUrl: await cached.promise }; }
+    try { return { ...message, mediaUrl: await cached.promise, mediaResolvedAt: cached.resolvedAt }; }
     catch (error) { return { ...message, mediaError: error.message }; }
   }
   const promise = resolveMediaUrl(client, message);
-  mediaUrls.set(key, { promise, until: Date.now() + 5 * 60_000 });
+  const resolvedAt = Date.now();
+  mediaUrls.set(key, { promise, resolvedAt, until: resolvedAt + 5 * 60_000 });
   if (mediaUrls.size > 300) mediaUrls.delete(mediaUrls.keys().next().value);
-  try { return { ...message, mediaUrl: await promise }; }
+  try { return { ...message, mediaUrl: await promise, mediaResolvedAt: resolvedAt }; }
   catch (error) { mediaUrls.delete(key); return { ...message, mediaError: error.message }; }
 }
 

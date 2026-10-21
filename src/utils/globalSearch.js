@@ -1,6 +1,8 @@
 import { hasLoadDocument } from '../services/loadDocumentAvailability.js';
 
 const FALLBACK_TRANSLATIONS = {
+  'arrival.nav': 'Reyslar nazorati',
+  'arrival.keywords': ['yetib kelish', 'eta', 'reyslar nazorati', 'haydovchi monitoring'],
   'analytics.title': 'Analitika',
   'analytics.keywords': ['analitika', 'hisob', 'xarajat', 'qoldiq'],
   'nav.loads': 'Yuklar',
@@ -30,6 +32,7 @@ function fallbackTranslate(key, options = {}) {
 }
 
 const PAGE_TARGETS = [
+  { id: 'arrivals', titleKey: 'arrival.nav', keywordsKey: 'arrival.keywords' },
   { id: 'analytics', titleKey: 'analytics.title', keywordsKey: 'analytics.keywords' },
   { id: 'kanban', titleKey: 'nav.loads', keywordsKey: 'search.keywords.loads' },
   { id: 'drivers', titleKey: 'nav.drivers', keywordsKey: 'search.keywords.drivers' },

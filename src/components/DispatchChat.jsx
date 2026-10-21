@@ -1,3 +1,4 @@
+import './accessibility.css';
 import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 import { OperationScope, acquireCallMedia, stopMediaStream } from '../services/chatAsyncSafety';
@@ -22,6 +23,7 @@ import { useChatReadReceipts } from '../hooks/useChatReadReceipts';
 import { chatAccountKey, ChatOutbox, ChatSessionCache } from '../services/chatSession';
 import { ChatSearchScope } from '../services/chatSubscription';
 import { ChatMediaOutbox } from '../services/chatMediaOutbox';
+import { chatMediaRefreshDelay } from '../services/chatMediaExpiry';
 import { openChatAttachment } from '../services/openChatAttachment';
 import { createChatRecovery } from '../services/chatRecovery';
 import { ChatPaginationScope } from '../services/chatPaginationScope';
@@ -115,6 +117,21 @@ function DriverAvatar({ driver, sizeClass = 'w-11 h-11' }) {
 function MediaMessage({ message, onRefresh }) {
   const { t } = useTranslation();
   const attemptsRef = useRef(0);
+  const playbackRef = useRef(null);
+  const restoreRef = useRef(null);
+  const preservePlayback = () => {
+    const media = playbackRef.current;
+    if (media) restoreRef.current = { time: media.currentTime, playing: !media.paused, rate: media.playbackRate };
+  };
+  const restorePlayback = () => {
+    const media = playbackRef.current;
+    const saved = restoreRef.current;
+    if (!media || !saved) return;
+    restoreRef.current = null;
+    media.currentTime = saved.time;
+    media.playbackRate = saved.rate;
+    if (saved.playing) void media.play().catch(() => {});
+  };
   const [failed, setFailed] = useState(false);
   const [recovering, setRecovering] = useState(false);
   useEffect(() => {
@@ -125,12 +142,42 @@ function MediaMessage({ message, onRefresh }) {
     onRefresh(message, false).catch(() => { if (active) setFailed(true); }).finally(() => { if (active) setRecovering(false); });
     return () => { active = false; };
   }, [message, onRefresh]);
+  useEffect(() => {
+    if (message.kind === 'file' || !message.mediaUrl || !message.storage_path) return undefined;
+    let active = true;
+    let timer;
+    let refreshing = false;
+    let failures = 0;
+    const refresh = async () => {
+      if (!active || refreshing) return;
+      refreshing = true;
+      preservePlayback();
+      try {
+        await onRefresh(message, true);
+      } catch {
+        // Bounded retry, also used on foreground after browser timer throttling.
+        failures += 1;
+        if (active && failures < 3) timer = setTimeout(refresh, 30_000);
+        else if (active) setFailed(true);
+      } finally { refreshing = false; }
+    };
+    const remaining = () => chatMediaRefreshDelay(message.mediaUrl, message.mediaResolvedAt);
+    timer = setTimeout(refresh, remaining());
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible' && remaining() === 0) {
+        clearTimeout(timer); void refresh();
+      }
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => { active = false; clearTimeout(timer); document.removeEventListener('visibilitychange', onVisibility); };
+  }, [message, onRefresh]);
   const retry = async (manual = false) => {
     if (recovering || (!manual && attemptsRef.current >= 1)) { setFailed(true); return; }
     attemptsRef.current += 1;
     setFailed(false);
     setRecovering(true);
     try {
+      preservePlayback();
       await onRefresh?.(message);
     } catch {
       setFailed(true);
@@ -157,10 +204,10 @@ function MediaMessage({ message, onRefresh }) {
     return <img src={message.mediaUrl} onError={() => { void retry(); }} alt={message.file_name || t('chat.imageAlt')} className="max-h-72 rounded-2xl object-cover" />;
   }
   if (message.kind === 'video') {
-    return <video src={message.mediaUrl} onError={() => { void retry(); }} controls playsInline preload="metadata" className="max-h-72 max-w-full rounded-2xl" />;
+    return <video ref={playbackRef} onLoadedMetadata={restorePlayback} src={message.mediaUrl} onError={() => { void retry(); }} controls playsInline preload="metadata" className="max-h-72 max-w-full rounded-2xl" />;
   }
   if (message.kind === 'audio') {
-    return <audio src={message.mediaUrl} onError={() => { void retry(); }} controls preload="metadata" className="max-w-full h-10" />;
+    return <audio ref={playbackRef} onLoadedMetadata={restorePlayback} src={message.mediaUrl} onError={() => { void retry(); }} controls preload="metadata" className="max-w-full h-10" />;
   }
   return (
     <a href={message.mediaUrl} target="_blank" rel="noreferrer" className="flex items-center gap-2 font-semibold underline">
@@ -998,7 +1045,7 @@ export default function DispatchChat({
       const refreshed = await (force ? refreshChatMessageMedia(message) : hydrateChatMessageMedia(message));
       if (!refreshed.mediaUrl) throw new Error(refreshed.mediaError || 'CHAT_MEDIA_UNAVAILABLE');
       if (isCurrent() && !chatCache.isDeleted(cacheDriverRef.current, message.id)) {
-        const patch = { mediaUrl: refreshed.mediaUrl, mediaError: null };
+        const patch = { mediaUrl: refreshed.mediaUrl, mediaResolvedAt: refreshed.mediaResolvedAt, mediaError: null };
         setMessages(chatCache.patch(cacheDriverRef.current, [message.id], patch));
         setSearchPage((page) => ({ ...page, messages: page.messages.map((row) => row.id === message.id ? { ...row, ...patch } : row) }));
         return refreshed;
@@ -1290,8 +1337,8 @@ export default function DispatchChat({
               type="search"
               value={driverSearch}
               onChange={(event) => setDriverSearch(event.target.value)}
-              placeholder={t('chat.searchChats')}
-              className="min-w-0 flex-1 bg-transparent text-sm text-zinc-900 outline-none placeholder:text-zinc-500 dark:text-white"
+              aria-label={t('chat.searchChats')} placeholder={t('chat.searchChats')}
+              className="chat-accessible-input min-w-0 flex-1 bg-transparent text-sm text-zinc-900 outline-none placeholder:text-zinc-500 dark:text-white"
             />
           </label>
         </div>
@@ -1340,7 +1387,7 @@ export default function DispatchChat({
         </div>
       </aside>}
 
-      <section className="flex min-h-0 min-w-0 flex-col bg-[radial-gradient(circle_at_top,#eef6ff_0,transparent_55%)] dark:bg-none dark:bg-zinc-900/30">
+      <section className="dispatch-conversation flex min-h-0 min-w-0 flex-col">
         <header className="h-16 shrink-0 px-4 border-b border-zinc-200 dark:border-zinc-800 bg-white/90 dark:bg-zinc-950/90 backdrop-blur flex items-center justify-between">
           {showMessageSearch ? (
             <div className="mr-3 flex h-10 min-w-0 flex-1 items-center gap-2 rounded-xl bg-zinc-100 px-3 dark:bg-zinc-800">
@@ -1350,8 +1397,8 @@ export default function DispatchChat({
                 type="search"
                 value={messageSearch}
                 onChange={(event) => setMessageSearch(event.target.value)}
-                placeholder={t('chat.search')}
-                className="min-w-0 flex-1 bg-transparent text-sm outline-none"
+                aria-label={t('chat.search')} placeholder={t('chat.search')}
+                className="chat-accessible-input min-w-0 flex-1 bg-transparent text-sm outline-none"
               />
               <button type="button" onClick={() => { setShowMessageSearch(false); setMessageSearch(''); }} title={t('header.closeSearch')} className="rounded-full p-1 hover:bg-zinc-200 dark:hover:bg-zinc-700"><X className="h-4 w-4" /></button>
             </div>
@@ -1415,7 +1462,7 @@ export default function DispatchChat({
             </div>
           )}
           {searchLoading && <div className="text-center text-xs text-zinc-500">{t('common.loading')}</div>}
-          {!loading && visibleMessages.length > 0 && <ChatTimeline key={`${conversationId}:${searching ? `${messageSearch}:${mediaFilter}` : 'history'}`} isVisible={isVisible} messages={visibleMessages} hasOlderMessages={searching ? searchPage.hasMore : hasOlderMessages} loadingOlder={loadingOlder || searchLoading} onLoadOlder={loadOlderMessages} hasNewerMessages={searching ? searchPage.detached : hasNewerMessages} restoreState={searching ? null : scrollSnapshot} onSaveState={searching ? undefined : saveScroll} onLatest={async () => {
+          {!loading && visibleMessages.length > 0 && <ChatTimeline key={`${conversationId}:${searching ? `${messageSearch}:${mediaFilter}` : 'history'}`} isVisible={isVisible} announceNewMessages={!searching} currentUserId={currentUser.id} messages={visibleMessages} hasOlderMessages={searching ? searchPage.hasMore : hasOlderMessages} loadingOlder={loadingOlder || searchLoading} onLoadOlder={loadOlderMessages} hasNewerMessages={searching ? searchPage.detached : hasNewerMessages} restoreState={searching ? null : scrollSnapshot} onSaveState={searching ? undefined : saveScroll} onLatest={async () => {
             paginationScope.invalidate();
             setLoadingOlder(false);
             const request = paginationScope.begin();
@@ -1448,7 +1495,7 @@ export default function DispatchChat({
                   {mine && message.status !== 'sending' && <button type="button" onClick={() => removeMessage(message)} title={t('chat.deleteMessage')} className="p-1.5 rounded-full text-zinc-400 opacity-0 group-hover:opacity-100 focus:opacity-100 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30 transition"><Trash2 className="w-4 h-4" /></button>}
                   <div className={`max-w-[82%] rounded-2xl px-3.5 py-2 shadow-sm ${mine ? 'bg-blue-600 text-white rounded-br-md' : 'bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-bl-md'}`}>
                     {editingMessageId === message.id ? <form onSubmit={saveEditedMessage} className="min-w-48 space-y-2">
-                      <textarea autoFocus value={editDraft} onChange={(event) => setEditDraft(event.target.value)} onKeyDown={(event) => { if (event.key === 'Escape') { setEditingMessageId(null); setEditDraft(''); } else if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); saveEditedMessage(); } }} rows={2} maxLength={4000} aria-label={t('chat.editMessage')} className="w-full resize-y rounded-lg bg-white px-2 py-1 text-sm text-zinc-900 outline-none" />
+                      <textarea autoFocus value={editDraft} onChange={(event) => setEditDraft(event.target.value)} onKeyDown={(event) => { if (event.key === 'Escape') { setEditingMessageId(null); setEditDraft(''); } else if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); saveEditedMessage(); } }} rows={2} maxLength={4000} aria-label={t('chat.editMessage')} className="chat-accessible-input w-full resize-y rounded-lg bg-white px-2 py-1 text-sm text-zinc-900 outline-none" />
                       <div className="flex justify-end gap-2 text-xs font-bold"><button type="button" onClick={() => { setEditingMessageId(null); setEditDraft(''); }} disabled={savingEdit}>{t('common.cancel')}</button><button type="submit" disabled={savingEdit || !editDraft.trim()}>{savingEdit ? t('common.loading') : t('common.save')}</button></div>
                     </form> : message.kind === 'text' ? <p className="text-sm whitespace-pre-wrap break-words">{message.body}</p> : message.status ? <p className="flex items-center gap-2 break-all text-sm"><FileText className="h-5 w-5 shrink-0" />{message.file_name}</p> : <MediaMessage message={message} onRefresh={refreshMedia} />}
                     <div className={`mt-1 text-[10px] flex items-center justify-end gap-1 ${mine ? 'text-blue-100' : 'text-zinc-400'}`}>
@@ -1475,11 +1522,11 @@ export default function DispatchChat({
           <input ref={fileInputRef} type="file" className="hidden" accept="image/*,video/*,audio/*,.pdf" onChange={(event) => { uploadFile(event.target.files?.[0]); event.target.value = ''; }} />
           <button type="button" onClick={() => fileInputRef.current?.click()} title={t('chat.sendMedia')} className="p-2.5 rounded-full text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800"><Paperclip className="w-5 h-5" /></button>
           <div className="flex-1 rounded-2xl border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-900 px-3">
-            <textarea ref={composerRef} rows="1" maxLength={4000} value={inputMessage} onChange={(event) => setInputMessage(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); sendMessage(); } }} placeholder={t('chat.typeMessage')} className="w-full max-h-28 resize-none bg-transparent py-2.5 text-sm outline-none" />
+            <textarea ref={composerRef} rows="1" maxLength={4000} value={inputMessage} onChange={(event) => setInputMessage(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); sendMessage(); } }} aria-label={t('chat.typeMessage')} placeholder={t('chat.typeMessage')} className="chat-accessible-input w-full max-h-28 resize-none bg-transparent py-2.5 text-sm outline-none" />
           </div>
           <button type="button" onClick={() => setShowEmojiPicker((current) => !current)} title={t('chat.emoji')} className="p-2.5 rounded-full text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800"><Smile className="w-5 h-5" /></button>
           {inputMessage.trim() ? (
-            <button type="submit" className="p-2.5 rounded-full bg-blue-600 text-white hover:bg-blue-500"><Send className="w-5 h-5" /></button>
+            <button type="submit" aria-label={t('chat.sendMessage')} className="p-2.5 rounded-full bg-blue-600 text-white hover:bg-blue-500"><Send className="w-5 h-5" /></button>
           ) : (
             <button type="button" onClick={toggleRecording} title={t('common.audio')} className={`p-2.5 rounded-full text-white ${recording ? 'bg-red-600 animate-pulse' : 'bg-blue-600'}`}>{recording ? <Square className="w-5 h-5" /> : <Mic className="w-5 h-5" />}</button>
           )}

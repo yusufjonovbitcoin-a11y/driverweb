@@ -27,7 +27,12 @@ export function driverPresenceFields(presence, now = Date.now()) {
   const longitude = presence?.longitude == null ? NaN : Number(presence.longitude);
   const validPosition = Number.isFinite(latitude) && Math.abs(latitude) <= 90
     && Number.isFinite(longitude) && Math.abs(longitude) <= 180;
+  const hasKnownLocation = validPosition && Number.isFinite(locationAge) && locationAge >= -30_000;
+  const accuracy = Number(presence?.accuracy_meters);
   return {
+    lastKnownPosition: hasKnownLocation ? { latitude, longitude, capturedAt: presence.location_captured_at } : null,
+    locationUpdatedAt: hasKnownLocation ? presence.location_captured_at : null,
+    locationAccuracyMeters: hasKnownLocation && presence?.accuracy_meters != null && Number.isFinite(accuracy) && accuracy >= 0 ? accuracy : null,
     presence: presence || null,
     isOnline,
     lastSeenAt: presence?.last_seen_at || null,
@@ -49,6 +54,7 @@ export function refreshDriverPresence(drivers, presenceById, now = Date.now()) {
       : incoming === null ? null
       : presenceTimestamp(current) > presenceTimestamp(incoming) ? current : incoming;
     const fields = driverPresenceFields(presence, now);
+    if (fields.lastKnownPosition && driver.lastKnownPosition && ['latitude', 'longitude', 'capturedAt'].every(key => fields.lastKnownPosition[key] === driver.lastKnownPosition[key])) fields.lastKnownPosition = driver.lastKnownPosition;
     if (Object.keys(fields).every(key => driver[key] === fields[key])) return driver;
     changed = true;
     return { ...driver, ...fields };

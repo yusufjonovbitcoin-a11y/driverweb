@@ -8,13 +8,13 @@ export default function ImageDocumentViewer({ url, title, onOpenOriginal, onRetr
   return <ImageSession key={`${url}:${attempt}`} url={url} title={title} onOpenOriginal={onOpenOriginal} {...actions} onRetry={onRetrySource || (() => setAttempt((value) => value + 1))} />;
 }
 
-function ImageSession({ url, title, onRetry, onOpenOriginal, onSourceError, onDownload, downloading, actionError }) {
+function ImageSession({ url, title, onRetry, onOpenOriginal, onSourceError, onDownload, downloading, actionError, presentation }) {
   const { t } = useTranslation();
   const [loaded, setLoaded] = useState(false);
   const [failed, setFailed] = useState(false);
   const [zoom, setZoom] = useState(1);
   const [width, setWidth] = useState(0);
-  const [sidebarOpen, setSidebarOpen] = useState(() => window.matchMedia('(min-width: 640px)').matches);
+  const [sidebarOpen, setSidebarOpen] = useState(() => presentation !== 'workspace' && window.matchMedia('(min-width: 640px)').matches);
   const viewportRef = useRef(null);
   const thumbnailsRef = useRef(null);
 
@@ -25,7 +25,7 @@ function ImageSession({ url, title, onRetry, onOpenOriginal, onSourceError, onDo
   }, []);
 
   return (
-    <DocumentViewerFrame url={url} title={title} onOpenOriginal={onOpenOriginal} onDownload={onDownload} downloading={downloading} actionError={actionError} pageNumber={1} pageCount={loaded ? 1 : 0} zoom={zoom} onZoomChange={setZoom}
+    <DocumentViewerFrame presentation={presentation} url={url} title={title} onOpenOriginal={onOpenOriginal} onDownload={onDownload} downloading={downloading} actionError={actionError} pageNumber={1} pageCount={loaded ? 1 : 0} zoom={zoom} onZoomChange={setZoom}
       onPageChange={() => viewportRef.current?.scrollTo({ top: 0, left: 0 })}
       sidebarOpen={sidebarOpen} onSidebarToggle={() => setSidebarOpen((open) => !open)} thumbnailsRef={thumbnailsRef} viewportRef={viewportRef}
       thumbnails={loaded && <DocumentThumbnail number={1} total={1} active onClick={() => viewportRef.current?.scrollTo({ top: 0, left: 0 })}><img src={url} alt="" className="block h-auto w-[120px] bg-white" /></DocumentThumbnail>}

@@ -59,3 +59,23 @@ test('GPS expires independently while later heartbeats keep the driver online', 
   assert.equal(fields.isOnline, true);
   assert.equal(fields.lat, null);
 });
+
+test('offline/aged GPS stays available as timestamped last known position without live coordinates', () => {
+  const fix = { ...presence, is_online: false, location_captured_at: new Date(now - 600_000).toISOString() };
+  const fields = driverPresenceFields(fix, now);
+  assert.equal(fields.lat, null);
+  assert.equal(fields.isOnline, false);
+  assert.deepEqual(fields.lastKnownPosition, { latitude: 0, longitude: -73, capturedAt: fix.location_captured_at });
+  assert.equal(fields.locationUpdatedAt, fix.location_captured_at);
+  assert.equal(fields.locationAccuracyMeters, null);
+});
+test('heartbeat is not a GPS fix; invalid or future fixes cannot become last known location', () => {
+  for (const patch of [{ location_captured_at: null }, { location_captured_at: 'bad' }, { location_captured_at: new Date(now + 60_000).toISOString() }, { latitude: 95 }]) {
+    assert.equal(driverPresenceFields({ ...presence, ...patch }, now).lastKnownPosition, null);
+  }
+});
+test('unchanged presence keeps driver and last known point identity stable', () => {
+  const driver = { id: 'a', ...driverPresenceFields(presence, now) };
+  assert.equal(refreshDriverPresence([driver], null, now + 1000)[0], driver);
+  assert.equal(refreshDriverPresence([driver], new Map([['a', null]]), now)[0].lastKnownPosition, null);
+});

@@ -1,9 +1,11 @@
 @import "tailwindcss";
+@import "./interface-fonts.css";
+@import "./design-tokens.css";
 @custom-variant dark (&:where(.dark, .dark *));
 
 /* Shared palette keeps every workspace screen and dialog consistent. */
 @theme {
-  --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-sans: "IBM Plex Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   --color-zinc-50: #f6f8f9;
   --color-zinc-100: #eef2f4;
   --color-zinc-200: #dfe5e9;
@@ -15,17 +17,17 @@
   --color-zinc-800: #253540;
   --color-zinc-900: #192832;
   --color-zinc-950: #101b23;
-  --color-blue-50: #eff8f8;
-  --color-blue-100: #dbefee;
-  --color-blue-200: #b5dedb;
-  --color-blue-300: #88c9c6;
-  --color-blue-400: #59aeac;
-  --color-blue-500: #378f90;
-  --color-blue-600: #267577;
-  --color-blue-700: #215e62;
-  --color-blue-800: #204b50;
-  --color-blue-900: #1d3e44;
-  --color-blue-950: #122c32;
+  --color-blue-50: #f0f4ff;
+  --color-blue-100: #e0e9ff;
+  --color-blue-200: #c4d5ff;
+  --color-blue-300: #a3bfff;
+  --color-blue-400: #759cf3;
+  --color-blue-500: #4879e3;
+  --color-blue-600: #2458d3;
+  --color-blue-700: #1b46ae;
+  --color-blue-800: #213f86;
+  --color-blue-900: #243861;
+  --color-blue-950: #14223d;
   --font-weight-bold: 600;
   --font-weight-extrabold: 650;
   --font-weight-black: 700;
@@ -41,23 +43,9 @@
   :root {
     font-family: var(--font-sans);
     color-scheme: light;
-    --surface: #fff;
-    --canvas: #f6f8f9;
-    --line: #dfe5e9;
-    --ink: #192832;
-    --muted: #647482;
-    --accent: #267577;
-    --accent-soft: #eff8f8;
   }
   html.dark {
     color-scheme: dark;
-    --surface: #192832;
-    --canvas: #101b23;
-    --line: #30424e;
-    --ink: #edf2f5;
-    --muted: #a3b2bd;
-    --accent: #88c9c6;
-    --accent-soft: #203c42;
   }
   body { margin: 0; font-size: 14px; line-height: 1.5; color: var(--ink); background: var(--canvas); -webkit-font-smoothing: antialiased; }
   button, input, textarea, select { font: inherit; }
@@ -80,7 +68,6 @@
 .is-collapsed .sidebar-brand button { padding: 2px; flex-shrink: 0; }
 .sidebar-brand span { font-size: 18px; letter-spacing: .06em; font-weight: 750; }
 .sidebar-nav { padding: 12px; }
-.nav-section-label { font-size: 10px; font-weight: 600; letter-spacing: .12em; color: var(--muted); padding: 4px 14px 12px; }
 .sidebar-nav .nav-item { border-radius: 7px; font-size: 13px; height: 42px; }
 .sidebar-nav .nav-item svg { width: 18px; height: 18px; stroke-width: 1.7; }
 .nav-item-active { color: var(--accent); background: var(--accent-soft); box-shadow: inset 3px 0 var(--accent); }
@@ -101,24 +88,6 @@
 .sidebar-footer { border-color: var(--line); }
 .sidebar-bottom-chat { padding-top: 0; }
 .sidebar-footer p:first-child { font-weight: 600; }
-html:not(.dark) .workspace-sidebar { color: #fff; background: #1f716d; border-color: rgb(255 255 255 / .18); }
-html:not(.dark) .workspace-sidebar .sidebar-brand > div > div { color: #fff; background: rgb(255 255 255 / .16); }
-html:not(.dark) .workspace-sidebar .sidebar-brand span,
-html:not(.dark) .workspace-sidebar .sidebar-brand button,
-html:not(.dark) .workspace-sidebar .nav-section-label { color: #fff; }
-html:not(.dark) .workspace-sidebar .nav-section-label { opacity: .68; }
-html:not(.dark) .workspace-sidebar .nav-item { color: rgb(255 255 255 / .82); }
-html:not(.dark) .workspace-sidebar .nav-item:hover { color: #fff; background: rgb(255 255 255 / .1); }
-html:not(.dark) .workspace-sidebar .nav-item-active { color: #fff; background: rgb(255 255 255 / .16); box-shadow: inset 3px 0 #fff; }
-html:not(.dark) .workspace-sidebar .nav-item .bg-zinc-200\/80 { color: #fff; background: rgb(255 255 255 / .18); }
-html:not(.dark) .workspace-sidebar .sidebar-footer { border-color: rgb(255 255 255 / .18); }
-html:not(.dark) .workspace-sidebar .sidebar-footer > div:hover,
-html:not(.dark) .workspace-sidebar .sidebar-footer > div.bg-zinc-100 { background: rgb(255 255 255 / .12); border-color: rgb(255 255 255 / .18); }
-html:not(.dark) .workspace-sidebar .sidebar-footer > div > div:first-child { color: #1f716d; background: #fff; }
-html:not(.dark) .workspace-sidebar .sidebar-footer p { color: #fff; }
-html:not(.dark) .workspace-sidebar .sidebar-footer p:last-child { color: rgb(255 255 255 / .72); }
-html:not(.dark) .workspace-sidebar .sidebar-footer button { color: rgb(255 255 255 / .72); }
-html:not(.dark) .workspace-sidebar .sidebar-footer button:hover { color: #fff; background: rgb(255 255 255 / .12); }
 .workspace-header { min-height: 80px; padding: 16px 28px; border-bottom: 1px solid var(--line); background: var(--surface); display: flex; align-items: center; justify-content: space-between; gap: 20px; z-index: 20; }
 .header-breadcrumb, .header-actions { display: flex; align-items: center; gap: 12px; }
 .header-breadcrumb { white-space: nowrap; font-size: 13px; }
@@ -154,8 +123,7 @@ html:not(.dark) .workspace-sidebar .sidebar-footer button:hover { color: #fff; b
 .auth-brand-panel { position: relative; overflow: hidden; padding: clamp(28px, 4vw, 58px); display: flex; flex-direction: column; justify-content: space-between; color: #eef6f7; background: #17333a; }
 .auth-brand-panel::before { content: ""; position: absolute; width: 520px; height: 520px; left: -220px; bottom: -320px; border: 1px solid rgb(136 201 198 / .22); border-radius: 50%; box-shadow: 0 0 0 70px rgb(136 201 198 / .035), 0 0 0 140px rgb(136 201 198 / .025); pointer-events: none; }
 .auth-brand { position: relative; z-index: 1; display: flex; align-items: center; gap: 13px; }
-.auth-logo { width: 42px; height: 42px; display: grid; place-items: center; border-radius: 9px; color: #17333a; background: #88c9c6; }
-.auth-brand strong { display: block; font-size: 19px; letter-spacing: .08em; line-height: 1.1; }
+.auth-brand strong { display: block; font-size: 22px; letter-spacing: -.025em; line-height: 1.1; }
 .auth-brand > div > span { display: block; margin-top: 5px; font-size: 9px; font-weight: 600; letter-spacing: .14em; color: #a9bdc2; }
 .auth-brand-copy { position: relative; z-index: 1; max-width: 440px; margin-block: 60px; }
 .auth-eyebrow { margin-bottom: 12px; color: #659092; font-size: 10px; font-weight: 700; letter-spacing: .15em; }
@@ -398,7 +366,7 @@ html:not(.dark) .workspace-sidebar .sidebar-footer button:hover { color: #fff; b
   .auth-brand-copy h1 { font-size: 34px; }
   .workspace-sidebar { width: 68px; }
   .sidebar-brand { padding-inline: 15px; }
-  .sidebar-brand span, .sidebar-brand button, .sidebar-nav .nav-item span, .sidebar-footer p, .sidebar-footer button, .nav-section-label { display: none; }
+  .sidebar-brand span, .sidebar-brand button, .sidebar-nav .nav-item span, .sidebar-footer p, .sidebar-footer button { display: none; }
   .sidebar-nav .nav-item { justify-content: center; padding-inline: 0; }
   .sidebar-nav .nav-item > div { margin: 0; }
   .sidebar-footer > div { justify-content: center; padding-inline: 0; }
@@ -417,7 +385,6 @@ html:not(.dark) .workspace-sidebar .sidebar-footer button:hover { color: #fff; b
   .auth-shell { display: flex; flex-direction: column; background: var(--surface); }
   .auth-brand-panel { min-height: auto; padding: 22px; background: #17333a; }
   .auth-brand-copy, .auth-security-note { display: none; }
-  .auth-logo { width: 38px; height: 38px; }
   .auth-form-panel { flex: 1; padding: 20px 22px 18px; }
   .auth-form-topbar > span { display: none; }
   .auth-form-topbar { justify-content: flex-end; }

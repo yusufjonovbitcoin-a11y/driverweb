@@ -1,3 +1,4 @@
+import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import vm from 'node:vm';
@@ -9,7 +10,7 @@ import { OPERATIONAL_EXTRACTION_SCOPE, OPERATIONAL_DOCUMENT_FIELDS, OPERATIONAL_
 // Execute the real Edge handler with isolated fake providers: no credentials,
 // network, uploads, database records or paid model calls are used by this test.
 const bundle = await rolldown({
-  input: new URL('../supabase/functions/parse-load-document/index.ts', import.meta.url).pathname,
+  input: fileURLToPath(new URL('../supabase/functions/parse-load-document/index.ts', import.meta.url)),
   plugins: [{ name: 'fake-supabase', resolveId(id) {
     if (id.startsWith('https://esm.sh/@supabase/')) return '\0fake-supabase';
   }, load(id) {

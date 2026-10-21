@@ -1,9 +1,10 @@
+import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import vm from 'node:vm';
 import { rolldown } from 'rolldown';
 
-const bundle = await rolldown({ input: new URL('./webPush.js', import.meta.url).pathname,
+const bundle = await rolldown({ input: fileURLToPath(new URL('./webPush.js', import.meta.url)),
   plugins: [{ name: 'isolated-push-dependencies', resolveId(id) {
     if (id.endsWith('/lib/supabase.js')) return '\0supabase';
     if (id.endsWith('/firebaseConfig.js')) return '\0firebase';

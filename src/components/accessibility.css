@@ -1,0 +1,13 @@
+/* Preserve controls and meaningful status at narrow widths. */
+@media (max-width: 900px) {
+  .workspace-sidebar .sidebar-footer button { display: inline-flex; min-width: 32px; min-height: 32px; align-items: center; justify-content: center; }
+  .workspace-sidebar .sidebar-footer > div { flex-wrap: wrap; gap: 6px; }
+  .workspace-sidebar .sidebar-nav .nav-item .sidebar-nav-badge { display: inline-block; position: absolute; right: 0; top: 0; padding: 2px 4px; font-size: 10px; }
+}
+.chat-accessible-input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+
+.workspace-sidebar .sidebar-profile-trigger { min-height: 36px; }
+@media (max-width: 900px) {
+  .workspace-sidebar .sidebar-footer .sidebar-profile-trigger { display: flex; }
+  .workspace-sidebar .sidebar-profile-trigger > div:not(:first-child) { display: none; }
+}

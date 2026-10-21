@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildLoadDetails } from './loadDetailsModel.js';
+import { buildLoadDetails, loadCurrentLocation, latestPickupRouteStops, pickupEstimateScope, selectPickupEstimate, savedLoadRoadSummary, savedStopContactPhone } from './loadDetailsModel.js';
 
 test('detail cards retain all pickups and deliveries with independent labels and appointments', () => {
   const details = buildLoadDetails({ driverBrief: { stops: [
@@ -77,4 +77,147 @@ test('persisted extractor and database stop timestamps retain their own appointm
     ['2026-10-06T10:00:00-04:00', 'America/Detroit'],
     ['2026-10-07', 'America/New_York'],
   ]);
+});
+
+test('PDF printed pickup and delivery schedules remain visible without normalized appointment timestamps', () => {
+  const details = buildLoadDetails({
+    driverBrief: { stops: [
+      { role: 'pickup', scheduledDate: '10-12-26', timePrinted: '10:00', appointmentPrinted: '10-12-26 10:00 (CONFIRMATION: 123)' },
+      { role: 'delivery', scheduledDate: '10-13-26', timePrinted: '23:00' },
+    ] },
+  });
+  assert.deepEqual(details.stops.map(stop => stop.appointment), ['10-12-26 · 10:00', '10-13-26 · 23:00']);
+  assert.deepEqual(details.stops.map(stop => [stop.scheduleDate, stop.scheduleTime]), [
+    ['10-12-26', '10:00'],
+    ['10-13-26', '23:00'],
+  ]);
+});
+
+test('a printed schedule is a fallback, not a replacement for a normalized appointment', () => {
+  const details = buildLoadDetails({
+    driverBrief: { stops: [
+      { role: 'pickup', appointmentFrom: '2026-10-12T10:00:00-05:00', scheduledDate: '10-12-26', timePrinted: '10:00' },
+      { role: 'delivery', appointmentPrinted: 'Tomorrow after 8:00' },
+    ] },
+  });
+  assert.deepEqual(details.stops.map(stop => stop.appointment), ['2026-10-12T10:00:00-05:00', 'Tomorrow after 8:00']);
+  assert.equal(details.stops[0].scheduleDate, null);
+  assert.equal(details.stops[0].scheduleTime, null);
+});
+
+
+test('latest location uses timestamped latest GPS, never START or online fallback', () => {
+  const now = Date.parse('2026-10-14T12:00:00Z');
+  const load = { driverId: 'd1', origin: { lat: 44, lng: -80 } };
+  const driver = { id: 'd1', isOnline: true, lat: 10, lng: 10,
+    lastKnownPosition: { latitude: 41, longitude: -87, capturedAt: '2026-10-14T11:59:30Z' } };
+  assert.deepEqual(loadCurrentLocation(load, driver, now), {
+    lat: 41, lng: -87, observedAt: now - 30_000, stale: false, accuracyMeters: null,
+  });
+  assert.equal(loadCurrentLocation(load, { ...driver, isOnline: false }, now).stale, true);
+  assert.equal(loadCurrentLocation(load, driver, now + 180_000).stale, true);
+  assert.equal(loadCurrentLocation(load, { ...driver, lastKnownPosition: null }, now), null);
+  assert.equal(loadCurrentLocation(load, { ...driver, id: 'other' }, now), null);
+  for (const capturedAt of ['', 'invalid', '2026-10-14T13:00:00Z']) {
+    assert.equal(loadCurrentLocation(load, { ...driver, lastKnownPosition: { ...driver.lastKnownPosition, capturedAt } }, now), null);
+  }
+  for (const latitude of [null, undefined, '', ' ', 91, Infinity]) {
+    assert.equal(loadCurrentLocation(load, { ...driver, lastKnownPosition: { ...driver.lastKnownPosition, latitude } }, now), null);
+  }
+});
+
+test('pickup route starts at last GPS and follows the first pickup without modifying pay origin', () => {
+  const load = { origin: { lat: 44, lng: -80 }, destination: { lat: 45, lng: -81 } };
+  const before = JSON.stringify(load);
+  const stops = latestPickupRouteStops(load, { lat: 41, lng: -87 });
+  assert.equal(stops[0].latitude, 41);
+  assert.equal(stops[1].latitude, 44);
+  assert.equal(stops[1].role, 'pickup');
+  assert.equal(JSON.stringify(load), before);
+  assert.deepEqual(latestPickupRouteStops(load, null), []);
+});
+
+
+test('pickup estimates survive GPS-only refresh but invalidate immediately on destination or driver changes', () => {
+  const pickup = { latitude: 42, longitude: -80, address: '10 Dock St' };
+  const first = pickupEstimateScope('load', 'driver', [{ latitude: 40 }, pickup]);
+  const movedGps = pickupEstimateScope('load', 'driver', [{ latitude: 41 }, pickup]);
+  const snapshot = { scope: first, route: { data: { distanceMeters: 1200 } }, observedAt: 1000 };
+  assert.equal(first, movedGps);
+  assert.equal(selectPickupEstimate(movedGps, null, snapshot, true), snapshot);
+  const changedPickup = pickupEstimateScope('load', 'driver', [{ latitude: 41 }, { ...pickup, latitude: 43 }]);
+  assert.equal(selectPickupEstimate(changedPickup, snapshot, snapshot, true), null);
+  const changedAddress = pickupEstimateScope('load', 'driver', [{ latitude: 41 }, { ...pickup, address: '20 Dock St' }]);
+  assert.equal(selectPickupEstimate(changedAddress, null, snapshot, true), null);
+  assert.equal(selectPickupEstimate(pickupEstimateScope('load', 'other', [{}, pickup]), null, snapshot, true), null);
+  assert.equal(selectPickupEstimate(first, snapshot, snapshot, false), null);
+  const newer = { scope: first, route: { data: { distanceMeters: 900 } }, observedAt: 2000 };
+  assert.equal(selectPickupEstimate(first, newer, snapshot, true), newer);
+  const failed = { scope: first, route: { error: true }, observedAt: 3000 };
+  assert.equal(selectPickupEstimate(first, failed, snapshot, true), failed);
+});
+
+
+test('saved route retains stop reference numbers and instructions without an AI field snapshot', () => {
+  const details = buildLoadDetails({ stops: [
+    { role: 'pickup', address: '1 Main St', referenceNumber: 'PU-123', appointmentReference: 'AP-456', orderReferences: 'ORD-789', instructions: 'Use the east gate' },
+    { role: 'delivery', address: '2 Main St', note: 'Call before arrival' },
+  ] });
+  assert.equal(details.stops[0].reference, 'PU-123');
+  assert.equal(details.stops[0].appointmentReference, 'AP-456');
+  assert.equal(details.stops[0].orderReferences, 'ORD-789');
+  assert.equal(details.stops[0].note, 'Use the east gate');
+  assert.equal(details.stops[1].note, 'Call before arrival');
+});
+
+
+test('road summary combines the displayed route with the latest-position pickup estimate', () => {
+  const route = miles => ({ data: { distanceMeters: miles * 1609.344 } });
+  const summary = savedLoadRoadSummary(2400, route(900), route(100), true);
+  assert.equal(summary.loadedMiles, 900);
+  assert.equal(summary.deadheadMiles, 100);
+  assert.equal(summary.totalMiles, 1000);
+  assert.equal(summary.ratePerMile, 2.4);
+});
+
+test('road summary never invents deadhead, total miles, or total RPM when GPS is absent', () => {
+  const route = { data: { distanceMeters: 160934.4 } };
+  const summary = savedLoadRoadSummary(500, route, route, false);
+  assert.equal(summary.loadedMiles, 100);
+  assert.equal(summary.deadheadMiles, null);
+  assert.equal(summary.totalMiles, null);
+  assert.equal(summary.ratePerMile, null);
+});
+
+test('road summary rejects failed and invalid distances and missing rates', () => {
+  const valid = { data: { distanceMeters: 160934.4 } };
+  for (const failed of [null, { error: true, data: valid.data }, { data: { ...valid.data, routingFailed: true } }, { data: { distanceMeters: -1 } }, { data: { distanceMeters: NaN } }]) {
+    assert.equal(savedLoadRoadSummary(500, failed, valid, true).totalMiles, null);
+    assert.equal(savedLoadRoadSummary(500, valid, failed, true).ratePerMile, null);
+  }
+  assert.equal(savedLoadRoadSummary(null, valid, valid, true).ratePerMile, null);
+  assert.equal(savedLoadRoadSummary(0, valid, valid, true).ratePerMile, 0);
+  const zero = { data: { distanceMeters: 0 } };
+  assert.equal(savedLoadRoadSummary(500, zero, zero, true).totalMiles, 0);
+  assert.equal(savedLoadRoadSummary(500, zero, zero, true).ratePerMile, null);
+});
+
+
+test('saved contact phone matches stable stop ID rather than repeated role/sequence', () => {
+  const stops = [{ stopId: 'p2', role: 'pickup' }];
+  assert.equal(savedStopContactPhone(stops, 0, [
+    { stopId: 'p1', role: 'pickup', sequence: 1, status: 'found', phone: 'wrong' },
+    { stopId: 'p2', role: 'pickup', sequence: 2, status: 'found', phone: 'correct' },
+  ]), 'correct');
+});
+
+test('ID-less contact phone requires full ordered address identity and route count', () => {
+  const stops = [{ role: 'pickup', address: '1 Main St', city: 'Dallas', state: 'TX', postalCode: '75001' },
+    { role: 'pickup', address: '2 Main St', city: 'Dallas', state: 'TX', postalCode: '75001' }];
+  const contacts = stops.map((stop, index) => ({ ...stop, sequence: index + 1, status: 'found', phone: `phone-${index}` }));
+  assert.equal(savedStopContactPhone(stops, 1, contacts), 'phone-1');
+  assert.equal(savedStopContactPhone(stops, 0, contacts.slice(0, 1)), null);
+  assert.equal(savedStopContactPhone(stops, 0, contacts.map(contact => ({ ...contact, address: 'another address' }))), null);
+  assert.equal(savedStopContactPhone(stops, 0, contacts.map(contact => ({ ...contact, sequence: 3 - contact.sequence }))), null);
+  assert.equal(savedStopContactPhone(stops, 0, contacts.map(contact => ({ ...contact, city: 'Austin' }))), null);
 });

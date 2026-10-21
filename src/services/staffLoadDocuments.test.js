@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { applyStaffDocumentResult, createStaffDocumentManager, fetchStaffLoadDocumentContext,
+import { applyStaffDocumentResult, createStaffDocumentManager, fetchStaffLoadDocumentContext, fetchStaffDocumentHistory,
   refreshOpenDocumentLoad, STAFF_DOCUMENT_MAX_BYTES, validateStaffDocumentFile } from './staffLoadDocuments.js';
 
 const pdf = () => new File(['%PDF-1.7\nfixture'], 'confirmation.pdf', { type: 'application/pdf' });
@@ -8,6 +8,21 @@ const load = { id: 'load-a', rate: 1000, version: 12, driverBrief: { route: 'unc
 const row = { id: 'doc-a', load_id: 'load-a', document_type: 'rate_confirmation', current_version_id: 'version-new' };
 const uploadRequest = file => ({ type: 'ratecon', action: 'upload', documentId: 'doc-a', expectedVersionId: 'version-old', file });
 const rejected = message => ({ data: null, error: new Error(message) });
+
+test('history reads only exact document metadata, excludes unfinished uploads and paginates', async () => {
+  const calls = [];
+  const client = { from(table) { calls.push(['from', table]); const query = {};
+    for (const method of ['select', 'eq', 'is', 'order', 'range']) query[method] = (...args) => { calls.push([method, ...args]); return query; };
+    query.abortSignal = () => ({ data: [{ id: 'version-older', document_id: 'exact-document' }], error: null });
+    return query;
+  } };
+  const result = await fetchStaffDocumentHistory(client, 'exact-document', undefined, 20);
+  assert.equal(result[0].id, 'version-older');
+  assert.ok(calls.some(call => call[0] === 'eq' && call[1] === 'document_id' && call[2] === 'exact-document'));
+  assert.ok(calls.some(call => call[0] === 'is' && call[1] === 'upload_lease_started_at' && call[2] === null));
+  assert.ok(calls.some(call => call[0] === 'range' && call[1] === 20 && call[2] === 39));
+  assert.equal(calls.find(call => call[0] === 'select')[1].includes('storage_path'), false);
+});
 function fixture({ rpcResult, upload } = {}) {
   const calls = []; let owner = 'staff-a', counter = 0;
   const client = {

@@ -1,0 +1,35 @@
+.driver-settings-layout { display: grid; grid-template-columns: minmax(0, 1fr) 260px; gap: 22px; align-items: start; max-width: 1240px; }
+.driver-settings-form, .driver-settings-aside section { background: var(--surface, white); border: 1px solid var(--border, #e3e8ef); border-radius: 12px; }
+.driver-settings-form > header { padding: 24px 28px 20px; border-bottom: 1px solid var(--border, #e3e8ef); }
+.driver-settings-form > header h2 { margin: 0 0 7px; font-size: 20px; }
+.driver-settings-form p { margin: 5px 0 0; }
+.driver-settings-form > header p, .driver-settings-hint, .driver-settings-vehicle p { color: var(--muted, #6d7a8d); font-size: 12px; line-height: 1.6; }
+.driver-settings-form fieldset { min-width: 0; border: 0; padding: 0; margin: 0; }
+.driver-settings-form fieldset > section { margin: 0 28px; padding: 24px 0; border-bottom: 1px solid var(--border, #e3e8ef); }
+.driver-settings-section-heading { display: flex; align-items: center; gap: 11px; margin-bottom: 18px; }
+.driver-settings-section-heading > span { display: grid; place-items: center; width: 29px; height: 29px; border-radius: 7px; background: #eef3ff; color: #2854cd; font-size: 11px; font-weight: 700; }
+.driver-settings-section-heading h3, .driver-settings-aside h3 { font-size: 14px; font-weight: 700; margin: 0; }
+.driver-settings-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.driver-settings-fields label, .driver-settings-rate { display: grid; gap: 7px; font-size: 12px; font-weight: 600; color: var(--muted, #5b6b80); }
+.driver-settings-fields input, .driver-settings-rate input { width: 100%; min-width: 0; border: 1px solid var(--border, #dce3ed); border-radius: 7px; background: var(--surface, white); color: var(--ink, #1a2b42); padding: 10px 12px; font-size: 13px; font-weight: 500; }
+.driver-settings-fields input[readonly] { background: var(--surface-muted, #f5f7fa); color: var(--muted, #6d7a8d); }
+.driver-settings-vehicle { display: flex; align-items: center; gap: 12px; }.driver-settings-vehicle > div { flex: 1; }.driver-settings-vehicle strong { font-size: 14px; }
+.driver-settings-form button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; border: 1px solid var(--border, #dce3ed); border-radius: 7px; padding: 9px 14px; font-size: 12px; font-weight: 600; background: var(--surface, white); }
+.driver-settings-form button:disabled { opacity: .45; cursor: not-allowed; }
+.driver-settings-toggle { display: flex; align-items: center; gap: 22px; cursor: pointer; }.driver-settings-toggle > span { flex: 1; }.driver-settings-toggle strong { display: block; font-size: 13px; }.driver-settings-toggle small { display: block; color: var(--muted, #6d7a8d); margin-top: 7px; line-height: 1.6; font-size: 12px; }.driver-settings-toggle input { width: 19px; height: 19px; accent-color: #2857de; flex-shrink: 0; }
+.driver-settings-rate { max-width: 240px; margin-top: 16px; }
+.driver-settings-form footer { display: flex; gap: 9px; align-items: center; padding: 20px 28px; }.driver-settings-form footer > div { flex: 1; color: var(--muted, #6d7a8d); font-size: 11px; }.driver-settings-form .driver-settings-save { background: #2857de; border-color: #2857de; color: white; }.driver-settings-success { color: #078573; display: flex; gap: 6px; align-items: center; }
+.driver-settings-error { margin: 0 28px 20px; color: #ba3037; font-size: 12px; }.driver-settings-error button { margin-left: 10px; }
+.driver-settings-aside { display: grid; gap: 18px; }.driver-settings-aside section { padding: 22px; }.driver-settings-aside h3 { margin: 10px 0 18px; }.driver-settings-aside dl { margin: 0; }.driver-settings-aside dl div { padding: 10px 0; border-bottom: 1px solid var(--border, #e3e8ef); }.driver-settings-aside dt { font-size: 11px; color: var(--muted, #6d7a8d); }.driver-settings-aside dd { font-size: 12px; margin: 5px 0 0; overflow-wrap: anywhere; }.driver-settings-aside p { font-size: 12px; line-height: 1.7; }
+@media(max-width:1050px) { .driver-settings-layout { grid-template-columns: minmax(0,1fr) 210px; gap: 14px; }.driver-settings-form > header, .driver-settings-form footer { padding: 20px; }.driver-settings-form fieldset > section { margin: 0 20px; } }
+@media(max-width:800px) { .driver-settings-layout { grid-template-columns: 1fr; }.driver-settings-aside { grid-template-columns: 1fr 1fr; } }
+@media(max-width:520px) { .driver-settings-fields, .driver-settings-aside { grid-template-columns: 1fr; }.driver-settings-form footer { flex-wrap: wrap; }.driver-settings-form footer > div { flex-basis: 100%; }.driver-settings-vehicle { flex-wrap: wrap; } }
+
+.driver-settings-status { display: inline-block; padding: 5px 9px; border-radius: 6px; background: #fff2e7; color: #995d18; font-size: 11px; font-weight: 600; }.driver-settings-status.is-active { color: #08785f; background: #e8f7f1; }
+.driver-settings-aside button { margin-top: 10px; padding: 7px 10px; border: 1px solid var(--border, #dce3ed); border-radius: 6px; background: var(--surface, white); font-size: 11px; }.driver-settings-aside button:disabled { opacity: .5; }.driver-settings-account-action button + button { margin-left: 6px; }
+.driver-settings-history { list-style: none; margin: 16px 0 0; padding: 0; max-height: 420px; overflow: auto; }.driver-settings-history li { border-top: 1px solid var(--border, #e3e8ef); padding: 12px 0; font-size: 11px; }.driver-settings-history strong, .driver-settings-history time, .driver-settings-history small { display: block; }.driver-settings-history time, .driver-settings-history small { margin-top: 5px; color: var(--muted, #6d7a8d); }
+.driver-settings-toggle input[type="checkbox"] { appearance: none; width: 38px; height: 22px; flex: 0 0 38px; border: 0; border-radius: 20px; background: #a7b4c5; position: relative; cursor: pointer; }
+.driver-settings-toggle input[type="checkbox"]::after { content: ''; position: absolute; width: 16px; height: 16px; top: 3px; left: 3px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px #0002; }
+.driver-settings-toggle input[type="checkbox"]:checked { background: #2458d3; }
+.driver-settings-toggle input[type="checkbox"]:checked::after { left: 19px; }
+.driver-settings-toggle input[type="checkbox"]:focus-visible { outline: 2px solid #2458d3; outline-offset: 3px; }

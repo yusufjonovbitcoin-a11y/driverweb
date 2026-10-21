@@ -1,3 +1,5 @@
+import { useTranslation } from 'react-i18next';
+import { advanceAnnouncement } from './chatAnnouncementModel';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Virtuoso } from 'react-virtuoso';
 import { createTimelineRestorer, readTimelinePosition, timelineLocation, timelineWindow } from './chatTimelinePosition';
@@ -25,7 +27,18 @@ export function ChatReadBoundary({ message, enabled, onRead, children }) {
   return <div ref={ref}>{children}</div>;
 }
 
-export default function ChatTimeline({ isVisible = true, restoreState, onSaveState, ...props }) {
+export default function ChatTimeline({ isVisible = true, restoreState, onSaveState, announceNewMessages = true, currentUserId, ...props }) {
+  const { t } = useTranslation();
+  const announcementState = useRef(null);
+  const [announcement, setAnnouncement] = useState('');
+  useEffect(() => {
+    const { state, incoming } = advanceAnnouncement(announcementState.current, props.messages, currentUserId);
+    announcementState.current = state;
+    if (!isVisible || !announceNewMessages || !incoming.length) return;
+    setAnnouncement(incoming.map(message => t('chat.newMessageAnnouncement', {
+      message: message.body || message.file_name || t(`common.${message.kind === 'image' ? 'image' : message.kind === 'video' ? 'video' : message.kind === 'audio' ? 'audio' : 'file'}`),
+    })).join(' '));
+  }, [props.messages, currentUserId, isVisible, announceNewMessages, t]);
   const host = useRef(null);
   const snapshot = useRef(restoreState);
   const [viewportHeight, setViewportHeight] = useState(0);
@@ -47,6 +60,7 @@ export default function ChatTimeline({ isVisible = true, restoreState, onSaveSta
   }, [onSaveState]);
   const getRestoreState = useCallback(() => snapshot.current, []);
   return <div ref={host} className="relative min-h-0 flex-1 overflow-hidden">
+    <div className="sr-only" role="status" aria-live="polite" aria-atomic="true">{announcement}</div>
     {isVisible && viewportHeight > 0 && <VisibleChatTimeline {...props} viewportHeight={viewportHeight} getRestoreState={getRestoreState} onSaveState={save} />}
   </div>;
 }

@@ -1,4 +1,5 @@
-import { ArrowUpRight, ChevronLeft, ChevronRight, Download, LoaderCircle, Minus, PanelLeft, Plus } from 'lucide-react';
+import { ArrowUpRight, ChevronLeft, ChevronRight, Download, LoaderCircle, Maximize, Minus, PanelLeft, Plus } from 'lucide-react';
+import { useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 const controlClass = 'rounded p-2 text-zinc-100 hover:bg-white/10 focus-visible:outline-2 focus-visible:outline-blue-300 disabled:cursor-default disabled:opacity-30';
@@ -7,12 +8,22 @@ const controlClass = 'rounded p-2 text-zinc-100 hover:bg-white/10 focus-visible:
 export default function DocumentViewerFrame({
   url, title, pageNumber, pageCount, zoom, onZoomChange, onPageChange,
   sidebarOpen, onSidebarToggle, thumbnailsRef, viewportRef, thumbnails, children, onOpenOriginal,
-  onDownload, downloading = false, actionError,
+  onDownload, downloading = false, actionError, presentation,
 }) {
   const { t } = useTranslation();
+  const frame = useRef(null);
+  const [fullscreenError, setFullscreenError] = useState(false);
+  const fullscreen = async () => {
+    try {
+      setFullscreenError(false);
+      if (document.fullscreenElement === frame.current) await document.exitFullscreen();
+      else await frame.current?.requestFullscreen();
+    } catch { setFullscreenError(true); }
+  };
   return (
-    <div className="flex h-full min-h-0 flex-col overflow-hidden bg-[#262626] text-zinc-100">
-      <div className="flex shrink-0 flex-wrap items-center justify-between gap-1 border-b border-white/10 bg-[#323232] px-3 py-1 text-xs">
+    <div ref={frame} className={`document-viewer-frame flex h-full min-h-0 flex-col overflow-hidden bg-[#262626] text-zinc-100${presentation === 'workspace' ? ' is-workspace' : ''}`}>
+      <div className="document-viewer-toolbar flex shrink-0 flex-wrap items-center justify-between gap-1 border-b border-white/10 bg-[#323232] px-3 py-1 text-xs">
+        {presentation === 'workspace' && <strong className="document-viewer-title" title={title}>{title}</strong>}
         <div className="flex items-center gap-1">
           <button type="button" className={`${controlClass} mr-2`} aria-label={t('documents.pdfThumbnails')} aria-expanded={sidebarOpen} onClick={onSidebarToggle}><PanelLeft className="h-4 w-4" /></button>
           <button type="button" className={controlClass} aria-label={t('documents.previousPage')} disabled={!pageCount || pageNumber === 1} onClick={() => onPageChange(pageNumber - 1)}><ChevronLeft className="h-4 w-4" /></button>
@@ -24,9 +35,11 @@ export default function DocumentViewerFrame({
           <button type="button" className={`${controlClass} min-w-14 tabular-nums`} title={t('documents.fitWidth')} aria-label={t('documents.fitWidth')} disabled={!pageCount} onClick={() => onZoomChange(1)}>{Math.round(zoom * 100)}%</button>
           <button type="button" className={controlClass} aria-label={t('documents.zoomIn')} disabled={!pageCount || zoom >= 2.5} onClick={() => onZoomChange(Math.min(2.5, zoom + 0.25))}><Plus className="h-4 w-4" /></button>
         </div>
-        {onOpenOriginal ? <button type="button" onClick={onOpenOriginal} className="inline-flex items-center gap-1.5 rounded px-2 py-2 font-medium text-zinc-100 hover:bg-white/10">{t('documents.openOriginal')}<ArrowUpRight className="h-4 w-4" /></button> : <a href={url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 rounded px-2 py-2 font-medium text-zinc-100 hover:bg-white/10">{t('documents.openOriginal')}<ArrowUpRight className="h-4 w-4" /></a>}
+        {presentation === 'workspace' ? <button type="button" className={controlClass} onClick={fullscreen} aria-label={t('documentWorkspace.fullscreen')}><Maximize className="h-4 w-4" /></button>
+          : onOpenOriginal ? <button type="button" onClick={onOpenOriginal} className="inline-flex items-center gap-1.5 rounded px-2 py-2 font-medium text-zinc-100 hover:bg-white/10">{t('documents.openOriginal')}<ArrowUpRight className="h-4 w-4" /></button> : <a href={url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 rounded px-2 py-2 font-medium text-zinc-100 hover:bg-white/10">{t('documents.openOriginal')}<ArrowUpRight className="h-4 w-4" /></a>}
       </div>
-      {onDownload && <div className="flex items-center justify-end gap-3 bg-[#323232] px-3 pb-1 text-xs">
+      {fullscreenError && <p role="alert" className="p-2 text-xs">{t('documentWorkspace.fullscreenError')}</p>}
+      {onDownload && <div className="document-viewer-download flex items-center justify-end gap-3 bg-[#323232] px-3 pb-1 text-xs">
         {actionError && <span role="alert" className="text-red-200">{actionError}</span>}
         <button type="button" onClick={onDownload} disabled={downloading} className={`${controlClass} inline-flex items-center gap-2`}>
           {downloading ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}

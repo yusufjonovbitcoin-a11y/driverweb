@@ -79,6 +79,17 @@ test('documents are always ordered Rate Con, BOL, POD, then receipt', () => {
   ]);
 });
 
+test('combining includes every active file at every stop, never removed representatives', () => {
+  const doc = (id, type, stop, version = `v-${id}`) => ({ id, document_type: type, stop_id: stop, current_version_id: version });
+  const load = { documents: { shipperBol: 'stale-removed.pdf' }, stops: [{ id: 'p1', sequence: 1 }, { id: 'p2', sequence: 2 }, { id: 'd1', sequence: 3 }, { id: 'd2', sequence: 4 }],
+    documentItems: [doc('d2', 'pod', 'd2'), doc('b', 'bol', 'p2'), doc('a2', 'bol', 'p1'), doc('a1', 'bol', 'p1'),
+      doc('removed', 'bol', 'p1', null), doc('rate', 'rate_confirmation', null), doc('d1', 'pod', 'd1'), doc('receipt', 'receipt', null)] };
+  const result = orderedLoadDocuments(load);
+  assert.deepEqual(result.map(item => item.documentId), ['rate', 'a1', 'a2', 'b', 'd1', 'd2', 'receipt']);
+  assert.deepEqual(result.filter(item => item.id === 'shipperBol').map(item => item.label), ['BOL - Stop 1', 'BOL - Stop 1', 'BOL - Stop 2']);
+  assert.deepEqual(orderedLoadDocuments({ ...load, documentItems: [] }), []);
+});
+
 test('each section header identifies its document and page position', () => {
   assert.equal(documentSectionHeader('BOL', 0, 3), 'BOL  ·  1/3');
   assert.equal(

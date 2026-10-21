@@ -32,3 +32,7 @@ __pycache__/
 .venv/
 .env.pdf-worker
 .env*
+
+# Synthetic browser test artifacts
+playwright-report/
+test-results/

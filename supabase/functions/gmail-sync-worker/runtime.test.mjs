@@ -60,10 +60,10 @@ function harness(options = {}) {
       }
       if (name === 'checkpoint_gmail_cloud_worker') return { data: { status: options.checkpointStatus || 'checkpointed' } };
       if (name === 'recover_gmail_cloud_label_jobs') return { data: { status: 'recovered', count: 0 } };
-      if (name === 'select_gmail_cloud_pending_attachments') return { data: { status: 'selected', attachments:
+      if (name === 'select_gmail_cloud_business_pending_attachments') return { data: { status: 'selected', attachments:
         rows.broker_attachments.filter(row => {
           const message = rows.broker_messages.find(message => message.id === row.message_id);
-          return message?.gmail_connection_id === 'connection' && message.status !== 'needs_review'
+          return args.p_business_senders.includes(message?.from_email?.toLowerCase()) && message?.gmail_connection_id === 'connection' && message.status !== 'needs_review'
             && !rows.ai_extractions.some(extraction => extraction.attachment_id === row.id && ['extracted', 'needs_review'].includes(extraction.status));
         }).slice(0, 1) } };
       if (name === 'claim_company_gmail_label_jobs') return { data: rows.jobs.slice(0, 1) };
@@ -97,12 +97,13 @@ function harness(options = {}) {
       return parsed;
     },
     async fetch(url, init) {
-      const name = String(url).split('/').at(-1); calls.push(['http', name]);
+      const name = String(url).split('/').at(-1); calls.push(['http', name, init]);
       if (options.fetch) return await options.fetch({ name, url: String(url), init, loseLease: () => { valid = false; } });
       return new Response(JSON.stringify(name === 'cloudinary-media' ? { reference: 'cloudinary:test' } : { status: 'extracted' }));
     },
   };
   const config = { admin, companyId: 'company', leaseOwner: 'owner', connection,
+    businessPolicyByCompany: JSON.stringify({ company: { folder: 'Logistics/Approved', senders: ['broker@example.test'] } }),
     workerToken: 'test-worker', supabaseUrl: 'https://project.example', serviceRoleKey: 'test-admin', maxRunMs: options.maxRunMs || 90_000 };
   return { calls, rows, config, deps, run: () => runGmailSync(config, deps) };
 }
@@ -182,7 +183,7 @@ test('retry uses durable message and attachment before upload, completed AI is n
   const checksum = [...new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode('%PDF-test')))]
     .map(value => value.toString(16).padStart(2, '0')).join('');
   const h = harness({ rows: {
-    broker_messages: [{ id: 'existing', company_id: 'company', gmail_connection_id: 'connection',
+    broker_messages: [{ id: 'existing', company_id: 'company', gmail_connection_id: 'connection', from_email: 'broker@example.test',
       provider_message_id: '<message@example.test>', raw_storage_path: 'cloudinary:existing' }],
     broker_attachments: [{ id: 'attachment', message_id: 'existing', company_id: 'company',
       mime_type: 'application/pdf', checksum_sha256: checksum, storage_path: 'cloudinary:attachment' }],
@@ -283,7 +284,7 @@ test('foreign-company label job cannot mutate Gmail label', async () => {
 
 test('Cloudinary authenticated raw download API is allowed for one body backfill', async () => {
   const h = harness({ uids: [], rows: { broker_messages: [
-    { id: 'old', company_id: 'company', gmail_connection_id: 'connection', body_text: null, raw_storage_path: 'cloudinary:raw' },
+    { id: 'old', company_id: 'company', gmail_connection_id: 'connection', from_email: 'broker@example.test', body_text: null, raw_storage_path: 'cloudinary:raw' },
   ] }, fetch: ({ url, init }) => {
     if (url.endsWith('/cloudinary-media')) {
       assert.equal(JSON.parse(init.body).action, 'signedUrl');
@@ -299,7 +300,7 @@ test('Cloudinary authenticated raw download API is allowed for one body backfill
 test('signed media URL cannot redirect backfill to arbitrary host or API route', async () => {
   for (const url of ['https://evil.example/file', 'https://api.cloudinary.com/v1_1/cloud/raw/destroy']) {
     const h = harness({ uids: [], rows: { broker_messages: [
-      { id: 'old', company_id: 'company', gmail_connection_id: 'connection', raw_storage_path: 'cloudinary:raw' },
+      { id: 'old', company_id: 'company', gmail_connection_id: 'connection', from_email: 'broker@example.test', raw_storage_path: 'cloudinary:raw' },
     ] }, fetch: () => new Response(JSON.stringify({ url })) });
     const result = await h.run(); assert.equal(result.backfilled, 0); assert.equal(result.failed, 1);
     assert.equal(called(h, 'http').length, 1);
@@ -314,7 +315,7 @@ test('hanging logout cannot hold a completed runtime past its deadline', async (
 
 test('AI selection remains bounded and uses the database filtered selector', async () => {
   const h = harness(); await h.run();
-  assert.equal(called(h, 'rpc', 'select_gmail_cloud_pending_attachments')[0][2].p_limit, 1);
+  assert.equal(called(h, 'rpc', 'select_gmail_cloud_business_pending_attachments')[0][2].p_limit, 1);
   assert.equal(called(h, 'http', 'process-broker-attachment').length, 1);
 });
 
@@ -341,10 +342,60 @@ test('large HTML preserves the original and marks bounded body conversion trunca
 
 test('cutover retry reuses legacy no-Message-ID identity and repairs absent raw reference', async () => {
   const h = harness({ parsed: { messageId: null, attachments: [] }, rows: { broker_messages: [
-    { id: 'legacy', company_id: 'company', gmail_connection_id: 'connection',
+    { id: 'legacy', company_id: 'company', gmail_connection_id: 'connection', from_email: 'broker@example.test',
       provider_message_id: 'imap:mailbox@example.test:11', raw_storage_path: null },
   ] } });
   await h.run(); assert.equal(h.rows.broker_messages.length, 1);
   assert.equal(h.rows.broker_messages[0].raw_storage_path, 'cloudinary:test');
   assert.equal(called(h, 'rpc', 'ingest_broker_message_guarded')[0][2].provider_message_id, 'imap:mailbox@example.test:11');
+});
+
+
+test('unapproved sender is checkpointed without raw upload message persistence or AI processing', async () => {
+  const h = harness({parsed:{from:{value:[{address:'security@example.test'}]}}});
+  const result = await h.run();
+  assert.equal(result.skipped,1);
+  assert.equal(h.rows.broker_messages.length,0);
+  assert.equal(called(h,'http','cloudinary-media').length,0);
+  assert.equal(called(h,'rpc','ingest_broker_message_guarded').length,0);
+});
+test('missing business policy rejects before credentials or provider connection', async () => {
+  const h = harness(); h.config.businessPolicyByCompany = undefined;
+  await assert.rejects(h.run(), /GMAIL_BUSINESS_POLICY_REQUIRED/);
+  assert.equal(called(h,'connect').length,0);
+  assert.equal(called(h,'rpc','get_gmail_worker_credentials').length,0);
+});
+
+
+test('unapproved historical attachment cannot starve approved pending AI work', async () => {
+  const h = harness({uids:[],mailbox:{uidNext:11},rows:{
+    broker_messages:[
+      {id:'private',company_id:'company',gmail_connection_id:'connection',from_email:'security@example.test'},
+      {id:'approved',company_id:'company',gmail_connection_id:'connection',from_email:'broker@example.test'},
+    ],broker_attachments:[
+      {id:'private-file',company_id:'company',message_id:'private'},
+      {id:'approved-file',company_id:'company',message_id:'approved'},
+    ],
+  }});
+  await h.run();
+  const requests = called(h,'http','process-broker-attachment');
+  assert.equal(requests.length,1);
+  assert.equal(JSON.parse(requests[0][2].body).attachmentId,'approved-file');
+});
+
+
+test('unapproved historical body does not starve the next approved body', async () => {
+  const h = harness({uids:[],mailbox:{uidNext:11},rows:{broker_messages:[
+    {id:'private',company_id:'company',gmail_connection_id:'connection',from_email:'security@example.test',raw_storage_path:'cloudinary:private'},
+    {id:'approved',company_id:'company',gmail_connection_id:'connection',from_email:'broker@example.test',raw_storage_path:'cloudinary:approved'},
+  ]},fetch:({url,init}) => {
+    if(url.endsWith('/cloudinary-media')) {
+      assert.equal(JSON.parse(init.body).reference,'cloudinary:approved');
+      return new Response('{"url":"https://api.cloudinary.com/v1_1/test_cloud/raw/download?signature=test"}');
+    }
+    return new Response(source);
+  }});
+  assert.equal((await h.run()).backfilled,1);
+  assert.equal(h.rows.broker_messages[0].body_text,undefined);
+  assert.equal(h.rows.broker_messages[1].body_text,'hello');
 });

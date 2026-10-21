@@ -1,3 +1,4 @@
+import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import vm from 'node:vm';
@@ -7,7 +8,7 @@ import { issueLoadPreviewTicket } from '../supabase/functions/_shared/load-previ
 // Real Edge handler, isolated authentication/database/provider stubs. No writes,
 // external data transfers, real API keys or paid Places calls occur in tests.
 const bundle = await rolldown({
-  input: new URL('../supabase/functions/lookup-load-contacts/index.ts', import.meta.url).pathname,
+  input: fileURLToPath(new URL('../supabase/functions/lookup-load-contacts/index.ts', import.meta.url)),
   plugins: [{ name: 'fake-supabase', resolveId(id) {
     if (id.startsWith('https://esm.sh/@supabase/')) return '\0fake-supabase';
   }, load(id) {

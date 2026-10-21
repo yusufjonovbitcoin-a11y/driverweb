@@ -119,6 +119,7 @@ export function createGmailSyncHandler({ env, createAdmin, loadRuntime, randomUU
         admin, companyId: body.companyId, leaseOwner,
         connection: { ...claim, id: claim.connection_id },
         workerToken, supabaseUrl, serviceRoleKey, maxRunMs: 90_000,
+        businessPolicyByCompany: env('GMAIL_BUSINESS_POLICY_BY_COMPANY'),
       }, dependencies);
       response = json({ status: 'completed', ...result, executed: true });
     } catch {
@@ -133,7 +134,10 @@ export function createGmailSyncHandler({ env, createAdmin, loadRuntime, randomUU
             p_connection_id: claim.connection_id,
             p_configuration_version: claim.configuration_version,
           });
-          if (error || data?.status !== 'released') throw new Error('release_failed');
+          if (error || data?.status !== 'released') {
+            logger.error('gmail_cloud_worker_release_failed');
+            response = json({ error: 'worker_cleanup_failed' }, 500);
+          }
         } catch {
           logger.error('gmail_cloud_worker_release_failed');
           response = json({ error: 'worker_cleanup_failed' }, 500);

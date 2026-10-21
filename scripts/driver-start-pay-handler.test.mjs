@@ -1,3 +1,4 @@
+import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import vm from 'node:vm';
@@ -5,9 +6,9 @@ import { rolldown } from 'rolldown';
 
 // Run the actual HTTP handler, CORS, worker-token check and rate limiter. Only
 // Supabase transport and the route/lease processor are mocked; no live writes.
-const processorPath = new URL('../supabase/functions/_shared/driver-start-pay.ts', import.meta.url).pathname;
+const processorPath = fileURLToPath(new URL('../supabase/functions/_shared/driver-start-pay.ts', import.meta.url));
 const bundle = await rolldown({
-  input: new URL('../supabase/functions/calculate-driver-start-pay/index.ts', import.meta.url).pathname,
+  input: fileURLToPath(new URL('../supabase/functions/calculate-driver-start-pay/index.ts', import.meta.url)),
   plugins: [{
     name: 'isolated-driver-start-pay-handler',
     resolveId(id) {

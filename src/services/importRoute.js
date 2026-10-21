@@ -26,7 +26,8 @@ export async function fetchImportRoute(pickup, delivery, token, signal, fetcher 
     || !Array.isArray(route.geometry.coordinates) || route.geometry.coordinates.length < 2
     || !route.geometry.coordinates.every(point => Array.isArray(point) && point.length >= 2
       && point.slice(0, 2).every(Number.isFinite) && Math.abs(point[0]) <= 180 && Math.abs(point[1]) <= 90)) throw new Error('route_unavailable');
-  return { points: route.geometry.coordinates.map(([longitude, latitude]) => ({ longitude, latitude })) };
+  return { points: route.geometry.coordinates.map(([longitude, latitude]) => ({ longitude, latitude })),
+    stops: [start, end].map(([longitude, latitude]) => ({ longitude, latitude })) };
 }
 
 // Read-only preview routing. Addresses are geocoded and routed in the printed
@@ -86,7 +87,22 @@ export async function fetchImportPreviewRoute(addresses, token, driver, signal, 
       }
     }
   }
-  return { points, loadedMiles, targets, provider: 'mapbox', legs: legs.map((item, index) => ({
+  return { points, stops: locations.map(([longitude, latitude]) => ({ longitude, latitude })), loadedMiles, targets, provider: 'mapbox', legs: legs.map((item, index) => ({
     from: index + 1, to: index + 2, distanceMiles: Math.round(item.meters / 1609.344 * 100) / 100,
   })) };
+}
+
+export function googleMapsRouteUrl(addresses, livePosition) {
+  if (!Array.isArray(addresses) || addresses.length < 2 || addresses.some(value => typeof value !== 'string' || !value.trim())) return null;
+  const stops = addresses.map(value => value.trim());
+  const live = livePosition && Number.isFinite(livePosition.lat) && Number.isFinite(livePosition.lng)
+    && Math.abs(livePosition.lat) <= 90 && Math.abs(livePosition.lng) <= 180;
+  const origin = live ? `${livePosition.lat},${livePosition.lng}` : stops.shift();
+  const destination = stops.pop();
+  // Google Maps URLs accept at most nine intermediate stops on desktop.
+  if (stops.length > 9) return null;
+  const params = new URLSearchParams({ api: '1', origin, destination, travelmode: 'driving' });
+  if (stops.length) params.set('waypoints', stops.join('|'));
+  const url = `https://www.google.com/maps/dir/?${params}`;
+  return url.length <= 2048 ? url : null;
 }

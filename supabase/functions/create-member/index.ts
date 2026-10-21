@@ -66,6 +66,7 @@ Deno.serve((request) => withCors(request, async () => {
   if (passwordError) return json({ error: passwordError }, 400);
   if (gmailLabel && (
     gmailLabel.length > 100
+  // oxlint-disable-next-line no-control-regex -- Reject control characters in untrusted display names or mailbox labels.
     || /[\u0000-\u001f\u007f]/.test(gmailLabel)
     || /^(inbox|\[gmail\]|\[googlemail\])(\/|$)/i.test(gmailLabel)
   )) return json({ error: 'Invalid Gmail label name' }, 400);

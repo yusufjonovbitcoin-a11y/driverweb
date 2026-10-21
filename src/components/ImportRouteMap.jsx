@@ -1,12 +1,12 @@
 import { lazy, Suspense, useEffect, useState } from 'react';
-import { MapPin, LoaderCircle } from 'lucide-react';
+import { MapPin, LoaderCircle, MapPinned } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { fetchImportRoute } from '../services/importRoute';
+import { fetchImportRoute, googleMapsRouteUrl } from '../services/importRoute';
 
 const TrackingMap = lazy(() => import('./TrackingMap'));
 const token = import.meta.env.VITE_MAPBOX_ACCESS_TOKEN?.trim();
 
-export default function ImportRouteMap({ pickup, delivery, enabled = true, driverId, driverName, livePosition, roadRoute }) {
+export default function ImportRouteMap({ pickup, delivery, enabled = true, driverId, driverName, livePosition, roadRoute, addresses, stops }) {
   const { t } = useTranslation();
   const key = JSON.stringify([pickup, delivery]);
   const [result, setResult] = useState(null);
@@ -24,15 +24,20 @@ export default function ImportRouteMap({ pickup, delivery, enabled = true, drive
       .finally(() => clearTimeout(timeout));
     return () => { disposed = true; clearTimeout(timeout); controller.abort(); };
   }, [pickup, delivery, key, readyToFetch]);
+  const googleMapsUrl = googleMapsRouteUrl(addresses || [pickup, delivery], livePosition);
   const loading = useRoadRoute ? !roadRoute : readyToFetch && !current;
   const placeholder = <div className="import-map-placeholder">
     {loading ? <LoaderCircle className="h-7 w-7 animate-spin" /> : <MapPin className="h-8 w-8" />}
     <p>{t(loading ? 'loadImport.routeLoading' : 'loadImport.routeUnavailable')}</p>
   </div>;
   return <section className="import-map" aria-label={t('loadImport.route')}>
-    <div className="import-map-canvas">
+    <div className="import-map-canvas" style={{ position: 'relative' }}>
       {current?.points && enabled && token ? <Suspense fallback={placeholder}>
         <TrackingMap points={current.points} livePosition={livePosition}
+          routeStops={(stops || [{ role: 'pickup' }, { role: 'delivery' }]).map((stop, index) => ({
+            role: stop.role, sequence: index + 1,
+            latitude: current.stops?.[index]?.latitude, longitude: current.stops?.[index]?.longitude,
+          }))}
           deadheadPoints={current.targets?.find(item => item.driverId === driverId)?.points}
           routeKey={`${key}:${driverId || ''}:${Boolean(livePosition)}`}
           lineColor="#008573" liveMarkerIcon="truck"
@@ -40,6 +45,10 @@ export default function ImportRouteMap({ pickup, delivery, enabled = true, drive
           liveLabel={driverName || t('loadImport.currentLocation')}
           title={t('loadImport.route')} />
       </Suspense> : placeholder}
+      {enabled && googleMapsUrl && <a href={googleMapsUrl} target="_blank" rel="noopener noreferrer"
+        className="import-google-maps" aria-label={t('map.openGoogleRoute')} title={t('map.openGoogleRoute')}>
+        <MapPinned size={20} aria-hidden="true" />
+      </a>}
     </div>
   </section>;
 }

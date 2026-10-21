@@ -190,3 +190,18 @@ test('legacy malformed phones never appear as dialable stop contacts', () => {
   assert.equal(result.delivery.phone, '+1 866-471-3583');
   assert.equal(result.weightPrinted, '19780.00');
 });
+
+
+test('import pickup estimate uses offline last known GPS with explicit capture time', () => {
+  const now = Date.parse('2026-10-14T12:00:00Z');
+  const driver = { isOnline: false, lastKnownPosition: { latitude: 40, longitude: -75, capturedAt: '2026-10-14T11:00:00Z' } };
+  const result = importedMapState({ blockingFields: [] }, driver, now);
+  assert.deepEqual(result.livePosition, { lat: 40, lng: -75 });
+  assert.equal(result.observedAt, driver.lastKnownPosition.capturedAt);
+  assert.equal(result.stale, true);
+  for (const known of [{ ...driver.lastKnownPosition, capturedAt: null },
+    { ...driver.lastKnownPosition, capturedAt: '2026-10-14T13:00:00Z' },
+    { ...driver.lastKnownPosition, latitude: 95 }]) {
+    assert.equal(importedMapState({ blockingFields: [] }, { isOnline: false, lastKnownPosition: known }, now).livePosition, null);
+  }
+});

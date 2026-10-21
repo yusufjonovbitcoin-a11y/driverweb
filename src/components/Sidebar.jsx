@@ -1,9 +1,10 @@
+import './accessibility.css';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { roleLabel } from '../i18n/labels';
 import {
+  Wallet,
   Truck,
-  LayoutDashboard,
   ChartNoAxesCombined,
   MapPin,
   Users,
@@ -19,10 +20,8 @@ export default function Sidebar({
   activeTab,
   setActiveTab,
   onPrefetch,
-  loadsCount,
   unreadChatCount,
   unreadInboxCount,
-  onDropFile,
   currentUser,
   onLogout
 }) {
@@ -40,6 +39,8 @@ export default function Sidebar({
       label: t('nav.map'),
       icon: MapPin
     },
+    { id: 'arrivals', label: t('arrival.nav'), icon: Truck },
+    { id: 'accounting', label: t('accounting.title'), icon: Wallet },
     { id: 'analytics', label: t('analytics.title'), icon: ChartNoAxesCombined },
     {
       id: 'inbox',
@@ -59,12 +60,6 @@ export default function Sidebar({
       id: 'profile',
       label: t('nav.profile'),
       icon: User
-    },
-    {
-      id: 'kanban',
-      label: t('nav.loads'),
-      icon: LayoutDashboard,
-      badge: loadsCount
     }
   ];
   const visibleNavigation = currentUser?.roleCode === 'super_admin'
@@ -73,26 +68,17 @@ export default function Sidebar({
 
   const profileCard = <div className="sidebar-footer p-3 border-t border-zinc-200 dark:border-zinc-800">
     <div
-      role="button"
-      tabIndex={0}
-      aria-label={t('profile.overview')}
-      onClick={() => setActiveTab('profile')}
-      onKeyDown={(event) => {
-        if (event.target === event.currentTarget && (event.key === 'Enter' || event.key === ' ')) {
-          event.preventDefault();
-          setActiveTab('profile');
-        }
-      }}
-      className={`p-2 rounded-2xl border transition-all cursor-pointer flex items-center ${
+      className={`sidebar-account-card ${activeTab === 'profile' ? 'is-active' : ''} p-2 rounded-2xl border transition-colors flex items-center ${
         collapsed ? 'justify-center' : 'space-x-2.5'
       } ${
         activeTab === 'profile'
           ? 'bg-zinc-100 dark:bg-zinc-800 border-zinc-300 dark:border-zinc-700 shadow-2xs'
           : 'border-transparent hover:border-zinc-200 dark:hover:border-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-900'
       }`}
-      title={t('profile.overview')}
     >
-      <div className="w-8 h-8 rounded-xl bg-zinc-950 dark:bg-zinc-100 text-white dark:text-zinc-950 flex items-center justify-center font-mono text-xs font-black flex-shrink-0 shadow-xs">
+      <button type="button" className="sidebar-profile-trigger flex min-w-0 flex-1 items-center gap-2.5 rounded-lg"
+        aria-label={t('profile.overview')} title={t('profile.overview')} onClick={() => setActiveTab('profile')}>
+      <div className="sidebar-account-avatar w-8 h-8 rounded-xl bg-zinc-950 dark:bg-zinc-100 text-white dark:text-zinc-950 flex items-center justify-center font-mono text-xs font-black flex-shrink-0 shadow-xs">
         {currentUser?.avatarInitial || currentUser?.name?.charAt(0) || 'D'}
       </div>
 
@@ -108,7 +94,8 @@ export default function Sidebar({
         </div>
       )}
 
-      {!collapsed && onLogout && (
+      </button>
+      {onLogout && (
         <button
           type="button"
           onClick={(e) => {
@@ -117,8 +104,8 @@ export default function Sidebar({
               onLogout();
             }
           }}
-          className="p-1.5 rounded-xl text-zinc-400 hover:text-red-500 hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors flex-shrink-0"
-          title={t('nav.logout')}
+          className="sidebar-logout p-1.5 rounded-xl text-zinc-400 hover:text-red-500 hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors flex-shrink-0"
+          aria-label={t('nav.logout')} title={t('nav.logout')}
         >
           <LogOut className="w-4 h-4" />
         </button>
@@ -133,20 +120,11 @@ export default function Sidebar({
     return <button
       key={item.id}
       type="button"
-      aria-label={item.label}
+      aria-label={item.badgeTone === 'alert' && item.badge ? t('nav.unreadCount', { label: item.label, count: item.badge }) : item.label}
       aria-current={isActive ? 'page' : undefined}
       onClick={() => setActiveTab(item.id)}
       onPointerEnter={() => onPrefetch?.(item.id)}
       onFocus={() => onPrefetch?.(item.id)}
-      onDragOver={(event) => {
-        if (item.id === 'kanban') event.preventDefault();
-      }}
-      onDrop={(event) => {
-        if (item.id !== 'kanban') return;
-        event.preventDefault();
-        const file = event.dataTransfer.files?.[0];
-        if (file && onDropFile) onDropFile(file);
-      }}
       className={`nav-item w-full flex items-center rounded-xl text-base transition-colors relative ${
         collapsed ? 'justify-center h-12 px-0' : 'justify-between px-3.5 h-11'
       } ${
@@ -160,7 +138,7 @@ export default function Sidebar({
         <Icon className="w-5 h-5 flex-shrink-0" />
         {!collapsed && <span className="truncate">{item.label}</span>}
       </div>
-      {Boolean(item.badge) && <span className={`font-mono font-bold rounded-md ${collapsed ? 'absolute right-1 top-1 min-w-4 px-1 text-[10px]' : 'px-2 py-0.5 text-xs'} ${
+      {Boolean(item.badge) && <span className={`sidebar-nav-badge font-mono font-bold rounded-md ${collapsed ? 'absolute right-1 top-1 min-w-4 px-1 text-[10px]' : 'px-2 py-0.5 text-xs'} ${
         item.badgeTone === 'alert'
           ? 'sidebar-alert-badge bg-red-500 text-white'
           : 'bg-zinc-200/80 dark:bg-zinc-700 text-zinc-800 dark:text-zinc-200'
@@ -172,26 +150,25 @@ export default function Sidebar({
 
   return (
     <aside
-      className={`workspace-sidebar bg-white dark:bg-zinc-950 border-r border-zinc-200 dark:border-zinc-800 flex flex-col justify-between transition-all duration-150 select-none ${
+      className={`workspace-sidebar bg-white dark:bg-zinc-950 border-r border-zinc-200 dark:border-zinc-800 flex flex-col justify-between select-none ${
         collapsed ? 'is-collapsed w-20' : 'w-56'
       }`}
     >
       <div>
         {/* Workspace Brand Header */}
         <div className="sidebar-brand h-16 flex items-center justify-between px-5 border-b border-zinc-200 dark:border-zinc-800">
-          <div className="flex items-center space-x-3 overflow-hidden">
-            <div className="w-9 h-9 rounded-xl bg-zinc-900 dark:bg-zinc-100 flex items-center justify-center text-white dark:text-zinc-950 flex-shrink-0 shadow-sm">
-              <Truck className="w-5 h-5" />
-            </div>
-
+          <div className="flex items-center overflow-hidden">
             {!collapsed && (
               <span className="font-bold text-lg text-zinc-900 dark:text-zinc-100 tracking-tight">
-                DRIVEX
+                T Fleets
               </span>
             )}
           </div>
 
           <button
+            type="button"
+            aria-expanded={!collapsed}
+            aria-label={collapsed ? t('nav.expand') : t('nav.collapse')}
             onClick={() => setCollapsed(!collapsed)}
             className="p-1.5 text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 rounded-md transition-colors hidden lg:block"
             title={collapsed ? t('nav.expand') : t('nav.collapse')}
@@ -202,7 +179,6 @@ export default function Sidebar({
 
         {/* Navigation List */}
         <nav aria-label={t('nav.mainMenu')} className="sidebar-nav p-3 space-y-1.5">
-          <p className="nav-section-label">{collapsed ? '•' : t('nav.workspace')}</p>
           {visibleNavigation.filter(item => item.id !== 'chat').map(navigationButton)}
         </nav>
       </div>

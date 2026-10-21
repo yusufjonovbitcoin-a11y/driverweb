@@ -1,0 +1,11 @@
+# Business mailbox privacy and expiring media
+
+Deploy `20261013221758_gmail_business_pending_scope.sql` before the updated cloud worker; its new service-role-only selector applies the approved sender filter before the processing limit and preserves the legacy RPC.
+
+Both Gmail workers require `GMAIL_BUSINESS_POLICY_BY_COMPANY`: a JSON object mapping each company UUID to `{ "folder": "Logistics/Approved", "senders": ["approved-broker@example.test"] }`. Missing or invalid configuration stops ingestion. INBOX and Gmail system folders are rejected. Create a dedicated logistics mailbox or approved folder, with carefully reviewed provider-side rules, and configure exact business sender addresses. Subject keywords do not establish authorization; sender filtering is not proof of sender identity. Security/provider notifications must not be routed to this folder.
+
+Pause workers before cutover. Verify the folder UIDVALIDITY and a deliberate UID baseline, then update the connection baseline using the existing operator-approved configuration workflow. Never reuse an INBOX cursor for another folder; workers reject an unverified/mismatched UIDVALIDITY. Do not turn on a new mailbox until the baseline and per-company policy are reviewed. Set the policy in GitHub Actions secret for the legacy worker and Supabase function environment for the cloud worker. No production setting was changed by this source fix.
+
+Selection happens before raw EML upload, body persistence, attachment upload or AI processing. Rejected messages are checkpointed without copying them. Historical body/AI maintenance also checks approved senders. Previously imported unrelated mail remains in the database; this change does not erase, hide, or revoke existing records. A separate admin-only quarantine and audited cleanup require production review and authorization.
+
+Every new Cloudinary signed URL, including chat and profile images, now uses the existing authenticated download endpoint with a 15-minute expiry. Frontend media caching honors provider expiry with a 30-second margin. Existing permanent URLs issued before deployment cannot be retroactively expired; revoke them by provider asset replacement/invalidation after approved rollout. Test long audio/video playback and URL refresh on the web and native clients before release.

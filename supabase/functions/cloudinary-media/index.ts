@@ -1,5 +1,5 @@
 import { withCors } from "../_shared/cors.ts";
-import { signedAuthenticatedDeliveryUrl, temporaryAuthenticatedDownloadUrl } from "../_shared/cloudinary-delivery.ts";
+import { temporaryAuthenticatedDownloadUrl } from "../_shared/cloudinary-delivery.ts";
 import { canDeleteMedia } from "../_shared/media-permissions.ts";
 import { hasDurableMediaReference } from "../_shared/media-reference-guard.ts";
 import { checkDistributedRateLimit, rateLimitResponse } from "../_shared/rate-limit.ts";
@@ -86,17 +86,6 @@ function safeFileName(value: string) {
 
 function cloudinaryRef(id: string) {
   return `cloudinary:${id}`;
-}
-
-async function signedDeliveryUrl(asset: Record<string, unknown>) {
-  return await signedAuthenticatedDeliveryUrl({
-    cloudName: env("CLOUDINARY_CLOUD_NAME"),
-    apiSecret: env("CLOUDINARY_API_SECRET"),
-    publicId: String(asset.public_id),
-    resourceType: String(asset.resource_type),
-    version: Number(asset.version),
-    format: asset.format ? String(asset.format) : null,
-  });
 }
 
 async function signUpload(params: Record<string, string>) {
@@ -303,22 +292,14 @@ Deno.serve((request) => withCors(request, async () => {
     if (assetError) return json({ error: "Media lookup failed", code: "MEDIA_LOOKUP_FAILED" }, 500);
     if (!asset) return json({ error: "Media not found", code: "MEDIA_NOT_FOUND" }, 404);
     if (action === "signedUrl") {
-      if (['load_document','driver_document','broker_original','manual_import','gmail_raw'].includes(String(asset.scope))) {
-        const expiresAt = Math.floor(Date.now()/1000) + 900;
-        const url = await temporaryAuthenticatedDownloadUrl({
-          cloudName: env('CLOUDINARY_CLOUD_NAME'), apiKey: env('CLOUDINARY_API_KEY'),
-          apiSecret: env('CLOUDINARY_API_SECRET'), publicId: String(asset.public_id),
-          resourceType: String(asset.resource_type), format: asset.format ? String(asset.format) : null,
-          expiresAt,
-        });
-        return json({url, expiresAt: new Date(expiresAt*1000).toISOString(), expirationEnforced: true});
-      }
-      const url = await signedDeliveryUrl(asset);
-      return json({
-        url,
-        expiresAt: null,
-        expirationEnforced: false,
+      const expiresAt = Math.floor(Date.now()/1000) + 900;
+      const url = await temporaryAuthenticatedDownloadUrl({
+        cloudName: env('CLOUDINARY_CLOUD_NAME'), apiKey: env('CLOUDINARY_API_KEY'),
+        apiSecret: env('CLOUDINARY_API_SECRET'), publicId: String(asset.public_id),
+        resourceType: String(asset.resource_type), format: asset.format ? String(asset.format) : null,
+        expiresAt,
       });
+      return json({url, expiresAt: new Date(expiresAt*1000).toISOString(), expirationEnforced: true});
     }
     if (action === "delete") {
       if (auth.worker) return json({ error: "Worker cannot delete media" }, 403);

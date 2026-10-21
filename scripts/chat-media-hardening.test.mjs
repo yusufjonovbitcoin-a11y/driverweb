@@ -1,10 +1,11 @@
+import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import vm from 'node:vm';
 import { rolldown } from 'rolldown';
 
 async function moduleFrom(relative) {
-  const bundle = await rolldown({ input: new URL(relative, import.meta.url).pathname });
+  const bundle = await rolldown({ input: fileURLToPath(new URL(relative, import.meta.url)) });
   const { output } = await bundle.generate({ format: 'esm' });
   await bundle.close();
   return import(`data:text/javascript;base64,${Buffer.from(output[0].code).toString('base64')}`);
@@ -61,7 +62,7 @@ test('chat push expires after one hour or either read marker, without expiring o
 });
 
 const storageBundle = await rolldown({
-  input: new URL('../src/services/chatStorageService.js', import.meta.url).pathname,
+  input: fileURLToPath(new URL('../src/services/chatStorageService.js', import.meta.url)),
   plugins: [{ name: 'isolated-supabase', resolveId(id) { if (id.endsWith('/lib/supabase')) return '\0fake-client'; }, load(id) {
     if (id === '\0fake-client') return "export const requireSupabase=()=>globalThis.testClient; export const supabaseUrl='https://test.invalid'; export const supabaseAnonKey='public-test-key';";
   } }],

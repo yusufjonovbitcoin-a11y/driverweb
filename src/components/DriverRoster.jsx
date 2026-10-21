@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useId, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   Check,
@@ -11,10 +11,13 @@ import {
   PencilLine,
   UploadCloud,
 } from 'lucide-react';
+import { buildLoadDetails } from './loadDetailsModel';
+import DriverSettingsPanel from './DriverSettingsPanel';
 import KanbanBoard from './KanbanBoard';
 import { formatAppointment, formatDate, formatTime } from '../i18n/format';
 import {
   activeLoadsForDriver,
+  completedDocumentLoads,
   lastSeenKind,
   partitionDriverLoads,
   rosterAppointment,
@@ -34,8 +37,28 @@ export default function DriverRoster({
   selectedDriverId,
   onSelectDriver,
   unreadChatsByDriver = {},
+  onWorkspaceRefresh,
+  canManageDriver = false,
 }) {
   const { t } = useTranslation();
+  const tabId = useId();
+  const [tabSelection, setTabSelection] = useState({ driverId: selectedDriverId, tab: 'trips', settingsVisited: false, documentSearch: '' });
+  if (tabSelection.driverId !== selectedDriverId) {
+    setTabSelection({ driverId: selectedDriverId, tab: 'trips', settingsVisited: false, documentSearch: '' });
+  }
+  const activeTab = tabSelection.driverId === selectedDriverId ? tabSelection.tab : 'trips';
+  const detailTabs = ['trips', 'analytics', 'documents', 'settings'];
+  const selectTab = (tab) => setTabSelection((previous) => ({ ...previous, driverId: selectedDriverId, tab, settingsVisited: previous.driverId === selectedDriverId && previous.settingsVisited || tab === 'settings' }));
+  const onTabKeyDown = (event) => {
+    const index = detailTabs.indexOf(activeTab);
+    const next = event.key === 'ArrowRight' ? (index + 1) % detailTabs.length
+      : event.key === 'ArrowLeft' ? (index + detailTabs.length - 1) % detailTabs.length
+        : event.key === 'Home' ? 0 : event.key === 'End' ? detailTabs.length - 1 : null;
+    if (next === null) return;
+    event.preventDefault();
+    selectTab(detailTabs[next]);
+    event.currentTarget.querySelectorAll('[role=tab]')[next]?.focus();
+  };
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [copiedLoadId, setCopiedLoadId] = useState(null);
@@ -77,12 +100,13 @@ export default function DriverRoster({
     onSelectDriver(driverId);
   };
 
-  const availableDriversCount = drivers.filter((driver) => activeLoadsForDriver(loads, driver.id).length === 0).length;
-  const onDutyDriversCount = drivers.length - availableDriversCount;
+  const availableDriversCount = drivers.filter((driver) => driver.accountStatus !== 'suspended' && activeLoadsForDriver(loads, driver.id).length === 0).length;
+  const onDutyDriversCount = drivers.filter((driver) => driver.accountStatus !== 'suspended' && activeLoadsForDriver(loads, driver.id).length > 0).length;
 
   const filteredDrivers = drivers.filter(driver => {
     const activeLoads = activeLoadsForDriver(loads, driver.id);
     
+    if (statusFilter !== 'ALL' && driver.accountStatus === 'suspended') return false;
     // Status filter
     if (statusFilter === 'AVAILABLE' && activeLoads.length) return false;
     if (statusFilter === 'ON_LOAD' && !activeLoads.length) return false;
@@ -102,8 +126,9 @@ export default function DriverRoster({
 
   const selectedDriver = drivers.find((driver) => driver.id === selectedDriverId);
 
-  const isFileDrag = (event) => Array.from(event.dataTransfer?.types || []).includes('Files')
-    || Boolean(event.dataTransfer?.files?.length);
+  const isSuspended = selectedDriver?.accountStatus === 'suspended';
+  const isFileDrag = (event) => !isSuspended && (Array.from(event.dataTransfer?.types || []).includes('Files')
+    || Boolean(event.dataTransfer?.files?.length));
   const onPageDragEnter = (event) => {
     if (!isFileDrag(event)) return;
     event.preventDefault();
@@ -127,7 +152,7 @@ export default function DriverRoster({
     event.preventDefault();
     dragDepthRef.current = 0;
     setIsPdfDragging(false);
-    if (handledByColumn || isAiProcessing || !selectedDriver) return;
+    if (handledByColumn || isAiProcessing || !selectedDriver || isSuspended) return;
     const pdf = Array.from(event.dataTransfer.files || []).find(
       (file) => file.type === 'application/pdf' || /\.pdf$/i.test(file.name),
     );
@@ -144,6 +169,11 @@ export default function DriverRoster({
     const { workflow, exceptions } = partitionDriverLoads(driverLoads);
     const activeTripCount = workflow.filter((load) => load.status !== 'COMPLETED').length;
     const completedTripCount = workflow.length - activeTripCount;
+    const documentQuery = (tabSelection.documentSearch || '').trim().toLocaleLowerCase();
+    const completedLoads = completedDocumentLoads(driverLoads);
+    const documentLoads = completedLoads.filter((load) => !documentQuery || [
+      load.loadNumber, load.origin?.city, load.origin?.state, load.destination?.city, load.destination?.state,
+    ].some((value) => String(value || '').toLocaleLowerCase().includes(documentQuery)));
 
     return (
       <div className="driver-trips-view" onDragEnter={onPageDragEnter} onDragOver={onPageDragOver} onDragLeave={onPageDragLeave} onDrop={onPageDrop}>
@@ -162,8 +192,8 @@ export default function DriverRoster({
             <div className="driver-trip-identity-copy">
               <div className="driver-trip-name-row">
                 <h1>{selectedDriver.name}</h1>
-                <span className={`driver-trip-availability ${activeTripCount > 0 ? 'is-active' : ''}`}>
-                  <span />{activeTripCount > 0 ? t('drivers.onLoad') : t('drivers.available')}
+                <span className={`driver-trip-availability ${isSuspended ? 'is-suspended' : activeTripCount > 0 ? 'is-active' : ''}`}>
+                  <span />{isSuspended ? t('driverSettings.suspended') : activeTripCount > 0 ? t('drivers.onLoad') : t('drivers.available')}
                 </span>
               </div>
               {(selectedDriver.driverNumber || selectedDriver.truck || selectedDriver.trailer) && (
@@ -177,10 +207,10 @@ export default function DriverRoster({
             <div><span>{t('loadStatus.completed')}</span><strong>{completedTripCount}</strong></div>
           </div>
           <div className="driver-trip-add-wrap" ref={addMenuRef}>
-            <button type="button" className="driver-trip-add" aria-expanded={isAddMenuOpen} aria-controls="driver-trip-add-options" onClick={() => setOpenMenuDriverId(isAddMenuOpen ? null : selectedDriver.id)}>
+            <button type="button" className="driver-trip-add" disabled={isSuspended} title={isSuspended ? t('driverSettings.suspended') : undefined} aria-expanded={isAddMenuOpen} aria-controls="driver-trip-add-options" onClick={() => setOpenMenuDriverId(isAddMenuOpen ? null : selectedDriver.id)}>
               <Plus size={20} />{t('loads.addForDriver')}
             </button>
-            {isAddMenuOpen && <div id="driver-trip-add-options" className="driver-trip-add-options">
+            {isAddMenuOpen && !isSuspended && <div id="driver-trip-add-options" className="driver-trip-add-options">
               <label className="driver-trip-add-option">
                 <FileUp size={18} />{t('loads.addPdf')}
                 <input type="file" accept=".pdf,.jpg,.jpeg,.png,.webp,.gif" onChange={(event) => {
@@ -201,7 +231,10 @@ export default function DriverRoster({
             </div>}
           </div>
         </section>
-        <section className="driver-trips-content" aria-label={t('drivers.tripHistory')}>
+        <div className="driver-detail-tabs" role="tablist" aria-label={t('driverDetailTabs.navigation')} onKeyDown={onTabKeyDown}>
+          {detailTabs.map((tab) => <button key={tab} type="button" role="tab" id={`${tabId}-${tab}-tab`} aria-controls={`${tabId}-${tab}-panel`} aria-selected={activeTab === tab} tabIndex={activeTab === tab ? 0 : -1} onClick={() => selectTab(tab)}>{t(`driverDetailTabs.${tab}`)}</button>)}
+        </div>
+        <section className="driver-trips-content" role="tabpanel" id={`${tabId}-trips-panel`} aria-labelledby={`${tabId}-trips-tab`} hidden={activeTab !== 'trips'}>
           <DriverLoadWorkspace
             loads={workflow}
             drivers={drivers}
@@ -209,7 +242,7 @@ export default function DriverRoster({
             onDeleteLoad={onDeleteLoad}
             onTrashLoad={onTrashLoad}
             onManageDocument={onManageDocument}
-            onImportDocument={(file) => onImportDriverDocument?.(file, selectedDriver.id)}
+            onImportDocument={isSuspended ? undefined : (file) => onImportDriverDocument?.(file, selectedDriver.id)}
             isAiProcessing={isAiProcessing}
           />
           {exceptions.length > 0 && (
@@ -228,6 +261,33 @@ export default function DriverRoster({
             </details>
           )}
         </section>
+        {detailTabs.filter((tab) => tab !== 'trips').map((tab) => <section key={tab} className="driver-detail-panel" role="tabpanel" id={`${tabId}-${tab}-panel`} aria-labelledby={`${tabId}-${tab}-tab`} hidden={activeTab !== tab} tabIndex={0}>
+          {tab !== 'settings' && <h2>{t(`driverDetailTabs.${tab}`)}</h2>}
+          {tab === 'settings' && tabSelection.settingsVisited && <DriverSettingsPanel key={selectedDriver.id} driver={selectedDriver} onWorkspaceRefresh={onWorkspaceRefresh} canManageDriver={canManageDriver} />}
+          {tab === 'equipment' && <dl className="driver-detail-facts">{['truck', 'trailer'].map((field) => <div key={field}><dt>{t(`driverDetailTabs.${field}`)}</dt><dd>{selectedDriver[field] || '—'}</dd></div>)}</dl>}
+          {tab === 'documents' && <>
+            <p className="driver-detail-note">{t('driverDetailTabs.loadDocuments')}</p>
+            <label className="driver-document-search"><Search size={17} aria-hidden="true" /><span className="sr-only">{t('driverDetailTabs.documentSearch')}</span><input type="search" value={tabSelection.documentSearch || ''} onChange={(event) => setTabSelection((previous) => ({ ...previous, documentSearch: event.target.value }))} placeholder={t('driverDetailTabs.documentSearch')} /></label>
+            <div className="driver-detail-documents">{documentLoads.length ? documentLoads.map((load) => {
+              const details = buildLoadDetails(load);
+              const delivery = details.stops.filter((stop) => stop.role === 'delivery').at(-1) || details.delivery;
+              const appointment = delivery.appointment;
+              const deliverySchedule = [delivery.scheduleDate, delivery.scheduleTime].filter(Boolean).join(' · ')
+                || (appointment ? formatAppointment(appointment, delivery.timezone) : '—');
+              const route = [load.origin, load.destination].map((stop) => [stop?.city, stop?.state].filter(Boolean).join(', ') || '—').join(' → ');
+              return <button key={load.id} type="button" onClick={() => onOpenDocs(load)}>
+                <FileUp size={18} aria-hidden="true" />
+                <div className="driver-document-identity"><strong>{load.loadNumber}</strong><small>{route}</small></div>
+                <div className="driver-document-delivery"><small>{t('driverDetailTabs.plannedDelivery')}</small><strong>{deliverySchedule}</strong></div>
+                <span className="driver-document-open">{t('driverDetailTabs.openLoad')}</span>
+              </button>;
+            }) : <p role="status">{t(completedLoads.length ? 'driverDetailTabs.noDocumentMatches' : 'driverDetailTabs.noCompletedLoads')}</p>}</div>
+          </>}
+          {tab === 'activity' && <dl className="driver-detail-facts"><div><dt>{t('driverDetailTabs.connection')}</dt><dd>{t(selectedDriver.isOnline ? 'driverDetailTabs.online' : 'driverDetailTabs.offline')}</dd></div><div><dt>{t('driverDetailTabs.lastSeen')}</dt><dd>{lastSeenKind(selectedDriver.lastSeenAt) === 'never' ? t('driverDetailTabs.noActivity') : formatLastSeen(t, selectedDriver.lastSeenAt)}</dd></div></dl>}
+          {tab === 'analytics' && <dl className="driver-detail-facts driver-detail-counts">{[
+            ['total', driverLoads.length], ['active', activeTripCount], ['completed', completedTripCount], ['exceptions', exceptions.length],
+          ].map(([label, count]) => <div key={label}><dt>{t(`driverDetailTabs.${label}`)}</dt><dd>{count}</dd></div>)}</dl>}
+        </section>)}
       </div>
     );
   }
@@ -350,7 +410,7 @@ export default function DriverRoster({
                         </div>
                         <div>
                           <div className="flex items-center space-x-1.5 whitespace-nowrap">
-                            <span className="font-bold text-sm text-zinc-900 dark:text-zinc-100">{driver.name}</span>
+                            <span className="font-bold text-sm text-zinc-900 dark:text-zinc-100">{driver.name}</span>{driver.accountStatus === 'suspended' && <span className="text-xs text-amber-700">{t('driverSettings.suspended')}</span>}
                           </div>
                           <div className="mt-1 space-y-0.5 font-mono text-xs font-bold text-blue-700 dark:text-blue-300">
                             {hasActiveLoads
@@ -406,10 +466,11 @@ export default function DriverRoster({
                         <button
                           onClick={(event) => {
                             event.stopPropagation();
-                            onAssignLoad(driver);
+                            if (driver.accountStatus !== 'suspended') onAssignLoad(driver);
                           }}
-                          className="inline-flex items-center space-x-1.5 bg-zinc-900 hover:bg-zinc-800 text-white dark:bg-zinc-100 dark:hover:bg-white dark:text-zinc-950 px-3.5 py-1.5 rounded-xl font-bold text-xs transition-colors shadow-2xs cursor-pointer"
-                          title={hasActiveLoads ? t('drivers.assignAdditional') : t('drivers.assignLoad')}
+                          disabled={driver.accountStatus === 'suspended'}
+                          className="inline-flex items-center space-x-1.5 bg-zinc-900 hover:bg-zinc-800 text-white dark:bg-zinc-100 dark:hover:bg-white dark:text-zinc-950 px-3.5 py-1.5 rounded-xl font-bold text-xs transition-colors shadow-2xs cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                          title={driver.accountStatus === 'suspended' ? t('driverSettings.suspended') : hasActiveLoads ? t('drivers.assignAdditional') : t('drivers.assignLoad')}
                         >
                           <Plus className="w-3.5 h-3.5" />
                           <span>{hasActiveLoads ? t('drivers.additionalLoad') : t('header.createLoad')}</span>

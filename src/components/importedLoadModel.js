@@ -5,12 +5,19 @@ import { validPhone } from '../../supabase/functions/_shared/load-enrichment.ts'
 import { streetAddressWithoutAppointmentCode } from '../../supabase/functions/_shared/load-stop-address.ts';
 import { OPERATIONAL_EXTRACTION_SCOPE } from '../../supabase/functions/_shared/load-operational-extraction.ts';
 
-export function importedMapState(details, driver) {
+export function importedMapState(details, driver, now = Date.now()) {
   const addressBlocked = details.blockingFields.some(key => /^(pickup|delivery|stops\.\d+)\.(addressLine|city|region|postalCode)$/.test(key));
+  const known = driver?.lastKnownPosition;
+  const captured = Date.parse(known?.capturedAt);
+  const validKnown = validMapCoordinate(known?.latitude, known?.longitude)
+    && Number.isFinite(captured) && captured <= now + 30_000;
+  const fresh = driver?.isOnline && validMapCoordinate(driver.lat, driver.lng);
   return {
     routeEnabled: !addressBlocked,
-    livePosition: driver?.isOnline && validMapCoordinate(driver.lat, driver.lng)
-      ? { lat: Number(driver.lat), lng: Number(driver.lng) } : null,
+    livePosition: validKnown ? { lat: Number(known.latitude), lng: Number(known.longitude) }
+      : fresh ? { lat: Number(driver.lat), lng: Number(driver.lng) } : null,
+    observedAt: validKnown ? known.capturedAt : driver?.locationUpdatedAt || null,
+    stale: validKnown ? !driver?.isOnline || now - captured > 120_000 : !fresh,
   };
 }
 

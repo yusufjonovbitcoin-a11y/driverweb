@@ -1,3 +1,4 @@
+import { businessMailPolicy } from './business-policy.mjs';
 // No imports, environment reads or provider calls at module initialization.
 // The HTTP adapter owns claim/release; this module owns one bounded IMAP session.
 export const MAX_SOURCE_BYTES = 8 * 1024 * 1024;
@@ -20,12 +21,14 @@ const bodyFields = parsed => {
   return { body_text: text.slice(0, 300_000), body_truncated: text.length > 300_000 || parsed?._bodyTruncated === true };
 };
 const validLabel = label => typeof label === 'string' && label.trim().length > 0 && label.length <= 100
+  // oxlint-disable-next-line eslint/no-control-regex -- reject provider label control characters.
   && !/[\u0000-\u001f\u007f]/.test(label) && !/^(inbox|\[gmail\]|\[googlemail\])(\/|$)/i.test(label);
 const digest = async bytes => [...new Uint8Array(await crypto.subtle.digest('SHA-256', bytes))]
   .map(value => value.toString(16).padStart(2, '0')).join('');
 
 export async function runGmailSync(config, deps) {
   const { admin, companyId, leaseOwner, connection, workerToken, supabaseUrl, serviceRoleKey } = config;
+  const isBusinessMail = businessMailPolicy(config.businessPolicyByCompany, companyId);
   const now = deps.now || Date.now;
   const fetcher = deps.fetch || globalThis.fetch;
   const maxRunMs = Math.min(MAX_RUN_MS, Math.max(1, Number(config.maxRunMs) || MAX_RUN_MS));
@@ -147,6 +150,7 @@ export async function runGmailSync(config, deps) {
   }
   async function ingest(message) {
     const parsed = await parse(message.source);
+    if (!isBusinessMail(parsed)) { counters.skipped++; await checkpoint(Number(message.uid)); return; }
     await guard();
     let providerId = parsed.messageId || `imap:${snapshot.p_connection_id}:${uidValidity}:${message.uid}`;
     let saved = await one('broker_messages', 'id,gmail_connection_id,raw_storage_path', 'provider_message_id', providerId);
@@ -166,7 +170,7 @@ export async function runGmailSync(config, deps) {
     const messageId = await rpc('ingest_broker_message_guarded', {
       gmail_connection_id: snapshot.p_connection_id, expected_configuration_version: snapshot.p_configuration_version,
       provider_message_id: providerId, provider_thread_id: parsed.inReplyTo || null,
-      from_email: parsed.from?.value?.[0]?.address || message.envelope?.from?.[0]?.address || mailboxEmail,
+      from_email: String(parsed.from.value[0].address).toLowerCase(),
       subject: parsed.subject || null, received_at: date.toISOString(), raw_storage_path: rawPath,
     });
     if (!messageId) fail('GMAIL_INGEST_FAILED');
@@ -203,10 +207,13 @@ export async function runGmailSync(config, deps) {
     // SQL filters terminal/cooldown work before LIMIT, avoiding both starvation
     // behind old completed rows and whole-company materialization in Edge memory.
     await guard();
-    const selected = await rpc('select_gmail_cloud_pending_attachments', { ...snapshot, p_limit: 1 });
+    const selected = await rpc('select_gmail_cloud_business_pending_attachments', { ...snapshot, p_business_senders: isBusinessMail.senders, p_limit: 1 });
     if (selected?.status !== 'selected') fail('GMAIL_LEASE_LOST');
     const row = selected.attachments?.[0];
     if (!row || remaining() <= 35_000) return;
+    const attachment = await one('broker_attachments', 'message_id', 'id', row.id);
+    const message = attachment && await one('broker_messages', 'from_email', 'id', attachment.message_id);
+    if (!isBusinessMail({ from: { value: [{ address: message?.from_email }] } })) { counters.skipped++; return; }
     await write(() => admin.from('broker_attachments').update({ ai_last_attempt_at: new Date(now()).toISOString() })
       .eq('id', row.id).eq('company_id', companyId));
     await edge('process-broker-attachment', { attachmentId: row.id }, { timeout: Math.min(30_000, remaining() - 3_000) });
@@ -215,6 +222,7 @@ export async function runGmailSync(config, deps) {
   async function maintenanceBody() {
     const rows = await db(admin.from('broker_messages').select('id,raw_storage_path')
       .eq('company_id', companyId).eq('gmail_connection_id', snapshot.p_connection_id)
+      .in('from_email', isBusinessMail.senders)
       .is('body_text', null).not('raw_storage_path', 'is', null).order('received_at', { ascending: false }).limit(1));
     if (!rows?.length) return;
     const row = rows[0]; let source;
@@ -238,6 +246,7 @@ export async function runGmailSync(config, deps) {
         { redirect: 'error', signal: controller.signal }), MAX_SOURCE_BYTES));
     }
     const parsed = await parse(source);
+    if (!isBusinessMail(parsed)) { counters.skipped++; return; }
     await write(() => admin.from('broker_messages').update(bodyFields(parsed)).eq('id', row.id).eq('company_id', companyId));
     counters.backfilled++;
   }
@@ -330,11 +339,11 @@ export async function runGmailSync(config, deps) {
     // Never let EventEmitter errors escape into a process-level crash/log dump.
     client.on?.('error', () => { controller.abort(); close(); });
     await effect(() => client.connect());
-    mailboxLock = await bounded(() => client.getMailboxLock('INBOX'));
+    mailboxLock = await bounded(() => client.getMailboxLock(isBusinessMail.folder));
     uidValidity = String(client.mailbox?.uidValidity || '');
     const nextUid = Number(client.mailbox?.uidNext);
     const lastUid = Number(connection.provider_history_id || 0);
-    if (!/^[1-9]\d*$/.test(uidValidity) || !Number.isSafeInteger(nextUid) || nextUid < 1
+    if (uidValidity !== String(connection.uid_validity) || !/^[1-9]\d*$/.test(uidValidity) || !Number.isSafeInteger(nextUid) || nextUid < 1
       || !Number.isSafeInteger(lastUid) || lastUid < 0) fail('GMAIL_UID_INVALID');
     await guard();
     // Bound the IMAP SEARCH response as well as message bodies. Empty UID holes

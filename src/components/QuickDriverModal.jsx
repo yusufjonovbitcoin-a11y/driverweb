@@ -1,3 +1,4 @@
+import useModalFocus from '../hooks/useModalFocus';
 import React, { useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { 
@@ -42,11 +43,13 @@ export default function QuickDriverModal({
   onConfirm 
 }) {
   const { t } = useTranslation();
+  const dialogRef = useRef(null);
   const [selectedDriverIds, setSelectedDriverIds] = useState(() => initialDriverId ? [initialDriverId] : []);
   const [searchQuery, setSearchQuery] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState('');
   const submittingRef = useRef(false);
+  useModalFocus(dialogRef, { open: isOpen && Boolean(loadData), onClose, busy: isSubmitting });
   const warningFields = [...new Set([
     ...(loadData?.review?.blockingFields || []), ...(loadData?.review?.warningFields || []),
   ])];
@@ -102,7 +105,7 @@ export default function QuickDriverModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
-      <div role="dialog" aria-modal="true" aria-label={t('loads.aiPreparedTitle')} className="bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-2xl w-full max-w-2xl max-h-[92dvh] flex flex-col shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+      <div ref={dialogRef} tabIndex={-1} role="dialog" aria-modal="true" aria-label={t('loads.aiPreparedTitle')} className="bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-2xl w-full max-w-2xl max-h-[92dvh] flex flex-col shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150">
         
         {/* Header */}
         <div className="flex shrink-0 items-center justify-between px-6 py-4 border-b border-zinc-100 dark:border-zinc-800">
@@ -211,7 +214,7 @@ export default function QuickDriverModal({
               <Search className="w-4 h-4 text-zinc-400 absolute left-3 top-2.5" />
               <input
                 type="text"
-                value={searchQuery}
+                aria-label={t('common.search')} value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder={t('drivers.searchPlaceholder')}
                 className="w-full bg-zinc-50 dark:bg-zinc-900 border border-zinc-200/80 dark:border-zinc-800 rounded-xl pl-9 pr-8 py-2 text-sm text-zinc-900 dark:text-zinc-100 placeholder-zinc-400 focus:outline-none focus:border-zinc-400 transition-colors"

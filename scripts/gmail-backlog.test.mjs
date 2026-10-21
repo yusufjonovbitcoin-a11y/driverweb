@@ -7,7 +7,7 @@ function client(tables) {
   return { from(table) {
     let rows = tables[table];
     return { select() { return this; }, eq(key, value) { rows = rows.filter(row => row[key] === value); return this; },
-      in(key, values) { rows = rows.filter(row => values.includes(row[key])); return this; },
+      in(key, values) { rows = rows.filter(row => values.includes(key.includes('.') ? row.message?.from_email : row[key])); return this; },
       order(key) { rows = [...rows].sort((a,b) => a[key].localeCompare(b[key])); return this; }, limit() { return this; },
       gt(key, value) { rows = rows.filter(row => row[key] > value); return this; },
       then(resolve) { resolve({ data: rows.slice(0, 3) }); } };
@@ -29,4 +29,14 @@ test('review/completed work is never rerun, failed work retries only after coold
   assert.equal(shouldProcessExtraction({ status: 'needs_review' }, { retryFailed: true, now }), false);
   assert.equal(shouldProcessExtraction({ status: 'parse_failed', processed_at: new Date(now).toISOString() }, { retryFailed: true, now }), false);
   assert.equal(shouldProcessExtraction({ status: 'parse_failed', processed_at: new Date(now - 1800001).toISOString() }, { retryFailed: true, now }), true);
+});
+
+
+test('business sender filtering precedes backlog cap and skips unrelated history', async () => {
+  const attachments = [
+    {id:'a',company_id:'c',mime_type:'application/pdf',created_at:'2026-10-01',message:{from_email:'security@example.test'}},
+    {id:'b',company_id:'c',mime_type:'application/pdf',created_at:'2026-10-02',message:{from_email:'broker@example.test'}},
+  ];
+  const result = await findPendingBrokerAttachments(client({broker_attachments:attachments,ai_extractions:[]}), 'c',['application/pdf'],1,now,['broker@example.test']);
+  assert.deepEqual(result.map(row=>row.id),['b']);
 });

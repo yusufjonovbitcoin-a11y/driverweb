@@ -11,9 +11,14 @@ export function shouldProcessExtraction(extraction, { retryFailed = false, now =
 
 // Filter completed work BEFORE applying the processing limit. Scanning immutable
 // IDs also survives API row caps and never repeatedly retries only the newest10.
-export async function findPendingBrokerAttachments(admin, companyId, mimeTypes, limit = 10, now = Date.now()) {
-  const attachments = await readAllRows(() => admin.from('broker_attachments')
-    .select('id,created_at,ai_last_attempt_at').eq('company_id', companyId).in('mime_type', mimeTypes));
+export async function findPendingBrokerAttachments(admin, companyId, mimeTypes, limit = 10, now = Date.now(), approvedSenders = null) {
+  const attachments = await readAllRows(() => {
+    let query = admin.from('broker_attachments')
+      .select(approvedSenders ? 'id,created_at,ai_last_attempt_at,message:broker_messages!inner(from_email)' : 'id,created_at,ai_last_attempt_at')
+      .eq('company_id', companyId).in('mime_type', mimeTypes);
+    if (approvedSenders) query = query.in('message.from_email', approvedSenders);
+    return query;
+  });
   const batches = [];
   for (let offset = 0; offset < attachments.length; offset += 100) batches.push(attachments.slice(offset, offset + 100));
   const extractions = (await mapWithConcurrency(batches, batch => readAllRows(() => admin.from('ai_extractions')

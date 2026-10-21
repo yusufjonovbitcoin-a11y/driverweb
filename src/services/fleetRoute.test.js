@@ -10,7 +10,7 @@ const stops = [
   { sequence: 3, role: 'delivery', markerLabel: 'D1', latitude: 40.6, longitude: -75.4 },
   { sequence: 4, role: 'delivery', markerLabel: 'D2', latitude: 40.8, longitude: -74 },
 ];
-const roadReply = url => reply({ code: 'Ok', routes: [{ geometry: { type: 'LineString',
+const roadReply = url => reply({ code: 'Ok', routes: [{ distance: 16093.44, duration: 900, geometry: { type: 'LineString',
   coordinates: url.match(/driving\/([^?]+)/)[1].split(';').map(item => item.split(',').map(Number)) } }] });
 
 test('active road route visits every pickup/delivery in source order without re-geocoding known coordinates', async () => {
@@ -25,6 +25,8 @@ test('active road route visits every pickup/delivery in source order without re-
   assert.equal(result.points.length, 4);
   assert.equal(result.routingFailed, false);
   assert.deepEqual(stops, original);
+  assert.equal(result.distanceMeters, 16093.44);
+  assert.equal(result.durationSeconds, 900);
   assert.equal(result.distanceMiles, undefined);
 });
 
@@ -33,6 +35,8 @@ test('routes longer than 25 stops overlap chunks without dropping or reordering 
   const calls = [];
   const result = await fetchFleetRoute(many, 'test-token', { fetcher: async url => { calls.push(url); return roadReply(url); } });
   assert.equal(calls.length, 2);
+  assert.equal(result.distanceMeters, 32186.88);
+  assert.equal(result.durationSeconds, 1800);
   const paths = calls.map(url => url.match(/driving\/([^?]+)/)[1].split(';'));
   assert.equal(paths[0].length, 25);
   assert.equal(paths[1].length, 6);
@@ -125,4 +129,43 @@ test('a late response from a timed-out route is rejected even if its fetcher ign
     signal: controller.signal,
     fetcher: async url => { controller.abort(); return roadReply(url); },
   }), { name: 'AbortError' });
+});
+
+// A GPS point and a pickup use the provider's driven distance, never geometry length.
+test('latest GPS to pickup uses road metrics, including a valid zero distance', async () => {
+  for (const distance of [0, 42123.45]) {
+    const result = await fetchFleetRoute([
+      { sequence: 0, role: 'driver', latitude: 40, longitude: -75 }, stops[0],
+    ], 'test-token', { fetcher: async () => reply({ code: 'Ok', routes: [{
+      distance, duration: 720, geometry: { type: 'LineString', coordinates: [[-75, 40], [-71.1, 42.7]] },
+    }] }) });
+    assert.equal(result.distanceMeters, distance);
+    assert.equal(result.durationSeconds, 720);
+    assert.equal(result.routingFailed, false);
+  }
+});
+
+test('missing or invalid road metrics cannot masquerade as zero distance', async () => {
+  for (const metrics of [{}, { distance: null, duration: 1 }, { distance: -1, duration: 1 },
+    { distance: 1, duration: -1 }, { distance: '100', duration: 1 }, { distance: 1, duration: Infinity }]) {
+    const result = await fetchFleetRoute(stops, 'test-token', { fetcher: async () => reply({ code: 'Ok', routes: [{
+      ...metrics, geometry: { type: 'LineString', coordinates: [[-75, 40], [-71.1, 42.7]] },
+    }] }) });
+    assert.equal(result.routingFailed, true);
+    assert.equal(result.distanceMeters, null);
+    assert.equal(result.durationSeconds, null);
+  }
+});
+
+test('partial chunk failure and marker-only results never expose a partial road distance', async () => {
+  const many = Array.from({ length: 30 }, (_, i) => ({ sequence: i, latitude: 40 + i / 100, longitude: -75 }));
+  let count = 0;
+  const failed = await fetchFleetRoute(many, 'test-token', { fetcher: async url => ++count === 1
+    ? roadReply(url) : reply({ code: 'NoRoute' }) });
+  assert.equal(failed.distanceMeters, null);
+  assert.equal(failed.durationSeconds, null);
+  assert.deepEqual(failed.points, []);
+  const markers = await fetchFleetRoute(stops, 'test-token', { roadRoute: false });
+  assert.equal(markers.distanceMeters, null);
+  assert.equal(markers.durationSeconds, null);
 });

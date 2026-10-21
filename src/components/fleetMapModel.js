@@ -1,3 +1,4 @@
+import { labelMapStops } from './mapStopLabels.js';
 import { normalizeSearchText } from '../utils/globalSearch.js';
 import { validMapCoordinate } from './mapboxMapModel.js';
 
@@ -86,15 +87,12 @@ export function loadMapStops(load) {
   if (!load) return [];
   const printed = load.driverBrief?.stops || load.stops;
   const source = Array.isArray(printed) && printed.length >= 2 ? printed : [load.origin, load.destination];
-  const counts = { pickup: 0, delivery: 0 };
-  return source.map((stop, index) => {
+  return labelMapStops(source.map((stop, index) => {
     const endpoint = index === 0 ? load.origin : index === source.length - 1 ? load.destination : null;
     const role = stop?.role === 'pickup' || stop?.role === 'delivery' ? stop.role : index === 0 ? 'pickup' : 'delivery';
-    const number = ++counts[role];
     return {
       sequence: index + 1,
       role,
-      markerLabel: `${role === 'pickup' ? 'P' : 'D'}${number}`,
       facility: stop?.facility ?? stop?.facilityName ?? endpoint?.facility ?? null,
       address: stop?.address ?? stop?.addressLine ?? stop?.street ?? endpoint?.address ?? null,
       city: stop?.city ?? endpoint?.city ?? null,
@@ -103,7 +101,7 @@ export function loadMapStops(load) {
       latitude: stop?.latitude ?? stop?.lat ?? endpoint?.lat,
       longitude: stop?.longitude ?? stop?.lng ?? endpoint?.lng,
     };
-  });
+  }));
 }
 
 export function isActiveFleetLoad(load, driver) {
@@ -116,6 +114,10 @@ export function fleetLivePosition(load, driver, points = []) {
   if (!isActiveFleetLoad(load, driver)) return null;
   if (driver.isOnline && validMapCoordinate(driver.lat, driver.lng)) {
     return { lat: Number(driver.lat), lng: Number(driver.lng), source: 'live' };
+  }
+  const known = driver.lastKnownPosition;
+  if (known && validMapCoordinate(known.latitude, known.longitude) && Number.isFinite(Date.parse(known.capturedAt)) && Date.parse(known.capturedAt) <= Date.now() + 30_000) {
+    return { lat: Number(known.latitude), lng: Number(known.longitude), source: 'last_known', capturedAt: known.capturedAt };
   }
   const last = points.findLast(point => validMapCoordinate(point?.latitude, point?.longitude));
   return last ? { lat: Number(last.latitude), lng: Number(last.longitude), source: 'recorded' } : null;

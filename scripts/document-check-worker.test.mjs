@@ -1,3 +1,4 @@
+import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import vm from 'node:vm';
@@ -7,7 +8,7 @@ import { isDocumentCheckWorker, beforeDocumentDeadline, sanitizeDocumentReview }
 // Execute the actual Edge entry point with fake providers; never contacts
 // Supabase/OpenAI and never reads developer credentials.
 const bundle = await rolldown({
-  input: new URL('../supabase/functions/check-load-document/index.ts', import.meta.url).pathname,
+  input: fileURLToPath(new URL('../supabase/functions/check-load-document/index.ts', import.meta.url)),
   plugins: [{ name: 'fake-supabase', resolveId(id) {
     if (id.startsWith('https://esm.sh/@supabase/')) return '\0fake-supabase';
   }, load(id) { if (id === '\0fake-supabase') return 'export const createClient = () => globalThis.testClient;'; } }],

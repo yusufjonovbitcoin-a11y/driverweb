@@ -1,0 +1,97 @@
+/* T Fleets dispatch desk: paper, asphalt and road-sign blue. */
+:root {
+  --dispatch-canvas: #f3f5f8;
+  --dispatch-paper: #ffffff;
+  --dispatch-inset: #edf1f6;
+  --dispatch-raised: #ffffff;
+  --dispatch-ink: #1b2b40;
+  --dispatch-label: #526278;
+  --dispatch-muted: #607086;
+  --dispatch-rule: rgb(35 52 76 / .12);
+  --dispatch-rule-strong: rgb(35 52 76 / .24);
+  --dispatch-route: #2458d3;
+  --dispatch-route-hover: #1b46ae;
+  --dispatch-route-soft: #e8eefc;
+  --dispatch-delivered: #087454;
+  --dispatch-delivered-soft: #e5f4ed;
+  --dispatch-caution: #965b0a;
+  --dispatch-caution-soft: #fff3df;
+  --dispatch-exception: #bd3041;
+  --dispatch-exception-soft: #ffedf0;
+  --dispatch-control-fill: #f5f7fa;
+  --dispatch-control-rule: rgb(35 52 76 / .2);
+  --dispatch-focus: #2458d3;
+  --dispatch-focus-soft: rgb(36 88 211 / .13);
+  --dispatch-overlay-shadow: 0 0 0 1px rgb(35 52 76 / .04), 0 8px 24px rgb(35 52 76 / .1);
+  --dispatch-radius-control: 8px;
+  --dispatch-radius-card: 12px;
+  --dispatch-radius-dialog: 16px;
+  --dispatch-control-height: 40px;
+  --dispatch-space-1: 4px;
+  --dispatch-space-2: 8px;
+  --dispatch-space-3: 12px;
+  --dispatch-space-4: 16px;
+  --dispatch-space-5: 20px;
+  --dispatch-space-6: 24px;
+  --dispatch-space-8: 32px;
+  --dispatch-caption: 12px;
+  --dispatch-body: 14px;
+  --dispatch-section: 18px;
+  --dispatch-title: 28px;
+  --dispatch-motion: 140ms;
+  --dispatch-ease: cubic-bezier(.23, 1, .32, 1);
+  /* Compatibility names consumed by existing workspaces. */
+  --canvas: var(--dispatch-canvas);
+  --surface: var(--dispatch-paper);
+  --surface-muted: var(--dispatch-inset);
+  --surface-raised: var(--dispatch-raised);
+  --line: var(--dispatch-rule);
+  --border: var(--dispatch-rule);
+  --ink: var(--dispatch-ink);
+  --muted: var(--dispatch-muted);
+  --accent: var(--dispatch-route);
+  --accent-soft: var(--dispatch-route-soft);
+  --bg: var(--dispatch-canvas);
+  --text: var(--dispatch-ink);
+  --action-bg: #2458d3;
+  --action-hover: #1b46ae;
+  --action-ink: #ffffff;
+  --success-bg: #087454;
+}
+html.dark {
+  --dispatch-canvas: #101824;
+  --dispatch-paper: #172230;
+  --dispatch-inset: #111c2a;
+  --dispatch-raised: #1e2c3e;
+  --dispatch-ink: #e8eef7;
+  --dispatch-label: #bdcadb;
+  --dispatch-muted: #a5b4c8;
+  --dispatch-rule: rgb(186 204 228 / .14);
+  --dispatch-rule-strong: rgb(186 204 228 / .3);
+  --dispatch-route: #a3bfff;
+  --dispatch-route-hover: #c3d4ff;
+  --dispatch-route-soft: #233550;
+  --dispatch-delivered: #7ed9b3;
+  --dispatch-delivered-soft: #17372d;
+  --dispatch-caution: #edc17d;
+  --dispatch-caution-soft: #3c3020;
+  --dispatch-exception: #ffa5af;
+  --dispatch-exception-soft: #3f2630;
+  --dispatch-control-fill: #111c2a;
+  --dispatch-control-rule: rgb(186 204 228 / .24);
+  --dispatch-focus: #a3bfff;
+  --dispatch-focus-soft: rgb(163 191 255 / .16);
+  --dispatch-overlay-shadow: 0 0 0 1px rgb(186 204 228 / .14), 0 12px 28px rgb(0 0 0 / .2);
+}
+body { font-family: var(--font-sans); }
+::selection { background: var(--dispatch-route-soft); color: var(--dispatch-ink); }
+/* Values retain their columns while live GPS, ETA and balances refresh. */
+:where(table, time, output, .import-total, .arrival-clock, .arrival-times, .review-stat, .trip-metrics, .ds-net) {
+  font-variant-numeric: tabular-nums;
+}
+:where(h1,h2,h3) { text-wrap: balance; }
+:where(p,small) { text-wrap: pretty; }
+@media (prefers-contrast: more) {
+  :root { --dispatch-rule: #6d7b8e; --dispatch-control-rule: #526278; }
+  html.dark { --dispatch-rule: #a5b4c8; --dispatch-control-rule: #bdcadb; }
+}

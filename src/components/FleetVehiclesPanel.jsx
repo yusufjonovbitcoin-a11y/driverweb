@@ -286,11 +286,6 @@ function VehicleFormModal({ t, editing, form, errors, years, saving, error, vinS
             <Field label={t('fleet.plateNumber')} errorText={errors.plate ? t('fleet.platePairRequired') : ''}><input maxLength={20} value={form.plateNumber} onChange={(event) => onField('plateNumber', event.target.value.toUpperCase())} className={`${inputClass} uppercase`} placeholder="APPLIED" /></Field>
           </div>
 
-          <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-zinc-200 p-3.5 dark:border-zinc-700">
-            <input type="checkbox" checked={!form.sleeperBerthEnabled} onChange={(event) => onField('sleeperBerthEnabled', !event.target.checked)} className="mt-0.5 h-4 w-4 accent-teal-600" />
-            <span><span className="block text-sm font-bold">{t('fleet.disableSleeper')}</span><span className="mt-1 block text-xs leading-5 text-zinc-500">{t('fleet.disableSleeperHint')}</span></span>
-          </label>
-
           <Field label={t('fleet.notes')} errorText={errors.notes ? t('fleet.notesTooLong') : ''}><textarea rows={4} maxLength={4000} value={form.notes} onChange={(event) => onField('notes', event.target.value)} className={inputClass} placeholder={t('fleet.notesPlaceholder')} /></Field>
 
           <footer className="flex justify-end gap-3 border-t border-zinc-200 pt-4 dark:border-zinc-800">

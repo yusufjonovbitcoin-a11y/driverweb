@@ -53,7 +53,7 @@ export async function fetchFleetRoute(stops, token, { roadRoute = true, signal, 
   const located = await Promise.all(stops.map(locate));
   signal?.throwIfAborted();
   const unlocated = located.filter(stop => !validCoordinate(stop.latitude, stop.longitude)).map(stop => stop.sequence);
-  const result = { stops: located, points: [], unlocated, routingFailed: false };
+  const result = { stops: located, points: [], distanceMeters: null, durationSeconds: null, unlocated, routingFailed: false };
   // Marker-only mode is optional. A planned road route can also be displayed
   // for a completed trip, separately from its actual recorded GPS trace.
   if (!roadRoute) return result;
@@ -69,14 +69,19 @@ export async function fetchFleetRoute(stops, token, { roadRoute = true, signal, 
         const route = data.routes?.[0];
         const coordinates = route?.geometry?.coordinates;
         if (data.code !== 'Ok' || route?.geometry?.type !== 'LineString'
+          || !Number.isFinite(route.distance) || route.distance < 0
+          || !Number.isFinite(route.duration) || route.duration < 0
           || !Array.isArray(coordinates) || coordinates.length < 2
           || !coordinates.every(point => Array.isArray(point) && validCoordinate(point[1], point[0]))) throw new Error('route_unavailable');
-        return coordinates.map(([longitude, latitude]) => ({ longitude, latitude }));
+        return { points: coordinates.map(([longitude, latitude]) => ({ longitude, latitude })),
+          distanceMeters: route.distance, durationSeconds: route.duration };
       }));
     }
     const legs = await Promise.all(chunks);
     signal?.throwIfAborted();
-    return { ...result, points: legs.flatMap((leg, index) => index ? leg.slice(1) : leg) };
+    return { ...result, points: legs.flatMap((leg, index) => index ? leg.points.slice(1) : leg.points),
+      distanceMeters: legs.reduce((sum, leg) => sum + leg.distanceMeters, 0),
+      durationSeconds: legs.reduce((sum, leg) => sum + leg.durationSeconds, 0) };
   } catch {
     signal?.throwIfAborted();
     return { ...result, routingFailed: true };

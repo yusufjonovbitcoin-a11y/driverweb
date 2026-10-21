@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import mapboxgl from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
+import { labelMapStops } from './mapStopLabels.js';
 import { mapFailureState } from './mapHealth.js';
 import {
   buildMapboxGeometry,
@@ -48,7 +49,7 @@ function markerElement(color, label, title = label, icon = null, interactive = f
   return element;
 }
 
-function stopPopup(stop, title) {
+function stopPopup(stop, title, mapsLabel) {
   const content = document.createElement('div');
   content.style.cssText = 'color:#172c3a;font:12px/1.5 system-ui;max-width:240px';
   const heading = document.createElement('strong');
@@ -59,6 +60,26 @@ function stopPopup(stop, title) {
     line.textContent = text;
     content.append(line);
   }
+  const link = document.createElement('a');
+  link.href = `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(`${stop.latitude},${stop.longitude}`)}&travelmode=driving`;
+  link.target = '_blank';
+  link.rel = 'noopener noreferrer';
+  link.title = mapsLabel;
+  link.setAttribute('aria-label', mapsLabel);
+  link.style.cssText = 'display:inline-flex;align-items:center;gap:6px;margin-top:8px;padding:6px 9px;border:1px solid #dbe3ef;border-radius:6px;color:#1d4ed8;text-decoration:none;font-weight:600';
+  const icon = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  icon.setAttribute('viewBox', '0 0 24 24');
+  icon.setAttribute('width', '16');
+  icon.setAttribute('height', '16');
+  icon.setAttribute('fill', 'none');
+  icon.setAttribute('stroke', 'currentColor');
+  icon.setAttribute('stroke-width', '2');
+  icon.setAttribute('aria-hidden', 'true');
+  const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+  path.setAttribute('d', 'm3 10 19-8-8 19-3-8-8-3Z');
+  icon.append(path);
+  link.append(icon, document.createTextNode('Google Maps'));
+  content.append(link);
   return content;
 }
 
@@ -87,7 +108,7 @@ export default function TrackingMap({ points, deadheadPoints, livePosition, rout
   const geometry = useMemo(() => buildMapboxGeometry(points), [points]);
   const lineFeatures = useMemo(() => mapboxLineFeatures(points, recordedLine), [points, recordedLine]);
   const deadhead = useMemo(() => buildMapboxGeometry(deadheadPoints || []), [deadheadPoints]);
-  const stops = useMemo(() => validMapStops(routeStops), [routeStops]);
+  const stops = useMemo(() => validMapStops(labelMapStops(routeStops || [])), [routeStops]);
   const paddingKey = JSON.stringify(viewportPadding);
   const live = useMemo(() => validMapCoordinate(liveLatitude, liveLongitude)
     ? { lat: Number(liveLatitude), lng: Number(liveLongitude) }
@@ -199,21 +220,21 @@ export default function TrackingMap({ points, deadheadPoints, livePosition, rout
 
     if (routeStops?.length) {
       stops.forEach(stop => {
-        const label = stop.markerLabel || (routeStops.length > 2 ? String(stop.sequence) : stop.role === 'pickup' ? 'A' : 'B');
+        const label = stop.markerLabel;
         const title = `${label} · ${stop.role === 'pickup' ? pickupLabel : deliveryLabel}`;
         markersRef.current.push(new mapboxgl.Marker({ element: markerElement(stop.role === 'pickup' ? '#008573' : '#ef4444', label, title, null, true) })
           .setLngLat([stop.longitude, stop.latitude])
-          .setPopup(new mapboxgl.Popup({ offset: 18 }).setDOMContent(stopPopup(stop, title))).addTo(map));
+          .setPopup(new mapboxgl.Popup({ offset: 18 }).setDOMContent(stopPopup(stop, title, t('loadImport.openMap')))).addTo(map));
       });
     } else if (geometry.start) {
-      markersRef.current.push(new mapboxgl.Marker({ element: markerElement('#008573', 'A', pickupLabel) })
+      markersRef.current.push(new mapboxgl.Marker({ element: markerElement('#008573', 'P', pickupLabel) })
         .setLngLat([geometry.start.lng, geometry.start.lat]).addTo(map));
     }
     if (!routeStops?.length && geometry.end && geometry.path.length > 1) {
-      markersRef.current.push(new mapboxgl.Marker({ element: markerElement('#ef4444', 'B', deliveryLabel) })
+      markersRef.current.push(new mapboxgl.Marker({ element: markerElement('#ef4444', 'D', deliveryLabel) })
         .setLngLat([geometry.end.lng, geometry.end.lat]).addTo(map));
     }
-  }, [geometry, lineFeatures, recordedFeatures, deadhead, status, isVisible, lineColor, pickupLabel, deliveryLabel, routeStops, stops]);
+  }, [geometry, lineFeatures, recordedFeatures, deadhead, status, isVisible, lineColor, pickupLabel, deliveryLabel, routeStops, stops, t]);
 
   useEffect(() => {
     const map = mapRef.current;

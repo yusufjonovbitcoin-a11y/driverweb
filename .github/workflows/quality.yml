@@ -21,7 +21,22 @@ jobs:
       - run: npm ci
       - run: npm test
       - run: npm run lint
+      - run: npm run i18n:check
       - run: npm run build
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:ui
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: ui-test-results
+          path: test-results/
+          retention-days: 7
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - run: deno test --no-lock supabase/functions/_shared/*_test.ts
+      - name: Gmail lease and approved-sender isolation
+        run: PG_BIN="$(pg_config --bindir)" node scripts/test-gmail-cloud-worker-db.mjs
       - name: Isolated chat database regression tests
         run: PG_BIN="$(pg_config --bindir)" npm run test:chat-db
       - name: Driver sheet review and assignment checks

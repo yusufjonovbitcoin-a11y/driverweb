@@ -157,3 +157,9 @@ test('camera padding reserves overlays while leaving space on desktop, tablet an
   assert.equal(mobile.left, 36);
   assert.equal(mobile.bottom, 44);
 });
+
+test('active trip retains last known GPS with explicit stale source, never on completed trip', () => {
+  const driver = { id: 'a', isOnline: false, lastKnownPosition: {latitude: 42, longitude: -71, capturedAt: '2026-01-01T00:00:00Z'} };
+  assert.deepEqual(fleetLivePosition(current, driver), {lat: 42, lng: -71, source: 'last_known', capturedAt: driver.lastKnownPosition.capturedAt});
+  assert.equal(fleetLivePosition(older, driver), null);
+});

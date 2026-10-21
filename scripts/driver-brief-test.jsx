@@ -5,7 +5,7 @@ import '../src/i18n';
 import '../src/index.css';
 import QuickDriverModal from '../src/components/QuickDriverModal';
 
-function Fixture() {
+export function Fixture() {
   const [sent, setSent] = useState(false);
   const blocked = new URLSearchParams(window.location.search).has('blocked');
   return <main>

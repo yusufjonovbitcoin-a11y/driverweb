@@ -35,3 +35,9 @@ export function lastSeenKind(value, now = Date.now()) {
   if (age < 48 * 60 * 60 * 1000) return 'yesterday';
   return 'date';
 }
+
+export function completedDocumentLoads(loads) {
+  return loads.filter(load => !load.trashedAt && (
+    load.databaseStatus ? load.databaseStatus === 'completed' : load.status === 'COMPLETED'
+  ));
+}

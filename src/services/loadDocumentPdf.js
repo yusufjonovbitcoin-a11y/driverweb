@@ -15,6 +15,16 @@ export function documentSectionHeader(label, pageIndex, pageCount) {
 }
 
 export function orderedLoadDocuments(load) {
+  if (Array.isArray(load.documentItems)) {
+    const databaseTypes = { rateCon: 'rate_confirmation', shipperBol: 'bol', receiverPod: 'pod', receipt: 'receipt' };
+    const stops = new Map((load.stops || []).map(stop => [stop.id, stop]));
+    return LOAD_DOCUMENT_SEQUENCE.flatMap(({ id, label }) => load.documentItems
+      .filter(row => row.document_type === databaseTypes[id] && (row.current_version_id || row.url))
+      .slice().sort((a, b) => (stops.get(a.stop_id)?.sequence ?? -1) - (stops.get(b.stop_id)?.sequence ?? -1) || String(a.id).localeCompare(String(b.id)))
+      .map(row => ({ id, label: row.stop_id ? `${label} - Stop ${stops.get(row.stop_id)?.sequence ?? row.stop_id}` : label,
+        documentId: row.id, stopId: row.stop_id, versionId: row.current_version_id || null,
+        url: row.url || null, mimeType: row.mimeType || null, fileName: row.fileName || null })));
+  }
   return LOAD_DOCUMENT_SEQUENCE
     .map(({ id, label }) => ({
       id,

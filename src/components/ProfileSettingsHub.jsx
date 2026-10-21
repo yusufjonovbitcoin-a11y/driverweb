@@ -27,19 +27,20 @@ export default function ProfileSettingsHub({ query = '', currentUser, locale, lo
     ] },
   ];
   const tokens = query.trim().toLocaleLowerCase().split(/\s+/).filter(Boolean);
-  const visible = groups.map(group => ({ ...group, rows: group.rows.filter(row => tokens.every(token =>
+  const visible = [groups[1], groups[0], groups[2]].map(group => ({ ...group, rows: group.rows.filter(row => tokens.every(token =>
     [group.title, row.title, row.description, row.value].filter(Boolean).join(' ').toLocaleLowerCase().includes(token))) })).filter(group => group.rows.length);
   return <div className="profile-settings-groups">
     {visible.map(group => {
       const GroupIcon = group.icon;
       return <section key={group.id} className="profile-settings-group" aria-labelledby={`profile-group-${group.id}`}>
         <header><GroupIcon size={23} aria-hidden="true" /><div><h2 id={`profile-group-${group.id}`}>{group.title}</h2><p>{group.hint}</p></div></header>
-        {group.rows.map(row => {
+        <div className={group.id === 'workspace' ? 'profile-preferences-grid' : undefined}>{group.rows.map(row => {
           const Icon = row.icon;
-          const content = <><Icon className="profile-setting-icon" size={21} aria-hidden="true" /><span className="profile-setting-copy"><strong>{row.title}</strong>{row.description && <small>{row.description}</small>}</span>
+          if (row.control) return <label key={row.id} className="profile-preference-field"><span><Icon size={16} aria-hidden="true" />{row.title}</span>{row.control}{row.description && <small>{row.description}</small>}</label>;
+          const content = <><span className="profile-setting-icon"><Icon size={19} aria-hidden="true" /></span><span className="profile-setting-copy"><strong>{row.title}</strong>{row.description && <small>{row.description}</small>}</span>
             <span className={`profile-setting-value ${row.connected ? 'is-connected' : ''}`}>{row.control || row.value}</span>{!row.control && <ChevronRight size={17} aria-hidden="true" />}</>;
-          return row.control ? <div key={row.id} className="profile-setting-row">{content}</div> : <button key={row.id} type="button" className="profile-setting-row" onClick={row.action}>{content}</button>;
-        })}
+          return <button key={row.id} type="button" className="profile-setting-row" onClick={row.action}>{content}</button>;
+        })}</div>
       </section>;
     })}
     {visible.length === 0 && <p role="status" className="profile-settings-empty">{t('profile.noSettingsFound')}</p>}

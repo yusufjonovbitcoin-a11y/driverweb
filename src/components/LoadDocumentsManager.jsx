@@ -2,25 +2,27 @@ import { useEffect, useId, useRef, useState } from 'react';
 import { Eye, FilePlus2, LoaderCircle, RefreshCw, Replace, ShieldCheck, Trash2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import DraggableLoadDocument from './DraggableLoadDocument.jsx';
+import LoadDocumentWorkspace from './LoadDocumentWorkspace.jsx';
 import { loadStaffDocumentContext } from '../services/staffLoadDocumentService.js';
 
 import { managedDocumentTypes as types, documentPermissionDenied as permissionDenied,
   documentMutationError, documentUploadError, documentChoices, documentViewerLoad, documentActionSnapshot } from './loadDocumentsModel.js';
 
-export default function LoadDocumentsManager({ load, documents, onOpenDocs, onManageDocument }) {
+export default function LoadDocumentsManager({ load, documents, onOpenDocs, onManageDocument, variant, active = true, actions, notice, onContextChange }) {
   const { t } = useTranslation();
   const [revision, setRevision] = useState(0);
   const [hydration, setHydration] = useState({ key: null, context: null, error: false });
   const alive = useRef(true);
   const canManage = Boolean(onManageDocument && !load.trashedAt);
+  const needsContext = canManage || variant === 'workspace';
   const signature = JSON.stringify([load.version, documents.map(document => [document.id, document.versionId || document.url]),
     load.documentItems?.map(row => [row.id, row.current_version_id])]);
   const requestKey = `${load.id}:${signature}:${revision}`;
-  const loading = canManage && hydration.key !== requestKey;
-  const error = canManage && !loading && hydration.error;
+  const loading = needsContext && hydration.key !== requestKey;
+  const error = needsContext && !loading && hydration.error;
   useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
   useEffect(() => {
-    if (!canManage) return;
+    if (!needsContext) return;
     let disposed = false;
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 15_000);
@@ -30,7 +32,7 @@ export default function LoadDocumentsManager({ load, documents, onOpenDocs, onMa
       if (!disposed) setHydration(previous => ({ ...previous, context: permissionDenied(cause) ? null : previous.context, key: requestKey, error: true }));
     }).finally(() => clearTimeout(timer));
     return () => { disposed = true; clearTimeout(timer); controller.abort(); };
-  }, [canManage, load.id, requestKey]);
+  }, [needsContext, load.id, requestKey]);
 
   const manage = async (reviewedLoad, action) => {
     let row;
@@ -49,7 +51,11 @@ export default function LoadDocumentsManager({ load, documents, onOpenDocs, onMa
     return row;
   };
 
-  const context = canManage ? hydration.context : null;
+  const context = needsContext ? hydration.context : null;
+  useEffect(() => { onContextChange?.(!loading && !error ? context : null); }, [onContextChange, context, loading, error]);
+  if (variant === 'workspace') return <LoadDocumentWorkspace load={load} documents={documents} context={context} active={active}
+    editable={canManage} loading={loading} error={error} onRefresh={() => setRevision(value => value + 1)} onOpenDocs={onOpenDocs}
+    onManageDocument={canManage && !loading && !error ? manage : null} actions={actions} notice={notice} />;
   return <div className="load-document-manager">
     {canManage ? <div className="load-document-manager-toolbar">
       <p><ShieldCheck size={14} aria-hidden="true" />{t('documentManagement.historyHint')}</p>
@@ -95,11 +101,13 @@ export function DocumentSlot({ load, base, choices, onOpenDocs, onManageDocument
   </div>;
 }
 
-function DocumentCard({ load, document, onOpen, onManageDocument, missingStop, replaceAllowed }) {
+export function DocumentCard({ load, document, onOpen, onManageDocument, missingStop, replaceAllowed, renderView, viewProps, onBusyChange, embedControls = false }) {
   const { t } = useTranslation();
   const dialogRef = useRef(null), fileRef = useRef(null), cancelRef = useRef(null);
   const alive = useRef(true), busyRef = useRef(false), pendingAction = useRef(null), selection = useRef(null), requestId = useRef(0);
   const [state, setState] = useState({ busy: false, progress: null, error: null, action: null });
+  useEffect(() => { onBusyChange?.(state.busy); return () => onBusyChange?.(false); }, [onBusyChange, state.busy]);
+  const View = renderView || DocumentCardView;
   useEffect(() => { alive.current = true; return () => { alive.current = false; requestId.current += 1; }; }, []);
   const createAction = action => documentActionSnapshot(load, document, action);
   const run = async () => {
@@ -140,14 +148,17 @@ function DocumentCard({ load, document, onOpen, onManageDocument, missingStop, r
     setState({ busy: false, progress: null, error: null, action: 'remove' });
     dialogRef.current?.showModal(); cancelRef.current?.focus();
   };
-  return <>
-    <DocumentCardView document={document} state={state} editable={Boolean(onManageDocument)} missingStop={missingStop} replaceAllowed={replaceAllowed}
-      onOpen={onOpen} onChooseFile={chooseFile} onRemove={confirmRemove}
-      onRetry={state.action === 'upload' && ['saveError', 'timeoutError', 'busyError'].includes(state.error) ? run : null} />
+  const controls = <>
     {onManageDocument ? <input ref={fileRef} type="file" hidden accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png"
       aria-label={t('documentManagement.chooseFile', { document: document.title })} onChange={selectedFile} /> : null}
     <DocumentRemovalDialog dialogRef={dialogRef} cancelRef={cancelRef} document={document} state={state}
       onCancel={() => dialogRef.current?.close()} onConfirm={event => { event.preventDefault(); void run(); }} />
+  </>;
+  return <>
+    <View {...viewProps} document={document} state={state} editable={Boolean(onManageDocument)} missingStop={missingStop} replaceAllowed={replaceAllowed}
+      controls={embedControls ? controls : null} onOpen={onOpen} onChooseFile={chooseFile} onRemove={confirmRemove}
+      onRetry={state.action === 'upload' && ['saveError', 'timeoutError', 'busyError'].includes(state.error) ? run : null} />
+    {!embedControls && controls}
   </>;
 }
 

@@ -77,3 +77,7 @@
   .import-right-column { grid-template-rows: 300px auto minmax(350px, auto); }
   .import-detail-panel { max-height: 480px; }
 }
+
+.import-google-maps { position: absolute; top: 12px; left: 12px; z-index: 10; display: grid; place-items: center; width: 44px; height: 44px; color: #1d4ed8; background: #fff; border: 1px solid #dbe3ef; border-radius: 10px; box-shadow: 0 2px 8px #0002; }
+.import-google-maps:hover { background: #eff6ff; }
+.import-google-maps:focus-visible { outline: 3px solid #2563eb; outline-offset: 3px; }

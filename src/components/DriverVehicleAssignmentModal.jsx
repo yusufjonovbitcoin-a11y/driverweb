@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from 'react';
+import useModalFocus from '../hooks/useModalFocus';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { CheckCircle2, LoaderCircle, Truck, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import {
@@ -9,10 +10,12 @@ import {
 
 export default function DriverVehicleAssignmentModal({ driver, onClose, onWorkspaceRefresh }) {
   const { t } = useTranslation();
+  const dialogRef = useRef(null);
   const [vehicles, setVehicles] = useState([]);
   const [selectedVehicleId, setSelectedVehicleId] = useState('');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  useModalFocus(dialogRef, { onClose, busy: saving });
   const [error, setError] = useState('');
 
   useEffect(() => {
@@ -30,13 +33,7 @@ export default function DriverVehicleAssignmentModal({ driver, onClose, onWorksp
     return () => { active = false; };
   }, [driver.id, t]);
 
-  useEffect(() => {
-    const onKeyDown = (event) => {
-      if (event.key === 'Escape' && !saving) onClose();
-    };
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [onClose, saving]);
+
 
   const currentVehicle = useMemo(
     () => vehicles.find((vehicle) => vehicle.driverId === driver.id),
@@ -67,7 +64,7 @@ export default function DriverVehicleAssignmentModal({ driver, onClose, onWorksp
 
   return (
     <div className="fixed inset-0 z-[160] grid place-items-center bg-zinc-950/60 p-3 backdrop-blur-sm" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !saving) onClose(); }}>
-      <section role="dialog" aria-modal="true" aria-labelledby="driver-vehicle-title" className="w-full max-w-xl overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-2xl dark:border-zinc-700 dark:bg-zinc-900">
+      <section ref={dialogRef} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby="driver-vehicle-title" className="w-full max-w-xl overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-2xl dark:border-zinc-700 dark:bg-zinc-900">
         <header className="flex items-start justify-between gap-3 border-b border-zinc-200 px-5 py-4 dark:border-zinc-800">
           <div>
             <h3 id="driver-vehicle-title" className="text-lg font-black text-zinc-900 dark:text-zinc-100">{t('fleet.assignToDriver', { name: driver.name })}</h3>

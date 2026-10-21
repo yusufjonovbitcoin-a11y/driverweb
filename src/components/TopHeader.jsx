@@ -3,6 +3,8 @@ import { useTranslation } from 'react-i18next';
 import { ArrowLeft, FileText, LayoutGrid, MessageSquare, Search, Plus, Sun, Moon, UserRound, X } from 'lucide-react';
 
 const titleKeys = {
+  arrivals: 'arrival.nav',
+  accounting: 'accounting.title',
   analytics: 'analytics.title',
   kanban: 'nav.loads', drivers: 'nav.drivers', map: 'nav.map',
   docs: 'nav.documents', inbox: 'nav.inbox', chat: 'nav.chat', profile: 'nav.profile',
@@ -18,6 +20,8 @@ export default function TopHeader({
   theme,
   toggleTheme,
   onExitDriver,
+  backLabel,
+  backDisabled = false,
   selectedDriver,
   onOpenDriverChat,
   selectedDriverUnreadCount = 0,
@@ -108,9 +112,10 @@ export default function TopHeader({
           <button
             type="button"
             onClick={onExitDriver}
+            disabled={backDisabled}
             className="driver-header-exit"
-            aria-label={t('header.backToDrivers')}
-            title={t('header.backToDrivers')}
+            aria-label={backLabel || t('header.backToDrivers')}
+            title={backLabel || t('header.backToDrivers')}
           >
             <ArrowLeft size={18} aria-hidden="true" />
           </button>

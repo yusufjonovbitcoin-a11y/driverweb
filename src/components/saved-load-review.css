@@ -1,0 +1,66 @@
+.saved-review-page{--ref-ink:var(--ink);--ref-muted:var(--muted);--ref-line:var(--line);--ref-blue:#2456db;background:var(--canvas)}
+.saved-load-workspace{padding:14px 18px;box-sizing:border-box}
+.saved-review-heading{min-width:0}
+.saved-review-heading-copy{min-width:0}
+.saved-review-heading .review-title-line{gap:10px}
+.saved-review-heading h2{font-size:clamp(21px,1.8vw,28px);font-weight:750;letter-spacing:-.045em;line-height:1.25}
+.saved-review-back{display:grid;place-items:center;flex-shrink:0;width:32px;height:32px;border:1px solid var(--line);border-radius:8px;color:var(--muted);background:var(--surface)}
+.saved-review-back:hover{background:var(--canvas);color:var(--review-blue)}
+.saved-review-heading .review-heading-actions{gap:14px;flex-wrap:wrap;justify-content:flex-end}
+.saved-review-heading .review-heading-file{padding-left:42px}
+.saved-review-heading .load-command-trash{min-height:36px;padding:8px 12px;border:1px solid var(--line);border-radius:8px;background:var(--surface);font-size:12px;color:var(--muted)}
+.saved-review-overview{display:grid;gap:14px;margin-bottom:14px}
+.saved-review-overview .reference-card{background:var(--surface);border-color:var(--line);border-radius:12px}
+.saved-review-overview .reference-progress{padding:15px 12px}
+.saved-review-driver .reference-driver-grid{padding:4px 0 0}
+.saved-review-driver .reference-driver-person strong,.saved-review-driver .reference-vehicle strong{font-size:13px}
+.saved-review-driver .reference-field-label,.saved-review-driver .reference-driver-person a,.saved-review-driver .reference-driver-person small{font-size:12px}
+.saved-review-stops .reference-stop{grid-template-columns:50px minmax(0,1fr);gap:10px 14px;padding:18px 0}
+.saved-review-stops .reference-stop-kind{grid-row:1/4;flex-direction:column;gap:6px;align-items:center;font-size:10px}
+.saved-review-stops .reference-stop-schedule{grid-column:2;grid-row:1;justify-self:end;max-width:100%;padding:8px 11px;min-width:110px;font-size:12px;border-color:var(--line);background:var(--canvas)}
+.saved-review-stops .reference-stop-details{grid-column:2;grid-row:2}
+.saved-review-stops .reference-stop-actions{grid-column:2;grid-row:3}
+.saved-review-stops .reference-stop-actions .import-button{font-size:11px}
+.saved-review-stops .reference-stop-marker{width:31px;height:31px}
+.saved-review-stops .reference-stop:not(:last-of-type)::before{content:'';position:absolute;left:25px;top:53px;bottom:0;border-left:1px dashed var(--line)}
+.saved-review-stops .reference-stop+.reference-stop{border-color:var(--line)}
+.saved-review-stops .reference-stop-details h4{font-size:14px}
+.saved-review-stops .reference-stop-address,.saved-review-stops .reference-stop-note,.saved-review-stops .reference-stop-meta{font-size:12px;line-height:1.6}
+.saved-review-stops .reference-stop-note{background:var(--canvas);color:var(--muted);padding:11px}
+.saved-review-map{height:100%;width:100%;position:relative;border-radius:12px;overflow:hidden}
+.saved-review-map>.reference-location-status{position:absolute;top:12px;left:12px;z-index:3;max-width:calc(100% - 100px);box-shadow:0 2px 7px #1222370d}
+.saved-review-page .review-map-frame{background:var(--surface);border:1px solid var(--line)}
+.saved-review-page .review-panels>[role=tabpanel]:has(>.review-route-columns){height:100%;min-height:0}
+.saved-review-page .review-route-columns{height:100%;min-height:400px;grid-template-columns:minmax(270px,.8fr) minmax(0,1.65fr);grid-template-rows:minmax(0,1fr) auto;grid-template-areas:"stops map" "stops stats";gap:10px}
+.saved-review-page .review-route-columns>.review-card{grid-area:stops;min-height:0;max-height:100%;overflow-y:auto;overscroll-behavior:contain;scrollbar-width:thin;padding:13px}
+.saved-review-page .review-route-columns>.review-stack{display:contents}
+.saved-review-page .review-route-columns .review-map-frame{grid-area:map;align-self:stretch;height:100%;min-height:0}
+.saved-review-page .review-route-columns .review-card-heading{margin-bottom:8px;gap:8px}
+.saved-review-page .review-route-columns .review-card-heading h2{font-size:13px;gap:7px;margin-bottom:0}
+.saved-review-page .review-route-columns .saved-review-stops .reference-stop{grid-template-columns:40px minmax(0,1fr);gap:7px 8px;padding:12px 0}
+.saved-review-page .review-route-columns .saved-review-stops .reference-stop-marker{width:27px;height:27px;font-size:10px}
+.saved-review-page .review-route-columns .saved-review-stops .reference-stop:not(:last-of-type)::before{left:20px;top:42px}
+.saved-review-page .review-route-columns .saved-review-stops .reference-stop-schedule{padding:5px 8px;min-width:95px;font-size:11px}
+.saved-review-page .review-route-columns .saved-review-stops .reference-stop-details h4{font-size:12px}
+.saved-review-page .review-route-columns .saved-review-stops :is(.reference-stop-address,.reference-stop-note,.reference-stop-meta){font-size:11px;line-height:1.5}
+.saved-review-page .review-route-columns .saved-review-stops .reference-stop-meta{gap:6px 10px;margin-top:7px}
+.saved-review-page .review-route-columns .saved-review-stops .reference-stop-note{padding:8px;margin-top:7px}
+.saved-review-page .review-route-columns .saved-review-stops .import-button{min-height:32px;padding:6px 8px;font-size:10px}
+.saved-review-page .review-route-columns .import-road-summary{grid-area:stats;grid-template-columns:repeat(4,minmax(0,1fr));padding:12px;gap:10px;align-items:start}
+.saved-review-page .review-route-columns .import-road-summary>div+div{border-left:1px solid var(--line);padding-left:10px}
+.saved-review-page .review-route-columns .import-road-summary>div>span{min-height:30px;margin-bottom:4px}
+.saved-review-page .review-route-columns .import-road-summary :is(span,p){font-size:10px;line-height:1.5}
+.saved-review-page .review-route-columns .import-road-summary strong{font-size:12px}
+.saved-review-page .review-panels>[role=tabpanel]:has(>.load-details-documents){height:auto}
+.saved-review-page .load-details-documents{padding:20px;border:1px solid var(--line);border-radius:12px;background:var(--surface)}
+.saved-review-page .load-document-section-header{margin-bottom:16px}
+.saved-review-page .load-document-section-header h3{font-size:16px}
+.saved-review-page .load-document-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
+.saved-review-page .review-card .load-instructions{height:auto;min-height:200px;margin-bottom:18px}
+.dark .saved-review-page .reference-status{background:#153a30;color:#83e1bd}
+.dark .saved-review-page .reference-status.is-neutral{background:#26354a;color:#b0bfd4}
+@media(max-width:1150px){.saved-load-workspace{padding:12px}.saved-review-heading .review-heading-actions{gap:9px}.saved-review-heading .import-total strong{font-size:21px}}
+@media(max-width:950px){.saved-load-workspace{overflow-y:auto}.saved-review-page .review-tabs{position:sticky;top:0;z-index:4}.saved-review-heading{flex-wrap:wrap}.saved-review-heading .review-heading-actions{justify-content:flex-start}}
+@media(max-width:950px){.saved-review-page .review-panels>[role=tabpanel]:has(>.review-route-columns){height:auto}.saved-review-page .review-route-columns{height:auto;min-height:0;grid-template-columns:minmax(0,1fr);grid-template-rows:auto;grid-template-areas:"map" "stats" "stops"}.saved-review-page .review-route-columns .review-map-frame{height:clamp(320px,50dvh,440px)}.saved-review-page .review-route-columns>.review-card{max-height:none;overflow:visible}}
+@media(max-width:600px){.saved-review-page .review-route-columns .import-road-summary{grid-template-columns:repeat(2,minmax(0,1fr))}.saved-review-page .review-route-columns .import-road-summary>div:nth-child(3){border-left:0;padding-left:0}}
+@media(max-width:600px){.saved-load-workspace{padding:10px}.saved-review-heading .review-heading-file{padding-left:0}.saved-review-heading .review-title-line{gap:8px}.saved-review-heading h2{font-size:21px}.saved-review-heading .review-heading-actions{justify-content:space-between}.saved-review-page .load-document-grid{grid-template-columns:1fr}.saved-review-page .load-details-documents{padding:13px}.saved-review-page .reference-driver-grid{grid-template-columns:1fr;gap:15px}.saved-review-page .reference-driver-grid>div{padding:0;border:0}.saved-review-stops .reference-stop{grid-template-columns:36px minmax(0,1fr);gap:8px}.saved-review-stops .reference-stop:not(:last-of-type)::before{left:18px}.saved-review-stops .reference-stop-kind strong{font-size:9px}}

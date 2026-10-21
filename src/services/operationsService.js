@@ -1,3 +1,4 @@
+import { partitionWorkspaceMembers } from './workspaceMembers';
 import { requireSupabase } from '../lib/supabase';
 import { invokeAuthenticatedFunction as invokeWithSession } from './authenticatedFunction.js';
 import { prepareDriverPayAssignment } from './driverPay.js';
@@ -103,6 +104,7 @@ function toUiLoad(row, offersByLoad, documentsByLoad, warningsByLoad, reviewsByD
       facility: row.pickup_facility || null,
       address: row.pickup_address || [row.pickup_city, row.pickup_region].filter(Boolean).join(', '),
       ...pickup,
+      appointmentTo: row.pickup_to || null,
       postalCode: row.pickup_postal_code || '',
       timezone: row.pickup_timezone || '',
       contactName: row.pickup_contact_name || '',
@@ -116,6 +118,7 @@ function toUiLoad(row, offersByLoad, documentsByLoad, warningsByLoad, reviewsByD
       facility: row.delivery_facility || null,
       address: row.delivery_address || [row.delivery_city, row.delivery_region].filter(Boolean).join(', '),
       ...delivery,
+      appointmentTo: row.delivery_to || null,
       postalCode: row.delivery_postal_code || '',
       timezone: row.delivery_timezone || '',
       contactName: row.delivery_contact_name || '',
@@ -171,6 +174,7 @@ function toUiDriver(member, presence, avatar = null) {
   return {
     id: member.id,
     name: member.full_name,
+    accountStatus: member.status,
     email: member.email || null,
     driverNumber: `#${member.id.slice(0, 4).toUpperCase()}`,
     phone: member.phone || null,
@@ -253,8 +257,7 @@ export async function fetchWorkspace() {
   ]) {
     if (result.error) throw result.error;
   }
-  const members = (membersResult.data || []).filter((member) => member.status === 'active')
-    .sort((a, b) => (a.full_name || '').localeCompare(b.full_name || ''));
+  const { active: members, roster: rosterMembers } = partitionWorkspaceMembers(membersResult.data || []);
   loadsResult.data.sort((a, b) => String(b.updated_at).localeCompare(String(a.updated_at)) || a.id.localeCompare(b.id));
   offersResult.data.sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)));
   warningsResult.data.sort((a, b) => String(a.created_at).localeCompare(String(b.created_at)));
@@ -298,6 +301,8 @@ export async function fetchWorkspace() {
         presenceByDriver.get(member.id),
       )
     )),
+    rosterDrivers: rosterMembers.map((member) => toUiDriver(member, presenceByDriver.get(member.id))),
+    rosterMembers: rosterMembers.map((member) => toUiMember(member)),
     members: members.map((member) => toUiMember(member)),
   };
 }

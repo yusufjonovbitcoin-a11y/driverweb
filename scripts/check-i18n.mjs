@@ -38,7 +38,7 @@ const sourcePaths = [
   path.join(root, 'src/utils/globalSearch.js'),
   ...(await readdir(componentDir)).filter((name) => name.endsWith('.jsx')).map((name) => path.join(componentDir, name)),
 ];
-const namespaces = 'common|nav|header|auth|profile|loads|loadStatus|drivers|driverStatus|documents|inbox|ingestionStatus|chat|map|search|roles|admin|errors|toasts|missingFields|warningCodes|accountStatus|driverInstructions';
+const namespaces = 'common|nav|header|auth|profile|arrival|loads|loadStatus|drivers|driverStatus|documents|inbox|ingestionStatus|chat|map|search|roles|admin|errors|toasts|missingFields|warningCodes|accountStatus|driverInstructions';
 const keyPattern = new RegExp(`["']((?:${namespaces})\\.[A-Za-z0-9_.-]+)["']`, 'g');
 const referenced = new Set();
 for (const sourcePath of sourcePaths) {

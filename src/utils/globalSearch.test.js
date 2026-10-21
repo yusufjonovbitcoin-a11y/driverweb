@@ -7,6 +7,12 @@ test('finds trip accounting through the analytics navigation entry', () => {
   assert.ok(results.some(result => result.tab === 'analytics'));
 });
 
+test('finds the arrival control page by ETA and Uzbek navigation label', () => {
+  for (const query of ['eta', 'reyslar nazorati']) {
+    assert.ok(buildGlobalSearchResults({ query }).some(result => result.tab === 'arrivals'));
+  }
+});
+
 const drivers = [{
   id: 'driver-1',
   name: 'Amin Karimov',

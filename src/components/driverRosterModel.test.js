@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   activeLoadsForDriver,
+  completedDocumentLoads,
   lastSeenKind,
   partitionDriverLoads,
   rosterAppointment,
@@ -60,4 +61,17 @@ test('driver roster resolves stop address and appointment without inventing data
     '2026-10-01T08:30:00Z',
   );
   assert.equal(rosterAppointment({}), null);
+});
+
+test('documents include only completed non-trashed loads, respecting database status', () => {
+  const loads = [
+    { id: 'done', databaseStatus: 'completed', status: 'COMPLETED' },
+    { id: 'legacy', status: 'COMPLETED' },
+    { id: 'assigned', status: 'ASSIGNED' },
+    { id: 'delivered', databaseStatus: 'delivered', status: 'DELIVERED' },
+    { id: 'cancelled', databaseStatus: 'cancelled', status: 'COMPLETED' },
+    { id: 'disputed', databaseStatus: 'dispute', status: 'COMPLETED' },
+    { id: 'trash', databaseStatus: 'completed', trashedAt: '2026-10-17' },
+  ];
+  assert.deepEqual(completedDocumentLoads(loads).map(l => l.id), ['done', 'legacy']);
 });

@@ -847,10 +847,7 @@ export default function KanbanBoard({
           onTrashLoad={onTrashLoad}
           onManageDocument={onManageDocument}
           onClose={closeLoadDetails}
-          onOpenDocs={(load, documentId) => {
-            setSelectedLoadDetails(null);
-            onOpenDocs(load, documentId);
-          }}
+          onOpenDocs={onOpenDocs}
         />
         </React.Suspense>
       )}
