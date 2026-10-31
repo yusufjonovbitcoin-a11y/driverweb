@@ -9,6 +9,7 @@ import { createBatchedNotifier, MediaSends, PendingSends, reconcileHistory } fro
 import { createChatSubscription } from './chatSubscription';
 import { invalidateSignedMediaUrl } from './mediaUrlCache';
 import { uploadChatMedia } from './chatStorageService';
+import { readChatPreviewPages } from './chatPreviewPages';
 
 const bucket = 'chat-media';
 let sessionStorage;
@@ -32,17 +33,29 @@ function subscribeChanges(callback) {
   changeListeners += 1;
   if (!changeChannel) {
     const notify = () => { previewGeneration++; previewCache = null; changes.notify(); };
-    changeChannel = client.channel('chat-summary-changes')
+    // Supabase reuses channels by topic, including one still unsubscribing.
+    // A fresh topic avoids adding handlers to an already-subscribed channel.
+    changeChannel = client.channel(`chat-summary-changes:${crypto.randomUUID()}`)
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'chat_messages' }, notify)
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'chat_messages' }, notify)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'chat_read_preferences' }, notify)
       .subscribe((status) => { if (status === 'SUBSCRIBED') notify(); });
   }
+  let subscribed = true;
   return () => {
+    if (!subscribed) return;
+    subscribed = false;
     off(); changeListeners -= 1;
     if (!changeListeners && changeChannel) { client.removeChannel(changeChannel); changeChannel = null; changes.clear(); mediaUrls.clear(); previewCache = null; previewGeneration++; }
   };
 }
+
+if (import.meta.hot) import.meta.hot.dispose(() => {
+  if (changeChannel) void requireSupabase().removeChannel(changeChannel);
+  changeChannel = null;
+  changes.clear();
+  mediaUrls.clear();
+});
 
 function assertNoError(result) {
   if (result.error) throw result.error;
@@ -276,17 +289,20 @@ export async function fetchChatPreviews() {
   if (previewRequest?.actor === actor) return previewRequest.promise;
   const generation = previewGeneration;
   const promise = (async () => {
-  const result = await client
-    .from('chat_conversations')
-    .select('id, dispatcher_id, driver_id, chat_messages!left(id, sender_id, kind, body, file_name, read_at, created_at, deleted_at)')
-    .is('chat_messages.deleted_at', null)
-    .order('last_message_at', { ascending: false })
-    .order('created_at', { referencedTable: 'chat_messages', ascending: false })
-    .order('id', { referencedTable: 'chat_messages', ascending: false })
-    .limit(1, { referencedTable: 'chat_messages' });
-  const rows = assertNoError(result) || [];
-  if (generation === previewGeneration) previewCache = { actor, at: Date.now(), rows };
-  return rows;
+    const rows = await readChatPreviewPages(async (after, pageSize) => {
+      let query = client
+        .from('chat_conversations')
+        .select('id, dispatcher_id, driver_id, last_message_at, chat_messages!left(id, sender_id, kind, body, file_name, read_at, created_at, deleted_at)')
+        .is('chat_messages.deleted_at', null)
+        .order('id', { ascending: true })
+        .order('created_at', { referencedTable: 'chat_messages', ascending: false })
+        .order('id', { referencedTable: 'chat_messages', ascending: false })
+        .limit(1, { referencedTable: 'chat_messages' }).limit(pageSize);
+      if (after) query = query.gt('id', after);
+      return assertNoError(await query) || [];
+    });
+    if (generation === previewGeneration) previewCache = { actor, at: Date.now(), rows };
+    return rows;
   })();
   const request = { actor, promise };
   previewRequest = request;
@@ -321,6 +337,10 @@ export async function fetchRingingCalls() {
   const { data, error } = await client.rpc('get_incoming_chat_calls');
   if (error) throw error;
   return data || [];
+}
+
+export async function fetchChatCall(callId) {
+  return assertNoError(await requireSupabase().from('chat_calls').select('*').eq('id', callId).maybeSingle());
 }
 
 export function subscribeUnreadChats(onChange) {
@@ -380,22 +400,32 @@ export async function fetchRtcIceServers() {
   }
 }
 
-export async function publishSignal(callId, kind, payload) {
+export async function publishSignal(callId, kind, payload, signal) {
   const client = requireSupabase();
-  return assertNoError(await client.rpc('publish_chat_signal', {
+  let query = client.rpc('publish_chat_signal', {
     call_id: callId,
     signal_kind: kind,
     signal_payload: payload,
-  }));
+  });
+  if (signal) query = query.abortSignal(signal);
+  return assertNoError(await query);
 }
 
-export async function fetchCallSignals(callId) {
+export async function fetchCallSignals(callId, after = null) {
   const client = requireSupabase();
-  const { data, error } = await client
-    .from('chat_call_signals')
-    .select('*')
-    .eq('call_id', callId)
-    .order('id', { ascending: true });
-  if (error) throw error;
-  return data || [];
+  const rows = [];
+  while (true) {
+    let query = client
+      .from('chat_call_signals')
+      .select('*')
+      .eq('call_id', callId)
+      .order('id', { ascending: true }).limit(200);
+    if (after != null) query = query.gt('id', after);
+    const { data, error } = await query;
+    if (error) throw error;
+    if (!data?.length) return rows;
+    const next = data.at(-1).id;
+    if (after != null && BigInt(next) <= BigInt(after)) throw new Error('CHAT_SIGNAL_CURSOR_INVALID');
+    rows.push(...data); after = next;
+  }
 }

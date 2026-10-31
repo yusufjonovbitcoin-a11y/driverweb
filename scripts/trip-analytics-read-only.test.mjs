@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 
-const readMigration = (name) => readFileSync(new URL(`../supabase/migrations/${name}`, import.meta.url), 'utf8');
+const readMigration = (name) => readFileSync(new URL(`../supabase/migrations/${name}`, import.meta.url), 'utf8').replaceAll('\r\n', '\n');
 const previous = readMigration('20261002033948_analytics_dashboard_charts.sql');
 const migration = readMigration('20261003090404_trip_analytics_read_only_actor.sql');
 const withoutComments = (sql) => sql.replace(/^--.*\n/gm, '').trim();

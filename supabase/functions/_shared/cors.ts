@@ -55,6 +55,7 @@ function applyCors(response: Response, origin: string) {
 export async function withCors(
   request: Request,
   handler: () => Response | Promise<Response>,
+  options: { allowedMethods?: string; allowedHeaders?: string } = {},
 ) {
   const requestedOrigin = request.headers.get("Origin");
   const origin = allowedCorsOrigin(requestedOrigin);
@@ -66,8 +67,8 @@ export async function withCors(
       });
     }
     const headers = new Headers({
-      "Access-Control-Allow-Headers": DEFAULT_ALLOWED_HEADERS,
-      "Access-Control-Allow-Methods": "POST, OPTIONS",
+      "Access-Control-Allow-Headers": options.allowedHeaders || DEFAULT_ALLOWED_HEADERS,
+      "Access-Control-Allow-Methods": options.allowedMethods || "POST, OPTIONS",
       "Access-Control-Max-Age": "86400",
       "Vary": "Origin",
     });

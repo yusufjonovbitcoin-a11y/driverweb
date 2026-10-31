@@ -3,3 +3,5 @@ export const usd = (value) =>
   value == null ? "—" : formatCurrency(Number(value) === 0 ? 0 : Number(value));
 export const day = (value) =>
   value ? formatDate(value, { dateStyle: "short" }) : "—";
+// Deductions are stored positive; negative amounts are credits to the driver.
+export const deductionMoney = cents => `${cents < 0 ? '+' : cents > 0 ? '−' : ''}${usd(Math.abs(cents) / 100)}`;

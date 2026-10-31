@@ -4,7 +4,7 @@
 .fleet-loads-identity { display: flex; align-items: center; gap: 13px; flex: 1 1 185px; min-width: 0; }
 .fleet-loads-icon { display: grid; place-items: center; flex: 0 0 52px; height: 52px; border-radius: 13px; background: var(--accent-soft); color: var(--accent); }
 .fleet-loads-identity h1 { margin: 0; color: var(--ink); font-size: 23px; line-height: 1.2; font-weight: 750; letter-spacing: -.035em; }
-.fleet-loads-identity p { display: flex; align-items: center; gap: 6px; margin: 7px 0 0; color: var(--muted); font-size: 12px; }
+.fleet-loads-identity p { display: flex; align-items: center; gap: 6px; margin: 7px 0 0; color: var(--muted); font-size: var(--dispatch-caption); }
 .fleet-loads-stats > div { min-width: 80px; padding-inline: 15px; }
 .fleet-loads-import { flex-shrink: 0; }
 .fleet-loads-import button:disabled { opacity: .65; }
@@ -14,7 +14,7 @@
 .fleet-loads-board .driver-board-search { flex: 1 1 230px; width: auto; max-width: 350px; }
 .fleet-driver-filter { display: flex; align-items: center; gap: 6px; min-width: 0; max-width: 215px; height: 38px; padding-left: 10px; color: var(--muted); border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
 .fleet-driver-filter svg { flex-shrink: 0; }
-.fleet-driver-filter select { width: 150px; min-width: 0; height: 100%; padding-inline: 2px 8px; color: var(--ink); background: transparent; border: 0; font-size: 12px; text-overflow: ellipsis; }
+.fleet-driver-filter select { width: 150px; min-width: 0; height: 100%; padding-inline: 2px 8px; color: var(--ink); background: transparent; border: 0; font-size: var(--dispatch-caption); text-overflow: ellipsis; }
 .fleet-driver-filter:focus-within { outline: 2px solid var(--accent); outline-offset: 2px; }
 .fleet-driver-filter select:focus-visible { outline: 0; }
 .fleet-loads-view .fleet-loads-board .kanban-columns { grid-template-columns: repeat(var(--board-column-count), minmax(200px, 1fr)); grid-auto-rows: minmax(0, 1fr); overflow-x: auto; overflow-y: hidden; overscroll-behavior-x: contain; }
@@ -31,15 +31,15 @@
   .fleet-loads-board .driver-trip-card > .driver-trip-card-route { display: grid; grid-template-columns: 15px minmax(0, 1fr); align-items: start; column-gap: 8px; row-gap: 5px; }
   .fleet-loads-board .driver-trip-route-arrow { line-height: 1; }
 }
-.fleet-load-driver small { display: block; margin-top: 2px; color: var(--muted); font-size: 10px; font-weight: 400; }
+.fleet-load-driver small { display: block; margin-top: 2px; color: var(--muted); font-size: var(--dispatch-caption); font-weight: 400; }
 .fleet-load-card-actions { display: flex; align-items: center; justify-content: flex-end; gap: 7px; }
-.fleet-load-card-actions button { display: inline-flex; align-items: center; justify-content: center; min-height: 30px; border-radius: 6px; font-size: 11px; font-weight: 600; }
+.fleet-load-card-actions button { display: inline-flex; align-items: center; justify-content: center; min-height: 30px; border-radius: 6px; font-size: var(--dispatch-caption); font-weight: 600; }
 .fleet-load-assign { flex: 1; padding: 5px 8px; color: var(--accent); background: var(--accent-soft); }
 .fleet-load-assign:hover { box-shadow: inset 0 0 0 1px var(--accent); }
 .fleet-load-delete, .fleet-load-documents { width: 30px; color: var(--muted); background: var(--canvas); }
 .fleet-load-delete:hover { color: #c33737; background: #fff0ee; }
 .fleet-load-documents:hover { color: var(--accent); background: var(--accent-soft); }
-.fleet-loads-filter-feedback { display: flex; flex-shrink: 0; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; padding: 8px 11px; margin-bottom: 10px; border-radius: 7px; background: var(--canvas); color: var(--muted); font-size: 12px; }
+.fleet-loads-filter-feedback { display: flex; flex-shrink: 0; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; padding: 8px 11px; margin-bottom: 10px; border-radius: 7px; background: var(--canvas); color: var(--muted); font-size: var(--dispatch-caption); }
 .fleet-loads-filter-feedback button { color: var(--accent); font-weight: 600; }
 .dark .fleet-loads-stats > div:nth-child(2) strong { color: #65c9bb; }
 @media (max-width: 1150px) {
@@ -52,7 +52,7 @@
   .fleet-loads-identity { flex-basis: 100%; }
   .fleet-loads-view .fleet-loads-stats { width: 100%; }
   .fleet-loads-stats > div { flex: 1; min-width: 0; padding-inline: 8px; }
-  .fleet-loads-stats span { white-space: normal; font-size: 10px; }
+  .fleet-loads-stats span { white-space: normal; font-size: var(--dispatch-caption); }
   .fleet-loads-import { width: 100%; }
   .fleet-loads-board .driver-board-search { flex-basis: 100%; }
   .fleet-driver-filter { flex: 1; max-width: none; }

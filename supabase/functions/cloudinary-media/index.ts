@@ -1,4 +1,5 @@
 import { withCors } from "../_shared/cors.ts";
+import { requireUserMfa } from "../_shared/mfa.ts";
 import { temporaryAuthenticatedDownloadUrl } from "../_shared/cloudinary-delivery.ts";
 import { canDeleteMedia } from "../_shared/media-permissions.ts";
 import { hasDurableMediaReference } from "../_shared/media-reference-guard.ts";
@@ -116,6 +117,7 @@ async function authenticate(request: Request, supabaseUrl: string, serviceRoleKe
   const token = authorization.replace(/^Bearer\s+/i, "");
   const { data: authData, error: authError } = await admin.auth.getUser(token);
   if (authError || !authData.user) throw new Response(JSON.stringify({ error: "Invalid session" }), { status: 401 });
+  await requireUserMfa(authorization);
   const { data: profileRaw, error: profileError } = await admin.from("profiles")
     .select("id,company_id,role,status").eq("id", authData.user.id).maybeSingle();
   const profile = profileRaw as {

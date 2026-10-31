@@ -218,7 +218,6 @@ export default function QuickDriverModal({
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder={t('drivers.searchPlaceholder')}
                 className="w-full bg-zinc-50 dark:bg-zinc-900 border border-zinc-200/80 dark:border-zinc-800 rounded-xl pl-9 pr-8 py-2 text-sm text-zinc-900 dark:text-zinc-100 placeholder-zinc-400 focus:outline-none focus:border-zinc-400 transition-colors"
-                autoFocus
               />
               {searchQuery && (
                 <button

@@ -36,8 +36,14 @@
   --dispatch-space-8: 32px;
   --dispatch-caption: 12px;
   --dispatch-body: 14px;
+  --dispatch-control-text: 14px;
+  --dispatch-table-text: 14px;
+  --dispatch-table-heading: 12px;
+  --dispatch-subheading: 16px;
+  --dispatch-body-leading: 1.5;
   --dispatch-section: 18px;
   --dispatch-title: 28px;
+  --dispatch-metric: 28px;
   --dispatch-motion: 140ms;
   --dispatch-ease: cubic-bezier(.23, 1, .32, 1);
   /* Compatibility names consumed by existing workspaces. */

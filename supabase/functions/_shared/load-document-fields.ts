@@ -9,6 +9,7 @@ export const EXTRA_STOP_FIELDS = ['scheduledDate', 'timePrinted', 'timingNote', 
 export const STAFF_DOCUMENT_FIELDS = new Set([
   'cargoValuePrinted', 'paymentTerms', 'billingEmail', 'requiredDocuments', 'documentDeadline',
   'accessorialTerms', 'carrierName', 'carrierMc', 'carrierDot', 'documentDriverName', 'documentDriverPhone',
+  'accessorialChargesPrinted', 'brokerMc', 'brokerAddress',
 ]);
 export const EXTRA_DOCUMENT_PROPERTIES = Object.fromEntries(EXTRA_DOCUMENT_FIELDS.map(key => [key, { type: ['string', 'null'] }]));
 export const EXTRA_STOP_PROPERTIES = Object.fromEntries(EXTRA_STOP_FIELDS.map(key => [key, { type: ['string', 'null'] }]));

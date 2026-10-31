@@ -230,7 +230,7 @@ export default function TopHeader({
               </span>
             )}
           </button>
-        ) : onOpenCreateModal && (
+        ) : onOpenCreateModal && activeTab !== 'accounting' && (
           <button type="button" onClick={onOpenCreateModal} className="primary-button">
             <Plus size={17} aria-hidden="true" />
             <span>{t('header.createLoad')}</span>

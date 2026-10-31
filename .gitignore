@@ -27,7 +27,8 @@ dist-ssr
 .vercel
 
 # Local evaluations can contain customer document data.
-output/evaluations/
+/output/
+/tmp/
 __pycache__/
 .venv/
 .env.pdf-worker

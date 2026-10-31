@@ -1,14 +1,16 @@
 import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { LoaderCircle, RotateCw } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { getDocument, GlobalWorkerOptions } from 'pdfjs-dist';
+import { getDocument } from 'pdfjs-dist';
 import { EventBus, PDFLinkService, PDFViewer } from 'pdfjs-dist/web/pdf_viewer.mjs';
-import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 import DocumentViewerFrame, { DocumentThumbnail } from './DocumentViewerFrame';
 import 'pdfjs-dist/web/pdf_viewer.css';
 import './pdfViewer.css';
+import { measureDocumentStage } from '../services/documentPerformance.js';
+import { formatNumber } from '../i18n/format';
+import { prewarmPdfWorker } from './pdfWorker.js';
 
-GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
 const assetRoot = `${import.meta.env.BASE_URL}pdfjs/`;
 
 export default function PdfDocumentViewer({ url, title, onOpenOriginal, onRetrySource, ...actions }) {
@@ -17,14 +19,20 @@ export default function PdfDocumentViewer({ url, title, onOpenOriginal, onRetryS
   return <PdfSession key={`${url}:${attempt}`} url={url} title={title} onOpenOriginal={onOpenOriginal} {...actions} onRetry={onRetrySource || (() => setAttempt((value) => value + 1))} />;
 }
 
-function PdfSession({ url, title, onRetry, onOpenOriginal, onSourceError, onDownload, downloading, actionError, presentation }) {
+function PdfSession({ url, loadData, loadPreview, title, onFirstPagePaint, onPreviewPaint, onRetry, onOpenOriginal, onSourceError, onDownload, downloading, actionError, presentation, renderPageOverlay, viewStateRef }) {
   const { t } = useTranslation();
   const [pdf, setPdf] = useState(null);
   const [pages, setPages] = useState([]);
   const [error, setError] = useState(null);
+  const [progress, setProgress] = useState(null);
+  const [firstPageReady, setFirstPageReady] = useState(false);
+  const [previewUrl, setPreviewUrl] = useState(null);
+  const [previewReady, setPreviewReady] = useState(false);
   const [pageNumber, setPageNumber] = useState(1);
   const [zoom, setZoom] = useState(1);
-  const [sidebarOpen, setSidebarOpen] = useState(() => presentation !== 'workspace' && window.matchMedia('(min-width: 640px)').matches);
+  const [sidebarOpen, setSidebarOpen] = useState(() => !renderPageOverlay && presentation !== 'workspace' && window.matchMedia('(min-width: 640px)').matches);
+  const [overlayHosts, setOverlayHosts] = useState([]);
+  const overlayEnabled = Boolean(renderPageOverlay);
   const viewportRef = useRef(null);
   const containerRef = useRef(null);
   const viewerElementRef = useRef(null);
@@ -32,8 +40,22 @@ function PdfSession({ url, title, onRetry, onOpenOriginal, onSourceError, onDown
   const linkServiceRef = useRef(null);
   const zoomRef = useRef(1);
   const thumbnailsRef = useRef(null);
+  const loadingDeadline = useRef(null);
+  const previewScroll = useRef(0);
 
   useEffect(() => {
+    if (!loadPreview || firstPageReady) return;
+    const controller = new AbortController(); let objectUrl;
+    void loadPreview({ signal: controller.signal }).then(blob => {
+      if (controller.signal.aborted) return;
+      objectUrl = URL.createObjectURL(blob); setPreviewUrl(objectUrl);
+    }).catch(() => {}); // A preview failure never prevents opening the original.
+    return () => { controller.abort(); if (objectUrl) URL.revokeObjectURL(objectUrl); };
+  }, [loadPreview, firstPageReady]);
+
+  useEffect(() => {
+    const initialView = viewStateRef?.current;
+    zoomRef.current = initialView?.zoom || 1;
     const controller = new AbortController();
     const eventBus = new EventBus();
     const linkService = new PDFLinkService({ eventBus });
@@ -48,8 +70,46 @@ function PdfSession({ url, title, onRetry, onOpenOriginal, onSourceError, onDown
     linkService.setViewer(viewer);
     pdfViewerRef.current = viewer;
     linkServiceRef.current = linkService;
+    const refreshOverlays = () => {
+      if (!overlayEnabled) return;
+      const hosts = Array.from({ length: viewer.pagesCount }, (_, index) => {
+        const page = viewer.getPageView(index).div;
+        let host = page.querySelector(':scope > .pdf-custom-overlay');
+        if (!host) {
+          host = document.createElement('div');
+          host.className = 'pdf-custom-overlay';
+          page.appendChild(host);
+        }
+        return host;
+      });
+      setOverlayHosts(previous => previous.length === hosts.length && previous.every((host, i) => host === hosts[i]) ? previous : hosts);
+    };
     eventBus.on('pagesinit', () => {
       viewer.currentScaleValue = 'page-width';
+      if (zoomRef.current !== 1) viewer.currentScale *= zoomRef.current;
+      setZoom(zoomRef.current);
+      refreshOverlays();
+    }, { signal: controller.signal });
+    let restored = false;
+    let firstPaint = true;
+    const firstPaintTime = measureDocumentStage('first-page-painted');
+    eventBus.on('pagerendered', ({ error: renderError }) => {
+      if (renderError) {
+        clearTimeout(loadingDeadline.current);
+        if (!onSourceError?.()) setError('pdfLoadError');
+        return;
+      }
+      if (firstPaint) {
+        clearTimeout(loadingDeadline.current);
+        firstPaint = false; firstPaintTime(); onFirstPagePaint?.(); setFirstPageReady(true);
+        if (previewScroll.current) containerRef.current.scrollTop = previewScroll.current;
+      }
+      refreshOverlays();
+      if (!restored && initialView) {
+        containerRef.current.scrollTop = initialView.top;
+        containerRef.current.scrollLeft = initialView.left;
+        restored = true;
+      }
     }, { signal: controller.signal });
     eventBus.on('pagechanging', ({ pageNumber: currentPage }) => {
       setPageNumber(currentPage);
@@ -60,7 +120,7 @@ function PdfSession({ url, title, onRetry, onOpenOriginal, onSourceError, onDown
       pdfViewerRef.current = null;
       linkServiceRef.current = null;
     };
-  }, []);
+  }, [overlayEnabled, viewStateRef, onFirstPagePaint, onSourceError]);
 
   useEffect(() => {
     const observer = new ResizeObserver(() => {
@@ -75,24 +135,43 @@ function PdfSession({ url, title, onRetry, onOpenOriginal, onSourceError, onDown
 
   useEffect(() => {
     let cancelled = false;
-    const task = getDocument({
-      url,
-      withCredentials: false,
-      isEvalSupported: false,
-      cMapUrl: `${assetRoot}cmaps/`,
-      cMapPacked: true,
-      standardFontDataUrl: `${assetRoot}standard_fonts/`,
-      wasmUrl: `${assetRoot}wasm/`,
-      iccUrl: `${assetRoot}iccs/`,
+    let task;
+    const controller = new AbortController();
+    const documentTime = measureDocumentStage('worker-download-parse');
+    // Start the worker alongside the managed transfer, not after all bytes arrive.
+    const loaded = Promise.all([prewarmPdfWorker(), loadData ? loadData({ signal: controller.signal, onProgress: setProgress }) : null]).then(([worker, data]) => {
+      if (cancelled) return null;
+      task = getDocument({
+        ...(data?.url ? data : data ? { data } : { url }),
+        worker,
+        withCredentials: false,
+        isEvalSupported: false,
+        cMapUrl: `${assetRoot}cmaps/`,
+        cMapPacked: true,
+        standardFontDataUrl: `${assetRoot}standard_fonts/`,
+        wasmUrl: `${assetRoot}wasm/`,
+        iccUrl: `${assetRoot}iccs/`,
+      });
+      task.onProgress = setProgress;
+      return task.promise;
     });
-    task.promise.then(async (document) => {
+    // Covers worker initialization and legacy URL loaders as well as transfers.
+    const timeout = setTimeout(() => {
       if (cancelled) return;
+      cancelled = true; controller.abort(); void task?.destroy().catch(() => {});
+      if (!onSourceError?.()) setError('pdfLoadError');
+    }, 45_000);
+    loadingDeadline.current = timeout;
+    loaded.then(async (document) => {
+      if (cancelled || !document) return;
+      documentTime();
       pdfViewerRef.current?.setDocument(document);
       linkServiceRef.current?.setDocument(document);
       setPdf(document);
       // Read only dimensions first so the scrolling layout never jumps when a
       // distant thumbnail loads. Limit concurrent metadata work for long PDFs.
       const dimensions = [];
+      const dimensionsTime = measureDocumentStage('all-page-dimensions');
       for (let start = 1; start <= document.numPages; start += 16) {
         if (cancelled) return;
         const batch = await Promise.all(Array.from({ length: Math.min(16, document.numPages - start + 1) }, async (_, index) => {
@@ -103,18 +182,21 @@ function PdfSession({ url, title, onRetry, onOpenOriginal, onSourceError, onDown
         dimensions.push(...batch);
       }
       if (!cancelled) {
+        dimensionsTime();
         setPages(dimensions);
       }
     }).catch((reason) => {
+      clearTimeout(timeout);
       if (cancelled) return;
       if (reason?.name !== 'PasswordException' && onSourceError?.()) return;
       setError(reason?.name === 'PasswordException' ? 'pdfPasswordProtected' : 'pdfLoadError');
     });
     return () => {
       cancelled = true;
-      void task.destroy().catch(() => {});
+      clearTimeout(timeout); controller.abort();
+      void task?.destroy().catch(() => {});
     };
-  }, [url, onSourceError]);
+  }, [url, loadData, onSourceError]);
 
   useEffect(() => {
     const sidebar = thumbnailsRef.current;
@@ -137,27 +219,35 @@ function PdfSession({ url, title, onRetry, onOpenOriginal, onSourceError, onDown
     if (nextZoom === 1) viewer.currentScaleValue = 'page-width';
     else viewer.currentScale *= nextZoom / zoom;
     zoomRef.current = nextZoom;
+    if (viewStateRef) viewStateRef.current = { top: containerRef.current.scrollTop, left: containerRef.current.scrollLeft, zoom: nextZoom };
     setZoom(nextZoom);
   };
 
   return (
     <DocumentViewerFrame presentation={presentation} url={url} title={title} onOpenOriginal={onOpenOriginal} onDownload={onDownload} downloading={downloading} actionError={actionError} pageNumber={pageNumber} pageCount={pdf?.numPages || 0} zoom={zoom} onZoomChange={changeZoom}
       onPageChange={goToPage} sidebarOpen={sidebarOpen} onSidebarToggle={() => setSidebarOpen((open) => !open)} thumbnailsRef={thumbnailsRef} viewportRef={viewportRef}
-      thumbnails={pdf && pages.map((page) => (
+      thumbnails={pdf && firstPageReady && pages.map((page) => (
         <DocumentThumbnail key={page.number} number={page.number} total={pdf.numPages} active={pageNumber === page.number} onClick={() => goToPage(page.number)}>
           <PdfThumbnailPage pdf={pdf} page={page} rootRef={thumbnailsRef} onError={setError} />
         </DocumentThumbnail>
       ))}
     >
-        <div ref={containerRef} className="drivex-pdf-container absolute inset-0 overflow-auto overscroll-contain" aria-label={title}>
+        <div ref={containerRef} className="drivex-pdf-container absolute inset-0 overflow-auto overscroll-contain" aria-label={title} onScroll={viewStateRef ? event => { viewStateRef.current = { top: event.currentTarget.scrollTop, left: event.currentTarget.scrollLeft, zoom: zoomRef.current }; } : undefined}>
           <div ref={viewerElementRef} className="pdfViewer" />
+          {renderPageOverlay && overlayHosts.map((host, index) => createPortal(renderPageOverlay(index + 1), host, String(index)))}
         </div>
         {error ? (
           <div role="alert" className="absolute inset-0 flex flex-col items-center justify-center gap-4 bg-[#262626] p-6 text-center text-sm text-zinc-200">
             <p>{t(`documents.${error}`)}</p>
             <button type="button" onClick={onRetry} className="inline-flex items-center gap-2 rounded-lg border border-zinc-500 bg-zinc-700 px-4 py-2 font-medium"><RotateCw className="h-4 w-4" />{t('documents.retryPdf')}</button>
           </div>
-        ) : !pdf && <div className="pointer-events-none absolute inset-0"><PdfLoading /></div>}
+        ) : <>
+          {previewUrl && !firstPageReady && <div className="absolute inset-0 overflow-auto bg-[#262626]" onScroll={event => { previewScroll.current = event.currentTarget.scrollTop; }}>
+            <img className="mx-auto block h-auto w-full" src={previewUrl} alt={title} onLoad={() => { setPreviewReady(true); onPreviewPaint?.(); }} />
+            {previewReady && <span role="status" className="sticky bottom-3 left-3 inline-flex items-center gap-2 rounded bg-zinc-900/90 px-3 py-2 text-xs text-zinc-100"><LoaderCircle size={14} className="animate-spin" />{t('documents.previewLoading')}</span>}
+          </div>}
+          {!pdf && !previewReady && <div className="pointer-events-none absolute inset-0"><PdfLoading progress={progress} /></div>}
+        </>}
     </DocumentViewerFrame>
   );
 }
@@ -229,7 +319,10 @@ function PdfThumbnailPage({ pdf, page, rootRef, onError }) {
   );
 }
 
-function PdfLoading() {
+function PdfLoading({ progress }) {
   const { t } = useTranslation();
-  return <div role="status" className="flex min-h-full items-center justify-center gap-2 p-8 text-sm text-zinc-300"><LoaderCircle className="h-5 w-5 animate-spin" />{t('documents.loadingPdf')}</div>;
+  const amount = progress?.loaded > 0 ? progress.total > 0
+    ? formatNumber(Math.min(progress.loaded / progress.total, 1), { style: 'percent', maximumFractionDigits: 0 })
+    : formatNumber(progress.loaded / 1_000_000, { style: 'unit', unit: 'megabyte', maximumFractionDigits: 1 }) : '';
+  return <div role="status" className="flex min-h-full items-center justify-center gap-2 p-8 text-sm text-zinc-300"><LoaderCircle className="h-5 w-5 animate-spin" />{t('documents.loadingPdf')}{amount && <span className="tabular-nums">{amount}</span>}</div>;
 }

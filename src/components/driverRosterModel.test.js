@@ -2,12 +2,20 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   activeLoadsForDriver,
+  driverRosterState,
   completedDocumentLoads,
   lastSeenKind,
   partitionDriverLoads,
   rosterAppointment,
   rosterStopAddress,
 } from './driverRosterModel.js';
+
+test('list and driver detail share duty, assignment and suspended state precedence',()=>{
+ assert.equal(driverRosterState({dutyStatus:'OFF_DUTY'},[]),'OFF_DUTY');
+ assert.equal(driverRosterState({dutyStatus:'ON_DUTY'},[]),'AVAILABLE');
+ assert.equal(driverRosterState({dutyStatus:'OFF_DUTY'},[{}]),'ON_LOAD');
+ assert.equal(driverRosterState({accountStatus:'suspended'},[{}]),'SUSPENDED');
+});
 
 test('driver roster keeps every current load in display order', () => {
   const loads = [

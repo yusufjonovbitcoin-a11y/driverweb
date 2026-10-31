@@ -19,6 +19,7 @@ export function filterWorkspaceLoads(loads, { query = '', driverId = 'ALL', driv
     const driver = load.driverId ? driversById?.get?.(load.driverId) : null;
     const values = [
       load.loadNumber,
+      load.brokerLoadNumber,
       ...stopSearchValues(load.origin),
       ...stopSearchValues(load.destination),
       load.broker,

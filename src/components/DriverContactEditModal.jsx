@@ -61,10 +61,10 @@ export default function DriverContactEditModal({ driver, onClose, onWorkspaceRef
         </div>
         <form onSubmit={save} className="max-h-[80dvh] space-y-4 overflow-y-auto p-5">
           <label className="block text-xs font-semibold text-zinc-600 dark:text-zinc-300">{t('profile.fullName')}
-            <input value={name} onChange={(event) => setName(event.target.value)} required minLength={2} maxLength={120} className="mt-1 w-full rounded-lg border border-zinc-200 bg-white px-3 py-2.5 text-sm text-zinc-900 outline-none focus:border-teal-600 focus:ring-2 focus:ring-teal-600/20 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100" />
+            <input value={name} onChange={(event) => setName(event.target.value)} required minLength={2} maxLength={120} className="mt-1 w-full rounded-lg border border-zinc-200 bg-white px-3 py-2.5 text-sm text-zinc-900 outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-600/20 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100" />
           </label>
           <label className="block text-xs font-semibold text-zinc-600 dark:text-zinc-300">{t('common.phone')}
-            <input type="tel" value={phone} onChange={(event) => setPhone(event.target.value)} maxLength={40} className="mt-1 w-full rounded-lg border border-zinc-200 bg-white px-3 py-2.5 text-sm text-zinc-900 outline-none focus:border-teal-600 focus:ring-2 focus:ring-teal-600/20 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100" />
+            <input type="tel" value={phone} onChange={(event) => setPhone(event.target.value)} maxLength={40} className="mt-1 w-full rounded-lg border border-zinc-200 bg-white px-3 py-2.5 text-sm text-zinc-900 outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-600/20 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100" />
           </label>
           <div className="rounded-lg bg-zinc-50 px-3 py-2 text-xs text-zinc-500 dark:bg-zinc-800/60">
             <span className="font-semibold">{t('common.email')}:</span> {driver.email || t('common.notProvided')}
@@ -88,9 +88,9 @@ export default function DriverContactEditModal({ driver, onClose, onWorkspaceRef
             <button type="button" role="switch" aria-checked={hideRateCon}
               aria-describedby="driver-privacy-hint" onClick={() => setHideRateCon(value => !value)}
               className="flex w-full items-center gap-3 rounded-lg bg-zinc-50 px-3 py-3 text-left text-sm font-semibold disabled:opacity-50 dark:bg-zinc-800">
-              {hideRateCon ? <EyeOff className="h-5 w-5 shrink-0 text-teal-600" /> : <Eye className="h-5 w-5 shrink-0" />}
+              {hideRateCon ? <EyeOff className="h-5 w-5 shrink-0 text-blue-600" /> : <Eye className="h-5 w-5 shrink-0" />}
               <span className="flex-1">{t('driverPrivacy.hide')}</span>
-              <span className={`h-6 w-10 shrink-0 rounded-full p-1 ${hideRateCon ? 'bg-teal-700' : 'bg-zinc-400'}`} aria-hidden="true">
+              <span className={`h-6 w-10 shrink-0 rounded-full p-1 ${hideRateCon ? 'bg-[var(--action-bg)]' : 'bg-zinc-400'}`} aria-hidden="true">
                 <span className={`block h-4 w-4 rounded-full bg-white transition-transform ${hideRateCon ? 'translate-x-4' : ''}`} />
               </span>
             </button>
@@ -99,7 +99,7 @@ export default function DriverContactEditModal({ driver, onClose, onWorkspaceRef
           {error && <p role="alert" className="text-xs text-red-600 dark:text-red-400">{error}</p>}
           <div className="flex justify-end gap-2 border-t border-zinc-100 pt-4 dark:border-zinc-800">
             <button type="button" onClick={onClose} disabled={saving} className="rounded-lg border border-zinc-200 px-4 py-2 text-sm font-semibold hover:bg-zinc-50 disabled:opacity-50 dark:border-zinc-700 dark:hover:bg-zinc-800">{t('common.cancel')}</button>
-            <button type="submit" disabled={saving || !payLoaded || name.trim().length < 2} className="inline-flex items-center gap-2 rounded-lg bg-teal-700 px-4 py-2 text-sm font-semibold text-white hover:bg-teal-600 disabled:opacity-50">{saving && <LoaderCircle className="h-4 w-4 animate-spin" />}{t('common.save')}</button>
+            <button type="submit" disabled={saving || !payLoaded || name.trim().length < 2} className="inline-flex items-center gap-2 rounded-lg bg-[var(--action-bg)] px-4 py-2 text-sm font-semibold text-[var(--action-ink)] hover:bg-[var(--action-hover)] disabled:opacity-50">{saving && <LoaderCircle className="h-4 w-4 animate-spin" />}{t('common.save')}</button>
           </div>
         </form>
       </section>

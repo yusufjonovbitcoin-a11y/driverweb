@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createDocumentImportRunner, mergeDocumentImportResult, continueDocumentImport, shouldCancelImportOnNavigation, findExistingFinalizedLoad } from './documentImportSession.js';
+import { createDocumentImportRunner, mergeDocumentImportResult, continueDocumentImport, shouldCancelImportOnNavigation } from './documentImportSession.js';
 
 const pending = () => {
   let resolve, reject;
@@ -11,14 +11,10 @@ const context = () => ({ source: 'document', importRequestId: 'first', fileName:
   sourceUrl: 'blob:preview', preferredDriverId: null, awaitingDriverSelection: true });
 const drivers = [{ id: 'driver-a' }, { id: 'driver-b' }];
 
-test('an already assigned load number is detected without treating a review draft as finalized', () => {
-  const loads = [
-    { id: 'draft', loadNumber: '#25008654', databaseStatus: 'review' },
-    { id: 'assigned', loadNumber: '#25008654', databaseStatus: 'assigned' },
-  ];
-  assert.equal(findExistingFinalizedLoad(loads, '25008654')?.id, 'assigned');
-  assert.equal(findExistingFinalizedLoad(loads, '#999'), null);
-  assert.equal(findExistingFinalizedLoad(loads, ''), null);
+test('a repeated broker reference does not become an identity-based duplicate block', () => {
+  const result = mergeDocumentImportResult(context(), 'first', { preparedLoad: { loadNumber: '#25008654' } });
+  assert.equal(result.loadNumber, '#25008654');
+  assert.equal(result.existingFinalizedLoadId, undefined);
 });
 
 test('browser tab navigation cancels imports but broker navigation to its own import page does not', () => {

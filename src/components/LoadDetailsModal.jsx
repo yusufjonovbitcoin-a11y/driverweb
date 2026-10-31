@@ -1,16 +1,16 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { ArrowLeft, FileDown, FileText, LoaderCircle, MapPin, Phone, Check } from 'lucide-react';
+import { FileDown, FileText, LoaderCircle, MapPin, Phone, Check } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { formatAppointment, formatCurrency, formatNumber } from '../i18n/format';
 import { loadStageIndex } from './mapLoadStatsModel';
 import { loadStatusLabel } from '../i18n/labels';
 import { buildLoadDetails, savedLoadRoadSummary, savedStopContact } from './loadDetailsModel';
 import LoadDocumentsManager from './LoadDocumentsManager.jsx';
-import LoadTrashAction from './LoadTrashAction.jsx';
 import DriverInstructionsEditor from './DriverInstructionsEditor.jsx';
 import AssignmentDriverPay from './AssignmentDriverPay.jsx';
 import { useLoadCurrentLocation } from '../hooks/useLoadCurrentLocation';
+import { useLoadStartLocation } from '../hooks/useLoadStartLocation.js';
 import { useImportContacts } from '../hooks/useImportContacts';
 import { useFleetRoute } from '../hooks/useFleetRoute';
 import { loadMapStops } from './fleetMapModel';
@@ -45,12 +45,13 @@ export default function LoadDetailsModal({ load, driver, onClose, onOpenDocs, on
   const receiveDocumentContext = useCallback(context => setDocumentSnapshot({ loadId: load.id, context }), [load.id]);
   const documentCount = documentContext?.documentItems.filter(row => row.current_version_id || row.url).length || 0;
   const details = buildLoadDetails(load, driver);
-  const { location, pickupRoute } = useLoadCurrentLocation(load, driver);
+  const startState = useLoadStartLocation(load, driver);
+  const { location, pickupRoute, routeOrigin, originSource } = useLoadCurrentLocation(load, driver, startState);
   const routeStops = loadMapStops(load);
   const roadRoute = useFleetRoute(routeStops, true, true, load.id);
-  const road = savedLoadRoadSummary(load.rateKnown === false ? null : details.rate, roadRoute.route, pickupRoute.route, Boolean(location));
+  const road = savedLoadRoadSummary(load.rateKnown === false ? null : details.rate, roadRoute.route, pickupRoute.route, Boolean(routeOrigin));
   const routeFailed = roadRoute.route?.error || roadRoute.route?.data?.routingFailed
-    || (location && (pickupRoute.route?.error || pickupRoute.route?.data?.routingFailed));
+    || (routeOrigin && (pickupRoute.route?.error || pickupRoute.route?.data?.routingFailed));
   const savedContacts = useImportContacts(load.id, null, Boolean(load.id));
   const extracted = buildImportedLoad(load);
   const documents = details.documents.map((document) => ({
@@ -238,30 +239,23 @@ export default function LoadDetailsModal({ load, driver, onClose, onOpenDocs, on
   </div>;
   const map = <div className="saved-review-map" data-load-section="tracking">
     {location && <span className={`reference-location-status ${location.stale ? 'is-stale' : ''}`}>{t(location.stale ? 'map.locationStale' : 'map.locationFresh')}</span>}
-    <Suspense fallback={<div className="load-command-map-loading" role="status">{t('common.loading')}</div>}><LoadDetailsMap load={load} driver={driver} location={location} pickupRoute={pickupRoute} roadRoute={roadRoute} stops={routeStops} /></Suspense>
+    <Suspense fallback={<div className="load-command-map-loading" role="status">{t('common.loading')}</div>}><LoadDetailsMap load={load} driver={driver} location={location} startLocation={startState.location} startStatus={startState.status} pickupRoute={pickupRoute} roadRoute={roadRoute} stops={routeStops} /></Suspense>
   </div>;
   const roadSummary = <section className="import-road-summary" aria-label={t('loadImport.route')} aria-live="polite">
-    <div><span>{t('map.pickupFromLatest')}</span><strong>{pickupRoute.loading ? '…' : road.deadheadMiles == null ? '—' : `${formatNumber(road.deadheadMiles)} mi`}</strong></div>
+    <div><span>{t(originSource === 'latest' ? 'map.pickupFromLatest' : 'map.pickupFromStart')}</span><strong>{pickupRoute.loading || startState.status === 'loading' ? '…' : road.deadheadMiles == null ? '—' : `${formatNumber(road.deadheadMiles)} mi`}</strong></div>
     <div><span>{t('loadImport.route')}</span><strong>{roadRoute.loading ? '…' : road.loadedMiles == null ? '—' : `${formatNumber(road.loadedMiles)} mi`}</strong></div>
     <div><span>{t('loadImport.totalMiles')}</span><strong>{road.totalMiles == null ? '—' : `${formatNumber(road.totalMiles)} mi`}</strong></div>
     <div><span>{t('loadImport.effectiveRpm')}</span><strong>{road.ratePerMile == null ? '—' : `${formatCurrency(road.ratePerMile)}/mi`}</strong></div>
-    {!location && <p>{t('loadImport.noDriverLocation')}</p>}
+    {startState.status === 'missing_location' && <p role="status">{t('map.startLocationUnavailable')}</p>}
+    {startState.status === 'error' && <p role="status">{t('map.startLocationError')} <button type="button" onClick={startState.retry}>{t('map.retry')}</button></p>}
+    {startState.status === 'awaiting_start' && !location && <p>{t('loadImport.noDriverLocation')}</p>}
     {routeFailed && <p role="status">{t('map.roadUnavailable')} <button type="button" onClick={() => { roadRoute.retry(); pickupRoute.retry(); }}>{t('map.retry')}</button></p>}
   </section>;
   const page = <div className="load-details-page load-command-page saved-review-page">
     <section role="dialog" aria-labelledby="load-details-title" className="import-load-page import-workspace saved-load-workspace">
-      <header className="review-page-heading saved-review-heading">
-        <div className="saved-review-heading-copy"><div className="review-title-line">
-          <button ref={closeRef} type="button" className="saved-review-back" onClick={onClose} aria-label={t('loadImport.back')} title={t('loadImport.back')}><ArrowLeft size={18} /></button>
-          <h2 id="load-details-title">{t('loads.loadNumber')} {details.number}</h2>
-          <span className={`reference-status${stage == null ? ' is-neutral' : ''}`}>{loadStatusLabel(t, details.status)}</span>
-        </div><p className="review-heading-file"><FileText size={15} />{load.driverBrief?.sourceFileName || load.documentMeta?.rateCon?.fileName || t('documents.brokerRateCon')}</p></div>
-        <div className="review-heading-actions">
-          <div className="import-total"><strong>{formatCurrency(reviewDetails.rate)}</strong><span>{t('loads.rate')}</span></div>
-          <LoadTrashAction load={load} onTrashLoad={onTrashLoad} />
-        </div>
-      </header>
+      <h2 ref={closeRef} tabIndex={-1} id="load-details-title" className="sr-only">{t('loads.loadNumber')} {details.number}</h2>
       <ImportReviewPanels key={load.id} load={load} details={reviewDetails} selectedDriver={driver} keepMounted
+        routeStartLocation={startState.location} routeStartStatus={startState.status}
         stops={stopsContent} map={map} roadSummary={roadSummary} road={road}
         showRouteFacts={false}
         overviewContent={overviewContent} requirementsContent={requirementsContent} documentsContent={documentsContent}

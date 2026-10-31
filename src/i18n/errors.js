@@ -13,6 +13,7 @@ const ERROR_PATTERNS = [
   [/LOAD_(?:TRASHED|ALREADY_TRASHED|NOT_TRASHED|TRASH_ALREADY_TRASHED|TRASH_NOT_TRASHED)/, 'loadTrash.invalidState'],
   [/LOAD_TRASH_DRIVER|Driver not found or inactive/, 'loadTrash.driverInvalid'],
   [/CHAT_MEDIA_FILE_TOO_LARGE/, 'chat.fileTooLarge'],
+  [/CHAT_MEDIA_UNSUPPORTED_TYPE/, 'chat.unsupportedMedia'],
   [/CHAT_MEDIA_FILE_EMPTY/, 'chat.mediaFileEmpty'],
   [/CHAT_MEDIA_OUTBOX_FULL/, 'chat.mediaQueueFull'],
   [/CHAT_MEDIA_STORAGE_UNAVAILABLE|QuotaExceededError/, 'chat.mediaStorageUnavailable'],

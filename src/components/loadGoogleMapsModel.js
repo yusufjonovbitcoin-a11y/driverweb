@@ -4,8 +4,13 @@ import { googleMapsRouteUrl } from '../services/importRoute.js';
 
 // Mobile browser links support three intermediate stops. Keep the shared
 // endpoint between parts, and never silently discard an unknown stop.
-export function loadGoogleMapsRoutes(stops = []) {
+export function loadGoogleMapsRoutes(stops = [], startPosition = null) {
   if (!Array.isArray(stops) || stops.length < 2) return [];
+  if (startPosition != null) {
+    if (!validMapCoordinate(startPosition.lat, startPosition.lng)
+      || String(startPosition.lat).trim() === '' || String(startPosition.lng).trim() === '') return [];
+    stops = [{ latitude: startPosition.lat, longitude: startPosition.lng, markerLabel: 'S' }, ...stops];
+  }
   const locations = stops.map(stop => validMapCoordinate(stop?.latitude, stop?.longitude)
     ? `${Number(stop.latitude)},${Number(stop.longitude)}` : fleetStopAddress(stop));
   if (locations.some(value => !value)) return [];

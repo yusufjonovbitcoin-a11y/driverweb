@@ -4,6 +4,7 @@ import { ArrowRight, CalendarDays, CheckCircle2, Clock3, MapPin, MessageCircle, 
 import { arrivalJobs, arrivalLane, arrivalMatches, arrivalPhone, arrivalState } from './arrivalBoardModel.js';
 import { useArrivalEstimates } from '../hooks/useArrivalEstimates.js';
 import './arrival-board.css';
+import { arrivalDemo } from './arrivalDemo.js';
 
 const PROBLEMS = new Set(['risk', 'late', 'noGps', 'unknown']);
 const FILTERS = ['all', 'problems', 'pickup', 'delivery'];
@@ -30,7 +31,7 @@ function ArrivalCard({ job, state, now, clock, date, t, onOpenChat, onOpenLoad }
       <span className="arrival-avatar">{driver.avatar && failedAvatar !== driver.avatar
         ? <img src={driver.avatar} alt="" onError={() => setFailedAvatar(driver.avatar)} /> : initials}</span>
       <div className="arrival-person"><strong>{driver.name || t('arrival.driver')}</strong>
-        {load ? <button className="arrival-load-link" onClick={() => onOpenLoad(load)}>{load.loadNumber}</button>
+        {load ? <button className="arrival-load-link" disabled={job.demo} onClick={() => onOpenLoad(load)}>{load.loadNumber}</button>
           : <small>{driver.driverNumber}</small>}</div>
       <span className="arrival-badge">{t(`arrival.status.${state.status}`)}</span>
     </div>
@@ -41,6 +42,7 @@ function ArrivalCard({ job, state, now, clock, date, t, onOpenChat, onOpenLoad }
         <div><strong>{eta === null ? '—' : duration(eta - now, t)}</strong><small>{t('arrival.remaining')}</small></div>
       </div>
       <div className="arrival-schedule"><CalendarDays size={13} aria-hidden="true" /><span>{t(`arrival.${job.role}`)} · {job.scheduledAt === null ? t('arrival.noSchedule') : `${date(job.scheduledAt)} · ${clock(job.scheduledAt)}`}</span></div>
+      {job.demo && <p className="arrival-demo-free">{t('arrival.estimatedFree')}: <strong>{job.estimatedFreeAt == null ? '—' : clock(job.estimatedFreeAt)}</strong></p>}
       <div className={`arrival-route-track ${job.role === 'delivery' ? 'is-delivery' : ''}`} aria-label={t(`arrival.stage.${job.role}`)}>
         <span className="arrival-route-dot" /><span className="arrival-route-line" /><Truck className="arrival-route-truck" size={20} /><MapPin size={19} />
       </div>
@@ -48,7 +50,7 @@ function ArrivalCard({ job, state, now, clock, date, t, onOpenChat, onOpenLoad }
     </> : <div className="arrival-idle"><Truck size={28} aria-hidden="true" /><p>{t('arrival.noActiveLoad')}</p><small>{driver.truck || '—'}</small></div>}
     <div className="arrival-card-footer">
       <span className="arrival-issue" title={issue}>{isProblem ? <TriangleAlert size={16} /> : state.status === 'onTime' ? <CheckCircle2 size={16} /> : <Clock3 size={16} />}<span>{issue}</span></span>
-      <button className="arrival-icon" onClick={() => onOpenChat(driver)} aria-label={t('arrival.chatWith', { name: driver.name })} title={t('nav.chat')}><MessageCircle size={17} /></button>
+      <button className="arrival-icon" disabled={job.demo} onClick={() => onOpenChat(driver)} aria-label={t('arrival.chatWith', { name: driver.name })} title={t('nav.chat')}><MessageCircle size={17} /></button>
       {phone ? <a className="arrival-icon" href={phone} aria-label={t('arrival.call', { name: driver.name })} title={driver.phone}><Phone size={17} /></a>
         : <button className="arrival-icon" disabled aria-label={t('arrival.noPhone')} title={t('arrival.noPhone')}><Phone size={17} /></button>}
     </div>
@@ -57,6 +59,8 @@ function ArrivalCard({ job, state, now, clock, date, t, onOpenChat, onOpenLoad }
 
 export default function ArrivalBoard({ drivers = [], loads = [], searchQuery = '', timeZone, onOpenChat, onOpenLoad, onClearSearch }) {
   const { t, i18n } = useTranslation();
+  const [demo, setDemo] = useState(true);
+  const [demoNow] = useState(Date.now);
   const [now, setNow] = useState(Date.now);
   const [filter, setFilter] = useState('all');
   const [grouping, setGrouping] = useState('time');
@@ -68,13 +72,13 @@ export default function ArrivalBoard({ drivers = [], loads = [], searchQuery = '
     return () => clearInterval(timer);
   }, []);
   const jobs = useMemo(() => arrivalJobs(drivers, loads, now), [drivers, loads, now]);
-  const estimates = useArrivalEstimates(jobs, now);
+  const estimates = useArrivalEstimates(demo ? [] : jobs, now);
   const locale = i18n.resolvedLanguage || i18n.language;
   const clockFormatter = useMemo(() => new Intl.DateTimeFormat(locale, { timeZone, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }), [locale, timeZone]);
   const dateFormatter = useMemo(() => new Intl.DateTimeFormat(locale, { timeZone, day: '2-digit', month: 'short' }), [locale, timeZone]);
   const clock = value => clockFormatter.format(value);
   const date = value => dateFormatter.format(value);
-  const all = jobs.map(job => ({ job, state: arrivalState(job, estimates[job.id], now) }));
+  const all = demo ? arrivalDemo(demoNow) : jobs.map(job => ({ job, state: arrivalState(job, estimates[job.id], now) }));
   const matching = all.filter(({ job, state }) => arrivalMatches(job, `${searchQuery} ${query}`)
     && (period === 'all' || state.eta === null || state.eta - now <= Number(period) * 3_600_000));
   const problems = matching.filter(({ job, state }) => job.load && PROBLEMS.has(state.status));
@@ -92,6 +96,7 @@ export default function ArrivalBoard({ drivers = [], loads = [], searchQuery = '
         <option value="all">{t('arrival.allActive')}</option><option value="24">{t('arrival.next24')}</option><option value="48">{t('arrival.next48')}</option></select></label>
         <span className="arrival-clock">{clock(now)}<small>{timeZone}</small></span></div>
     </header>
+    <div className="arrival-demo-toolbar"><button type="button" aria-pressed={demo} onClick={() => { setDemo(!demo); setFilter('all'); setQuery(''); setDismissedAlert(''); }}>{t(demo ? 'arrival.showLive' : 'arrival.showDemo')}</button>{demo && <span>{t('arrival.demoNotice')}</span>}</div>
     <div className="arrival-summary"><strong>{t('arrival.driverCount', { count: new Set(matching.map(item => item.job.driver.id)).size })}</strong>
       {['onTime', 'risk', 'late', 'noGps'].map(status => <span key={status} className={`arrival-summary-status arrival-tone-${status}`}><i />{matching.filter(item => item.state.status === status).length} {t(`arrival.status.${status}`)}</span>)}
     </div>

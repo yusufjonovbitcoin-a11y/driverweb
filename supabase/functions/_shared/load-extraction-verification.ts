@@ -3,6 +3,7 @@ import { validPhone } from './load-enrichment.ts';
 import { EXTRA_DOCUMENT_FIELDS, EXTRA_STOP_FIELDS, STAFF_DOCUMENT_FIELDS } from './load-document-fields.ts';
 import { singlePassValueSupported, sourcePrintedDate } from './load-single-pass.ts';
 import { evidenceFromSource } from './pdf-source.ts';
+import { documentValueSupported } from './load-document-values.ts';
 import { dispatchBlockingFields, dispatchWarningFields } from './load-dispatch-policy.ts';
 import { streetAddressWithoutAppointmentCode } from './load-stop-address.ts';
 import { OPERATIONAL_EXTRACTION_SCOPE, isOperationalExtractionField } from './load-operational-extraction.ts';
@@ -13,10 +14,11 @@ export const FIELD_TYPES = {
   freightMode: 'string', cargoDescription: 'string', equipmentType: 'string',
   temperatureFahrenheit: 'number', palletCount: 'integer', caseCount: 'integer', pieceCount: 'integer', packageCount: 'integer',
   isHazmat: 'boolean', specialInstructions: 'string', weightLbs: 'integer', weightPrinted: 'string',
+  trailerLengthPrinted: 'string', currency: 'string', accessorialChargesPrinted: 'string', brokerMc: 'string', brokerAddress: 'string',
   brokerRate: 'number', loadedMiles: 'number',
   ...Object.fromEntries(EXTRA_DOCUMENT_FIELDS.map(key => [key, 'string'])),
   ...Object.fromEntries(['pickup', 'delivery'].flatMap(stop => [
-    'facilityName', 'addressLine', 'city', 'region', 'postalCode',
+    'facilityName', 'addressLine', 'city', 'region', 'postalCode', 'country',
     'appointmentFrom', 'appointmentTo', 'appointmentTimezone', 'appointmentPrinted',
     'referenceNumber', 'contactName', 'contactPhone', 'readyDate', 'hours', 'appointmentReference', 'orderReferences',
     ...EXTRA_STOP_FIELDS,
@@ -136,7 +138,7 @@ export function verifyLoadExtraction(candidate: any, audit: any, singlePass = fa
     const verificationValid = singlePass
       ? sourceValid && source[0].page <= audit.pageCount
         && !audit.uncertainFields.includes(path)
-        && singlePassValueSupported(path, value, source[0].quote)
+        && (candidate.extractionMode === 'hybrid_pdf_v1' ? documentValueSupported : singlePassValueSupported)(path, value, source[0].quote)
       : checked.length === 1 && validEvidence(checked[0]) && checked[0].verdict === 'supported'
         && sourceValid && (source[0].page === checked[0].page || normalizeQuote(source[0].quote) === normalizeQuote(checked[0].quote!));
     if (!correctType || (!aiPdfDirect && (!semanticValid || !sourceValid || !verificationValid))) {
@@ -152,7 +154,9 @@ export function verifyLoadExtraction(candidate: any, audit: any, singlePass = fa
     fields.push({ ...(acceptedSource ?? {}), key: path, value,
       page: acceptedSource && typeof acceptedSource.page === 'number' && Number.isInteger(acceptedSource.page) && acceptedSource.page > 0 ? acceptedSource.page : null,
       quote: acceptedSource && typeof acceptedSource.quote === 'string' && acceptedSource.quote.trim()
-        ? acceptedSource.quote.trim() : null });
+        ? acceptedSource.quote.trim() : null,
+      ...(candidate.extractionMode === 'hybrid_pdf_v1' ? { verificationStatus: 'verified', confidence: null }
+        : candidate.extractionEngine === 'vision_manual_review' ? { verificationStatus: 'unverified' } : {}) });
   }
   safe.requirements = safe.requirements.filter((value: unknown) => typeof value === 'string');
   safe.contractTerms = safe.contractTerms.filter((value: unknown) => typeof value === 'string');
@@ -199,12 +203,15 @@ export function verifyLoadExtraction(candidate: any, audit: any, singlePass = fa
     'delivery.appointmentFrom', 'delivery.appointmentTo', 'delivery.appointmentTimezone',
   ].includes(field.key));
   const reviewFields = [...new Set([...blockingFields, ...(aiPdfDirect ? ['documentDetails'] : [])])];
+  if (candidate.extractionMode === 'hybrid_pdf_v1') issues.push(...(candidate.engineIssues ?? []).map((issue: any) => ({
+    ...issue, status: issue.reason.startsWith('conflicting_') ? 'conflict' : 'needs_review',
+  })));
   return {
     safe,
     missingFields,
     review: { required: true, blockingFields: dispatchBlockingFields(reviewFields),
       warningFields: dispatchWarningFields(reviewFields), rejectedFields, issues,
-      method: aiPdfDirect ? 'ai_pdf_direct' : candidate.sourceManifest ? 'pdf_source_rules' : singlePass ? 'single_pass_rules' : 'independent_model_audit',
+      method: candidate.extractionEngine === 'vision_manual_review' ? 'vision_manual_review' : aiPdfDirect ? 'ai_pdf_direct' : candidate.sourceManifest ? 'pdf_source_rules' : singlePass ? 'single_pass_rules' : 'independent_model_audit',
       sourceGrounded: Boolean(candidate.sourceManifest), independentAudit: !singlePass },
     documentDetails: { version: 3, ...(operationalOnly ? { extractionScope: OPERATIONAL_EXTRACTION_SCOPE } : {}), fields, stops: safe.stops, issues, unknownFields: [...new Set([...missingFields, ...rejectedFields])] },
     driverBrief: { version: 1, ...(operationalOnly ? { extractionScope: OPERATIONAL_EXTRACTION_SCOPE } : {}), fields: driverFields, stops: safe.stops, unknownFields: [...new Set([...missingFields, ...rejectedFields])] },

@@ -21,6 +21,6 @@ test('deployment keeps the pure helpers shared by the web without sending local 
     assert.ok(rules.includes(`!supabase/functions/_shared/${helper}`));
   }
   for (const excluded of ['.env*', 'dist', 'output', 'tmp', 'supabase/*']) {
-    assert.ok(rules.split('\n').includes(excluded));
+    assert.ok(rules.split(/\r?\n/).includes(excluded));
   }
 });

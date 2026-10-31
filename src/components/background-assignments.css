@@ -1,0 +1,17 @@
+.assignment-tasks { margin: 10px 20px 0; flex-shrink: 0; color: var(--dispatch-ink); }
+.assignment-tasks ul { list-style: none; margin: 0; padding: 0; max-height: 192px; overflow-y: auto; display: grid; gap: 6px; }
+.assignment-tasks li { display: flex; align-items: center; gap: 12px; padding: 10px 14px; border: 1px solid var(--dispatch-rule); border-left: 3px solid var(--dispatch-route); border-radius: 8px; background: var(--dispatch-paper); font-size: var(--dispatch-body); }
+.assignment-tasks li > svg { color: var(--dispatch-route); flex-shrink: 0; }
+.assignment-tasks li.is-failed { border-left-color: var(--dispatch-exception); }
+.assignment-tasks li.is-failed > svg { color: var(--dispatch-exception); }
+.assignment-task-copy { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.assignment-task-copy p { margin: 2px 0 0; font-size: var(--dispatch-caption); color: var(--dispatch-muted); }
+.assignment-task-copy span { color: var(--dispatch-label); }
+.assignment-task-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.assignment-task-actions button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 34px; padding: 6px 10px; color: var(--dispatch-route); background: var(--dispatch-paper); border: 1px solid var(--dispatch-control-rule); border-radius: 6px; font: inherit; font-size: var(--dispatch-caption); cursor: pointer; }
+.assignment-task-actions button:disabled { opacity: .5; cursor: default; }
+.assignment-task-actions button:focus-visible { outline: 2px solid var(--dispatch-focus); outline-offset: 2px; }
+.assignment-task-actions .assignment-task-dismiss { padding: 6px; color: var(--dispatch-muted); }
+.assignment-task-spinner { animation: assignment-spin 1s linear infinite; }
+@keyframes assignment-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .assignment-task-spinner { animation-duration: 4s; } }

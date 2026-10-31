@@ -11,18 +11,20 @@ import {
   PencilLine,
   UploadCloud,
 } from 'lucide-react';
-import { buildLoadDetails } from './loadDetailsModel';
 import DriverSettingsPanel from './DriverSettingsPanel';
+import DriverDocumentRegistry from './DriverDocumentRegistry';
 import KanbanBoard from './KanbanBoard';
 import { formatAppointment, formatDate, formatTime } from '../i18n/format';
 import {
   activeLoadsForDriver,
-  completedDocumentLoads,
+  driverRosterState,
   lastSeenKind,
   partitionDriverLoads,
   rosterAppointment,
   rosterStopAddress,
 } from './driverRosterModel';
+
+const AnalyticsOverview = React.lazy(() => import('./AnalyticsOverview'));
 
 export default function DriverRoster({
   drivers,
@@ -39,6 +41,8 @@ export default function DriverRoster({
   unreadChatsByDriver = {},
   onWorkspaceRefresh,
   canManageDriver = false,
+  canEditAccounting = false,
+  onOpenAccountingSettings,
 }) {
   const { t } = useTranslation();
   const tabId = useId();
@@ -169,11 +173,7 @@ export default function DriverRoster({
     const { workflow, exceptions } = partitionDriverLoads(driverLoads);
     const activeTripCount = workflow.filter((load) => load.status !== 'COMPLETED').length;
     const completedTripCount = workflow.length - activeTripCount;
-    const documentQuery = (tabSelection.documentSearch || '').trim().toLocaleLowerCase();
-    const completedLoads = completedDocumentLoads(driverLoads);
-    const documentLoads = completedLoads.filter((load) => !documentQuery || [
-      load.loadNumber, load.origin?.city, load.origin?.state, load.destination?.city, load.destination?.state,
-    ].some((value) => String(value || '').toLocaleLowerCase().includes(documentQuery)));
+    const state = driverRosterState(selectedDriver, activeLoadsForDriver(driverLoads, selectedDriver.id));
 
     return (
       <div className="driver-trips-view" onDragEnter={onPageDragEnter} onDragOver={onPageDragOver} onDragLeave={onPageDragLeave} onDrop={onPageDrop}>
@@ -193,7 +193,7 @@ export default function DriverRoster({
               <div className="driver-trip-name-row">
                 <h1>{selectedDriver.name}</h1>
                 <span className={`driver-trip-availability ${isSuspended ? 'is-suspended' : activeTripCount > 0 ? 'is-active' : ''}`}>
-                  <span />{isSuspended ? t('driverSettings.suspended') : activeTripCount > 0 ? t('drivers.onLoad') : t('drivers.available')}
+                  <span />{t({ SUSPENDED: 'driverSettings.suspended', ON_LOAD: 'drivers.onLoad', OFF_DUTY: 'driverStatus.off_duty', AVAILABLE: 'drivers.available' }[state])}
                 </span>
               </div>
               {(selectedDriver.driverNumber || selectedDriver.truck || selectedDriver.trailer) && (
@@ -261,32 +261,19 @@ export default function DriverRoster({
             </details>
           )}
         </section>
-        {detailTabs.filter((tab) => tab !== 'trips').map((tab) => <section key={tab} className="driver-detail-panel" role="tabpanel" id={`${tabId}-${tab}-panel`} aria-labelledby={`${tabId}-${tab}-tab`} hidden={activeTab !== tab} tabIndex={0}>
-          {tab !== 'settings' && <h2>{t(`driverDetailTabs.${tab}`)}</h2>}
+        {detailTabs.filter((tab) => tab !== 'trips').map((tab) => <section key={tab} className={`driver-detail-panel${tab === 'analytics' ? ' driver-analytics-panel' : ''}`} role="tabpanel" id={`${tabId}-${tab}-panel`} aria-labelledby={`${tabId}-${tab}-tab`} hidden={activeTab !== tab} tabIndex={0}>
+          {tab !== 'settings' && tab !== 'analytics' && tab !== 'documents' && <h2>{t(`driverDetailTabs.${tab}`)}</h2>}
           {tab === 'settings' && tabSelection.settingsVisited && <DriverSettingsPanel key={selectedDriver.id} driver={selectedDriver} onWorkspaceRefresh={onWorkspaceRefresh} canManageDriver={canManageDriver} />}
           {tab === 'equipment' && <dl className="driver-detail-facts">{['truck', 'trailer'].map((field) => <div key={field}><dt>{t(`driverDetailTabs.${field}`)}</dt><dd>{selectedDriver[field] || '—'}</dd></div>)}</dl>}
-          {tab === 'documents' && <>
-            <p className="driver-detail-note">{t('driverDetailTabs.loadDocuments')}</p>
-            <label className="driver-document-search"><Search size={17} aria-hidden="true" /><span className="sr-only">{t('driverDetailTabs.documentSearch')}</span><input type="search" value={tabSelection.documentSearch || ''} onChange={(event) => setTabSelection((previous) => ({ ...previous, documentSearch: event.target.value }))} placeholder={t('driverDetailTabs.documentSearch')} /></label>
-            <div className="driver-detail-documents">{documentLoads.length ? documentLoads.map((load) => {
-              const details = buildLoadDetails(load);
-              const delivery = details.stops.filter((stop) => stop.role === 'delivery').at(-1) || details.delivery;
-              const appointment = delivery.appointment;
-              const deliverySchedule = [delivery.scheduleDate, delivery.scheduleTime].filter(Boolean).join(' · ')
-                || (appointment ? formatAppointment(appointment, delivery.timezone) : '—');
-              const route = [load.origin, load.destination].map((stop) => [stop?.city, stop?.state].filter(Boolean).join(', ') || '—').join(' → ');
-              return <button key={load.id} type="button" onClick={() => onOpenDocs(load)}>
-                <FileUp size={18} aria-hidden="true" />
-                <div className="driver-document-identity"><strong>{load.loadNumber}</strong><small>{route}</small></div>
-                <div className="driver-document-delivery"><small>{t('driverDetailTabs.plannedDelivery')}</small><strong>{deliverySchedule}</strong></div>
-                <span className="driver-document-open">{t('driverDetailTabs.openLoad')}</span>
-              </button>;
-            }) : <p role="status">{t(completedLoads.length ? 'driverDetailTabs.noDocumentMatches' : 'driverDetailTabs.noCompletedLoads')}</p>}</div>
-          </>}
+          {tab === 'documents' && activeTab === 'documents' && <DriverDocumentRegistry key={selectedDriver.id} loads={loads} driverId={selectedDriver.id} onOpenDocs={onOpenDocs} />}
           {tab === 'activity' && <dl className="driver-detail-facts"><div><dt>{t('driverDetailTabs.connection')}</dt><dd>{t(selectedDriver.isOnline ? 'driverDetailTabs.online' : 'driverDetailTabs.offline')}</dd></div><div><dt>{t('driverDetailTabs.lastSeen')}</dt><dd>{lastSeenKind(selectedDriver.lastSeenAt) === 'never' ? t('driverDetailTabs.noActivity') : formatLastSeen(t, selectedDriver.lastSeenAt)}</dd></div></dl>}
-          {tab === 'analytics' && <dl className="driver-detail-facts driver-detail-counts">{[
-            ['total', driverLoads.length], ['active', activeTripCount], ['completed', completedTripCount], ['exceptions', exceptions.length],
-          ].map(([label, count]) => <div key={label}><dt>{t(`driverDetailTabs.${label}`)}</dt><dd>{count}</dd></div>)}</dl>}
+          {tab === 'analytics' && activeTab === 'analytics' && <React.Suspense fallback={<p role="status">{t('common.loading')}</p>}><AnalyticsOverview
+            scopeDriver={selectedDriver}
+            drivers={drivers}
+            canEditAccounting={canEditAccounting}
+            onOpenAccountingSettings={onOpenAccountingSettings}
+            onOpenLoad={id => { const load = driverLoads.find(item => item.id === id); if (load) onOpenDocs?.(load); }}
+          /></React.Suspense>}
         </section>)}
       </div>
     );

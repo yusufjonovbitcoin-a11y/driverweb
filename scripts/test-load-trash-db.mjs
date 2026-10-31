@@ -1,4 +1,5 @@
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { postgresHost, postgresStartOptions, postgresSpawnOptions, normalizePostgresOutput, removeTestCluster } from './isolated-postgres.mjs';
+import { mkdtemp, readFile } from 'node:fs/promises';
 import { spawn, spawnSync } from 'node:child_process';
 import assert from 'node:assert/strict';
 import { tmpdir } from 'node:os';
@@ -9,13 +10,13 @@ import { runAuditBackendChecks } from './run-audit-backend-checks.mjs';
 // Private Unix-socket cluster only. Never reads DATABASE_URL or app credentials.
 const root = fileURLToPath(new URL('..', import.meta.url));
 const directory = await mkdtemp(path.join(tmpdir(), 'drivex-trash-test-'));
-const pgBin = process.env.PG_BIN || '';
-const connection = ['-h', directory, '-p', '55441', '-d', 'postgres', '-v', 'ON_ERROR_STOP=1'];
+const pgBin = process.env.PG_BIN || (process.platform === 'win32' ? 'C:/Program Files/PostgreSQL/18/bin' : '');
+const connection = ['-h', postgresHost(directory), '-p', '55441', '-d', 'postgres', '-v', 'ON_ERROR_STOP=1'];
 function run(binary, args, input) {
-  const result = spawnSync(path.join(pgBin, binary), args, { cwd: root, input, encoding: 'utf8', maxBuffer: 8 * 1024 * 1024 });
+  const result = spawnSync(path.join(pgBin, binary), args, postgresSpawnOptions(binary, { cwd: root, input, encoding: 'utf8', maxBuffer: 8 * 1024 * 1024 }));
   if (result.error || result.status !== 0) throw result.error || new Error(`${binary}: ${result.stderr}\n${result.stdout}`);
   if (result.stderr) process.stdout.write(result.stderr);
-  return result.stdout;
+  return normalizePostgresOutput(result.stdout);
 }
 const sql = (text) => run('psql', [...connection, '-q'], text);
 async function migration(name, start, end) {
@@ -35,7 +36,7 @@ function asyncSql(text, onOutput = () => {}) {
     const child = spawn(path.join(pgBin, 'psql'), [...connection, '-Atq'], { cwd: root });
     let stdout = ''; let stderr = '';
     const timeout = setTimeout(() => { child.kill(); reject(new Error('Trash concurrency check timed out')); }, 10_000);
-    child.stdout.on('data', (chunk) => { stdout += chunk; onOutput(stdout); });
+    child.stdout.on('data', (chunk) => { stdout += normalizePostgresOutput(String(chunk)); onOutput(stdout); });
     child.stderr.on('data', (chunk) => { stderr += chunk; });
     child.on('error', (error) => { clearTimeout(timeout); reject(error); });
     child.on('close', (code) => { clearTimeout(timeout); resolve({ code, stdout, stderr }); });
@@ -45,7 +46,7 @@ function asyncSql(text, onOutput = () => {}) {
 let started = false;
 try {
   run('initdb', ['-D', `${directory}/data`, '-A', 'trust', '--no-locale', '--encoding=UTF8']);
-  run('pg_ctl', ['-D', `${directory}/data`, '-l', `${directory}/server.log`, '-o', `-k ${directory} -h '' -p 55441`, 'start']);
+  run('pg_ctl', ['-D', `${directory}/data`, '-l', `${directory}/server.log`, '-o', postgresStartOptions(directory, 55441, ''), 'start']);
   started = true;
   sql(`create role anon; create role authenticated; create role service_role;
     create schema auth; create table auth.users(id uuid primary key);
@@ -286,7 +287,17 @@ end $$; revoke all on schema worker_cron from public,anon,authenticated,service_
     const { runImportSourceChecks }=await import('./run-import-source-checks.mjs');
     await runImportSourceChecks({sql,migration,asyncSql,root});
   }
+  if (process.env.IMPORT_CONFIRMATION_TEST === '1') {
+    assert.equal(process.env.IMPORT_SOURCE_TEST,'1','Confirmation requires actual import source schema');
+    await migration('202609250004_ai_document_intelligence.sql','create or replace function public.apply_ai_import_metadata(', 'drop view if exists public.load_overview;');
+    await migration('20261003111510_import_ordered_stops.sql');
+    await migration('20261031193451_batch_import_assignment_persistence.sql');
+    // Match Supabase's existing service_role grants/BYPASSRLS, not a new app grant.
+    sql('alter role service_role bypassrls; grant select,update on manual_load_imports,jobs to service_role; grant select on document_checks to service_role; grant insert on audit_events to service_role;');
+    sql(await readFile(path.join(root,'scripts/load-trash-test-fixtures/import-confirmation-checks.sql'),'utf8'));
+    console.log('PASS: batched import preparation/completion, source attestation, tenant/owner guards, rollback and atomic assignment');
+  }
 } finally {
   if (started) run('pg_ctl', ['-D', `${directory}/data`, '-m', 'fast', 'stop']);
-  await rm(directory, { recursive: true, force: true });
+  await removeTestCluster(directory);
 }

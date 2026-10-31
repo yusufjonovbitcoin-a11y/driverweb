@@ -48,6 +48,14 @@ class PreprocessorTest(unittest.TestCase):
         locked=doc.tobytes(encryption=pymupdf.PDF_ENCRYPT_AES_256,owner_pw='test',user_pw='test')
         with self.assertRaisesRegex(ValueError,'PDF_SOURCE_LOCKED'): preprocess(locked)
 
+    def test_text_only_skips_rendering_and_ocr_for_unselected_pages(self):
+        data = self.pdf(image=True)
+        with patch.object(pymupdf.Page, 'get_pixmap', side_effect=AssertionError('unexpected rendering')):
+            with patch.object(pymupdf.Page, 'get_textpage_ocr', side_effect=AssertionError('unexpected OCR')):
+                source = json.loads(preprocess(data, text_only=True, ocr_pages=[]))
+        self.assertFalse(source['pages'][0]['ocr'])
+        self.assertNotIn('image', source['pages'][0])
+
     def test_http_auth_and_real_subprocess(self):
         with socket.socket() as sock:
             sock.bind(('127.0.0.1',0)); port=sock.getsockname()[1]

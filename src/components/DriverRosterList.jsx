@@ -1,17 +1,20 @@
-import { useState } from 'react';
+import { lazy, Suspense, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ChevronLeft, ChevronRight, Clock3, Filter, MoreHorizontal, Search, Truck } from 'lucide-react';
+import { ChevronLeft, ChevronRight, CirclePause, CirclePlay, Clock3, Filter, LoaderCircle, MessageSquare, MoreHorizontal, Search, Truck, Users } from 'lucide-react';
 import { formatDate, formatTime } from '../i18n/format';
-import { activeLoadsForDriver, lastSeenKind, rosterStopAddress } from './driverRosterModel';
+import { activeLoadsForDriver, driverRosterState, lastSeenKind, rosterStopAddress } from './driverRosterModel';
+import { useDeliveryMonitor } from '../hooks/useDeliveryMonitor.js';
+import { deliveryMonitorProblemCount } from './deliveryMonitorModel.js';
+import { setDriverAccountStatus } from '../services/driverSettingsService.js';
+import LoadNumber from './LoadNumber.jsx';
 import './driver-roster-list.css';
+import './delivery-monitor.css';
+
+const DeliveryMonitor = lazy(() => import('./DeliveryMonitor.jsx'));
 
 const PAGE_SIZE = 6;
 
-function driverState(driver, activeLoads) {
-  if (driver.accountStatus === 'suspended') return 'SUSPENDED';
-  if (activeLoads.length) return 'ON_LOAD';
-  return driver.dutyStatus === 'OFF_DUTY' ? 'OFF_DUTY' : 'AVAILABLE';
-}
+const driverState = driverRosterState;
 
 function lastSeen(t, value) {
   const kind = lastSeenKind(value);
@@ -25,14 +28,21 @@ function stopLabel(stop) {
   return [stop?.city, stop?.state].filter(Boolean).join(', ') || rosterStopAddress(stop) || '—';
 }
 
-export default function DriverRosterList({ drivers, loads, onOpenDriver, onPrefetchDriver, onAssignLoad, onOpenChat, unreadChatsByDriver = {} }) {
+export default function DriverRosterList({ drivers, loads, onOpenDriver, onPrefetchDriver, onAssignLoad, onOpenChat, onOpenLoad, canManageDriver = false, onWorkspaceRefresh, unreadChatsByDriver = {} }) {
   const { t } = useTranslation();
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState('ALL');
   const [truckOnly, setTruckOnly] = useState(false);
   const [filterOpen, setFilterOpen] = useState(false);
   const [openMenuId, setOpenMenuId] = useState(null);
+  const [statusBusyId, setStatusBusyId] = useState(null);
+  const statusPending = useRef(false);
+  const [statusNotice, setStatusNotice] = useState(null);
   const [page, setPage] = useState(1);
+  const [view, setView] = useState('drivers');
+  const [demo, setDemo] = useState(false);
+  const monitoring = useDeliveryMonitor(drivers, loads, demo);
+  const problemCount = deliveryMonitorProblemCount(monitoring.rows);
 
   const roster = drivers.map(driver => {
     const activeLoads = activeLoadsForDriver(loads, driver.id);
@@ -51,7 +61,9 @@ export default function DriverRosterList({ drivers, loads, onOpenDriver, onPrefe
     if (truckOnly && !driver.vehicle && !driver.truck) return false;
     if (!query) return true;
     return [driver.name, driver.driverNumber, driver.truck, driver.vehicle?.number, driver.vehicle?.make,
-      driver.currentLocation, ...activeLoads.map(load => load.loadNumber)]
+      driver.currentLocation, ...activeLoads.flatMap(load => view === 'delivery'
+        ? [load.loadNumber, load.brokerLoadNumber, load.origin?.city, load.origin?.state, load.destination?.city, load.destination?.state, load.destination?.address]
+        : [load.loadNumber, load.brokerLoadNumber])]
       .some(value => String(value || '').toLowerCase().includes(query));
   });
   const pages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
@@ -63,6 +75,26 @@ export default function DriverRosterList({ drivers, loads, onOpenDriver, onPrefe
   function changeStatus(next) { setStatus(next); setPage(1); setOpenMenuId(null); }
   function changeSearch(next) { setSearch(next); setPage(1); }
   function prefetchDriverDetail() { if (onPrefetchDriver) void onPrefetchDriver().catch(() => {}); }
+  async function changeAccountStatus(driver) {
+    if (!canManageDriver || statusPending.current || !['active', 'suspended'].includes(driver.accountStatus)) return;
+    const nextStatus = driver.accountStatus === 'suspended' ? 'active' : 'suspended';
+    if (!window.confirm(`${driver.name}\n${t('driverSettings.confirmStatus')}\n${t(nextStatus === 'suspended' ? 'driverSettings.suspend' : 'driverSettings.activate')}`)) return;
+    statusPending.current = true;
+    setStatusBusyId(driver.id);
+    setStatusNotice(null);
+    try {
+      await setDriverAccountStatus(driver.id, nextStatus);
+      setOpenMenuId(null);
+      setStatusNotice({ key: 'driverSettings.statusChanged', error: false });
+      try { await onWorkspaceRefresh?.({ quiet: true }); }
+      catch { setStatusNotice({ key: 'driverSettings.refreshError', error: true }); }
+    } catch {
+      setStatusNotice({ key: 'driverSettings.accountError', error: true });
+    } finally {
+      statusPending.current = false;
+      setStatusBusyId(null);
+    }
+  }
 
   return <section className="drivers-roster-page" aria-label={t('nav.drivers')}>
     <div className="drivers-roster-toolbar">
@@ -76,6 +108,10 @@ export default function DriverRosterList({ drivers, loads, onOpenDriver, onPrefe
         ].map(([key, label]) => <button key={key} type="button" aria-pressed={status === key} onClick={() => changeStatus(key)}>{label} <span>({counts[key]})</span></button>)}
       </nav>
       <div className="drivers-roster-tools">
+        <div className="roster-view-switch" role="group" aria-label={t('deliveryMonitor.view')}>
+          <button type="button" aria-pressed={view === 'drivers'} onClick={() => setView('drivers')}><Users size={16} />{t('nav.drivers')}</button>
+          <button type="button" className={problemCount ? 'has-problems' : undefined} aria-pressed={view === 'delivery'} onClick={() => setView('delivery')}><Truck size={16} />{t('deliveryMonitor.title')}{problemCount > 0 && <span className="roster-problem-count" aria-label={t('deliveryMonitor.problemCount', { count: problemCount })}>{problemCount}</span>}</button>
+        </div>
         <label className="drivers-roster-search"><Search size={17} aria-hidden="true" /><span className="sr-only">{t('drivers.search')}</span>
           <input type="search" value={search} onChange={event => changeSearch(event.target.value)} placeholder={t('drivers.searchPlaceholder')} />
         </label>
@@ -86,7 +122,10 @@ export default function DriverRosterList({ drivers, loads, onOpenDriver, onPrefe
       </div>
     </div>
 
-    <div className="drivers-roster-table-shell"><div className="drivers-roster-table-viewport"><table className="drivers-roster-table">
+    {statusNotice && <p className={`drivers-roster-notice${statusNotice.error ? ' is-error' : ''}`} role={statusNotice.error ? 'alert' : 'status'}>{t(statusNotice.key)}</p>}
+    {view === 'delivery' ? <Suspense fallback={<p role="status">{t('common.loading')}</p>}><DeliveryMonitor drivers={filtered.map(item => item.driver)} monitoring={monitoring} demo={demo} onDemoChange={setDemo} query={search}
+      onOpenDriver={onOpenDriver} onOpenLoad={onOpenLoad} onAssignLoad={onAssignLoad} onOpenChat={onOpenChat} /></Suspense>
+      : <div className="drivers-roster-table-shell"><div className="drivers-roster-table-viewport"><table className="drivers-roster-table">
       <thead><tr><th scope="col">{t('drivers.driver')}</th><th scope="col">{t('loads.loadNumber')}</th><th scope="col">{t('drivers.currentStatus')}</th>
         <th scope="col">{t('drivers.currentLoadLocation')}</th><th scope="col">{t('drivers.lastSeen')}</th><th scope="col">{t('common.actions')}</th></tr></thead>
       <tbody>{rows.length ? rows.map(({ driver, activeLoads, state }) => {
@@ -100,20 +139,27 @@ export default function DriverRosterList({ drivers, loads, onOpenDriver, onPrefe
           <td><div className="drivers-roster-person"><span className="drivers-roster-avatar">{driver.avatar ? <img src={driver.avatar} alt="" onError={event => { event.currentTarget.style.display = 'none'; }} /> : driver.name.split(' ').map(part => part.charAt(0)).slice(0, 2).join('')}</span>
             <span className="drivers-roster-person-copy"><strong>{driver.name}{driver.isOnline && <i className="drivers-roster-online-dot" aria-label={t('common.online')} />}</strong><small>{driver.driverNumber || '—'}</small></span>
             {unread > 0 && <span className="drivers-roster-unread" aria-label={t('chat.unreadMessages', { count: unread })}>{unread > 99 ? '99+' : unread}</span>}</div></td>
-          <td><strong>{load?.loadNumber || '—'}</strong>{activeLoads.length > 1 && <small title={activeLoads.slice(1).map(item => item.loadNumber).filter(Boolean).join(', ')}>+{activeLoads.length - 1}</small>}</td>
+          <td><strong>{load ? <LoadNumber load={load} /> : '—'}</strong>{activeLoads.length > 1 && <small title={activeLoads.slice(1).map(item => item.loadNumber).filter(Boolean).join(', ')}>+{activeLoads.length - 1}</small>}</td>
           <td><span className={'drivers-roster-status status-' + state.toLowerCase()}>{state === 'ON_LOAD' ? <Truck size={15} /> : <Clock3 size={15} />}{state === 'SUSPENDED' ? t('driverSettings.suspended') : state === 'ON_LOAD' ? t('drivers.onLoad') : state === 'AVAILABLE' ? t('drivers.available') : t('driverStatus.off_duty')}</span></td>
           <td>{load ? <><strong>{stopLabel(load.origin)} → {stopLabel(load.destination)}</strong></> : <><strong>—</strong><small>{driver.currentLocation || t('drivers.noCurrentLoad')}</small></>}</td>
           <td><strong>{lastSeen(t, driver.lastSeenAt)}</strong><small>{driver.isOnline ? t('common.online') : t('common.offline')}</small></td>
-          <td><div className="drivers-roster-actions"><button type="button" onClick={() => onOpenDriver(driver.id)}>{t('drivers.view')}</button>
+          <td><div className="drivers-roster-actions">
             <div className="drivers-roster-more"><button type="button" aria-label={t('drivers.moreActions')} aria-expanded={openMenuId === driver.id} onClick={() => setOpenMenuId(value => value === driver.id ? null : driver.id)}><MoreHorizontal size={18} /></button>
-              {openMenuId === driver.id && <div className="drivers-roster-more-menu"><button type="button" disabled={driver.accountStatus === 'suspended'} title={driver.accountStatus === 'suspended' ? t('driverSettings.suspended') : undefined} onClick={() => { if (driver.accountStatus !== 'suspended') onAssignLoad(driver); setOpenMenuId(null); }}>{t('drivers.assignLoad')}</button>
-                {onOpenChat && <button type="button" onClick={() => { onOpenChat(driver); setOpenMenuId(null); }}>{t('drivers.openChat')}</button>}
+              {openMenuId === driver.id && <div className="drivers-roster-more-menu" onClick={event => event.stopPropagation()} onKeyDown={event => { if (event.key === 'Escape') { setOpenMenuId(null); event.currentTarget.parentElement.querySelector('button')?.focus(); } }}><button type="button" disabled={driver.accountStatus === 'suspended' || statusBusyId === driver.id} title={driver.accountStatus === 'suspended' ? t('driverSettings.suspended') : undefined} onClick={() => { if (driver.accountStatus !== 'suspended') onAssignLoad(driver); setOpenMenuId(null); }}><Truck size={16} aria-hidden="true" />{t('drivers.assignLoad')}</button>
+                {onOpenChat && <button type="button" onClick={() => { onOpenChat(driver); setOpenMenuId(null); }}><MessageSquare size={16} aria-hidden="true" />{t('drivers.openChat')}</button>}
+                {canManageDriver && ['active', 'suspended'].includes(driver.accountStatus) && <button type="button"
+                  className={`drivers-roster-account-action ${driver.accountStatus === 'suspended' ? 'is-activate' : 'is-suspend'}`}
+                  disabled={Boolean(statusBusyId)} aria-busy={statusBusyId === driver.id}
+                  onClick={() => changeAccountStatus(driver)}>
+                  {statusBusyId === driver.id ? <LoaderCircle size={16} className="animate-spin" aria-hidden="true" /> : driver.accountStatus === 'suspended' ? <CirclePlay size={16} aria-hidden="true" /> : <CirclePause size={16} aria-hidden="true" />}
+                  {t(driver.accountStatus === 'suspended' ? 'driverSettings.activate' : 'driverSettings.suspend')}
+                </button>}
               </div>}
             </div></div></td>
         </tr>;
       }) : <tr><td colSpan={6} className="drivers-roster-empty">{t('drivers.noDrivers')}</td></tr>}</tbody>
     </table></div>
       <footer className="drivers-roster-footer"><span>{t('drivers.showing', { first, last, total: filtered.length })}</span><div><button type="button" aria-label={t('analytics.previous')} disabled={currentPage <= 1} onClick={() => setPage(value => value - 1)}><ChevronLeft size={17} /></button><strong>{currentPage}</strong><button type="button" aria-label={t('analytics.next')} disabled={currentPage >= pages} onClick={() => setPage(value => value + 1)}><ChevronRight size={17} /></button></div></footer>
-    </div>
+    </div>}
   </section>;
 }

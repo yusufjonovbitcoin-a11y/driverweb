@@ -11,6 +11,7 @@ import { currentDriverLoad, knownLoadStatistics } from './mapLoadStatsModel';
 import { mapboxLineFeatures } from './mapboxMapModel';
 import { driverTrips, fleetLivePosition, isActiveFleetLoad, loadMapStops, overlayMapPadding, selectedDriverTrip, shouldRefreshCompletedTrack, stopCity, stopStreet } from './fleetMapModel';
 import './fleet-map.css';
+import LoadNumber from './LoadNumber.jsx';
 
 const TrackingMap = React.lazy(() => import('./TrackingMap'));
 const LoadDetailsModal = React.lazy(() => import('./LoadDetailsModal'));
@@ -146,7 +147,7 @@ export default function FleetMap({ drivers, loads, isVisible = true, onOpenDocs,
         </div>
         <div className="fleet-map-load">
           <span className="sr-only">{t(isCurrentTrip ? 'map.currentLoad' : 'map.selectedTrip')}</span>
-          <strong className="fleet-map-load-number" title={selectedTrip?.loadNumber}>{selectedTrip?.loadNumber || '—'}</strong>
+          <strong className="fleet-map-load-number" title={selectedTrip?.loadNumber}>{selectedTrip ? <LoadNumber load={selectedTrip} /> : '—'}</strong>
           <strong className="fleet-map-rate">{statistics.rate === null ? '—' : formatCurrency(statistics.rate)}</strong>
           <span className="fleet-map-load-meta" title={[selectedTrip?.broker, selectedTrip?.equipment].filter(Boolean).join(' · ')}><Truck size={12} aria-hidden="true" />{[selectedTrip?.broker, selectedTrip?.equipment].filter(Boolean).join(' · ') || '—'}</span>
         </div>

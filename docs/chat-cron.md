@@ -49,9 +49,15 @@ stored. `anon`, `authenticated` and `service_role` have no helper/table access.
 
 ## Schedules and monitoring
 
-- `drivex-chat-media-cleanup`: every five minutes.
-- `drivex-chat-push`: every minute; leave paused until
-  `FIREBASE_SERVICE_ACCOUNT_JSON` is configured and a manual invocation succeeds.
+Verified live on **2026-10-25** for project `gsnbjpqwwpvqtmphsyfs`:
+
+- `drivex-chat-media-cleanup`: active, every five minutes.
+- `drivex-chat-push`: active, every ten seconds.
+- Latest recorded worker HTTP results: both 200, zero failures and no deadline
+  exhaustion. These empty-queue runs verify worker health, not end-device delivery.
+
+The bootstrap instructions below apply to a **new environment**. Do not pause or
+recreate the already-running production schedules as part of routine maintenance.
 
 For a new environment, create both schedules paused in one transaction, smoke
 test each intended worker, and enable only the verified worker:
@@ -71,7 +77,8 @@ On 2026-10-05, both Edge workers were deployed as version 15, dedicated credenti
 were matched between Edge Secrets and Vault, and legacy secret digests were
 unchanged. The media smoke test returned HTTP 200 with zero failures; one expired,
 uncommitted document upload cleanup was completed during the initial smoke test.
-Push stays paused by user request until the Firebase credential is added.
+At that initial deployment, push remained paused pending the Firebase credential.
+This historical state is superseded by the verified live schedule above.
 The first scheduled media run at **2026-10-05 01:25 UTC** succeeded in about
 1.4 seconds: HTTP 200, `failed=0`, `transitionFailures=0`, no deadline exhaustion.
 This was a real Cron execution, separately verified in `cron.job_run_details`
@@ -137,7 +144,7 @@ Both workers and the Cron helper accept at most 30 jobs per invocation rather th
 three. Concurrency remains three and the soft deadline remains 45 seconds;
 unfinished jobs are returned for retry. This is a bounded capacity increase, not
 a measured guarantee of users or delivery latency. No schedule is enabled by the
-migration; Firebase/push must remain paused until separately configured.
+migration; in a new environment, Firebase/push must remain paused until separately configured.
 
 Deployment order: apply the additive migration, deploy `process-media-deletions`
 and `process-push-notifications`, then publish the web client. The new web upload

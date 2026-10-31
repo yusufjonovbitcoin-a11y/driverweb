@@ -28,6 +28,7 @@ test('logout and unread count remain accessible at both viewport sizes', async (
   await expect(page.getByRole('button', { name: /Chat, 3 unread/ })).toBeVisible();
   const logout = page.getByRole('button', { name: /Sign out|Log out/ });
   await expect(logout).toBeVisible();
+  page.once('dialog', dialog => dialog.accept());
   await logout.click();
   await expect(page.getByRole('status', { name: '' }).filter({ hasText: 'Signed out' })).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
@@ -41,6 +42,8 @@ test('history is silent, new incoming message gets a polite announcement', async
 test('synthetic workspace has no serious or critical automated accessibility violations', async ({ page }) => {
   for (const theme of ['light', 'dark']) {
     if (theme === 'dark') await page.getByRole('button', { name: 'Toggle theme' }).click();
+    // Audit settled theme colors rather than the intermediate transition frame.
+    await expect(page.locator('.sidebar-account-card')).toHaveCSS('background-color', theme === 'dark' ? 'rgb(35, 53, 80)' : 'rgb(232, 238, 252)');
     const result = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa', 'wcag21aa']).analyze();
     expect(result.violations.filter(issue => ['serious', 'critical'].includes(issue.impact))).toEqual([]);
   }

@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { LoaderCircle, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import Sidebar from './components/Sidebar';
+import { confirmSettingsNavigation, pushSettingsHistory, useSettingsHistoryGuard } from './hooks/useSettingsDraft';
 import TopHeader from './components/TopHeader';
 import LazyRouteBoundary from './components/LazyRouteBoundary';
 import { useAuth } from './hooks/useAuth';
@@ -37,9 +38,14 @@ import { localizedError } from './i18n/errors';
 import { runLoadTrashAction, loadTrashMetadata, partitionTrashedLoads } from './services/loadTrashActions.js';
 import { isRecoverableLoad, recoverSavedLoad } from './services/savedLoadRecovery.js';
 import { loadBoardStatus } from './services/loadBoardStatus.js';
+import { applyConfirmedLoadAssignment, completeLoadAssignment } from './services/loadAssignment.js';
+import { backgroundAssignmentKey } from './services/backgroundAssignments.js';
+import { useBackgroundAssignments } from './hooks/useBackgroundAssignments.js';
+import BackgroundAssignments from './components/BackgroundAssignments.jsx';
 import { applyStaffDocumentResult, refreshOpenDocumentLoad } from './services/staffLoadDocuments.js';
 import { loadImportFileError } from './services/loadImportFile';
-import { createDocumentImportRunner, mergeDocumentImportResult, continueDocumentImport, shouldCancelImportOnNavigation, findExistingFinalizedLoad } from './services/documentImportSession';
+import { createDocumentImportRunner, mergeDocumentImportResult, continueDocumentImport, shouldCancelImportOnNavigation } from './services/documentImportSession';
+import { createDocumentImportTiming } from './services/documentImportTiming.js';
 import { setAppLocale } from './i18n';
 import { changeLocaleWithProfileSync } from './i18n/localeSync';
 import { supabase } from './lib/supabase';
@@ -78,6 +84,7 @@ const ArrivalBoard = React.lazy(routeLoaders.arrivals);
 const AnalyticsOverview = React.lazy(routeLoaders.analytics);
 const DispatchChat = React.lazy(routeLoaders.chat);
 const AuthView = React.lazy(() => import('./components/AuthView'));
+const MfaPanel = React.lazy(() => import('./components/MfaPanel'));
 const LoadsWorkspace = React.lazy(routeLoaders.kanban);
 const FleetMap = React.lazy(routeLoaders.map);
 const DriverRoster = React.lazy(routeLoaders.drivers);
@@ -111,20 +118,23 @@ function Workspace({ auth, browserPush }) {
   const querySourcesRef = useRef('');
   const { currentUser, loading: authLoading, configured, authError, login, logout: authLogout } = auth;
   const [displayTimeZone, setDisplayTimeZone] = useTimeZonePreference(currentUser?.id);
+  useSettingsHistoryGuard();
   const logout = useCallback(async () => {
+    if (!confirmSettingsNavigation()) return;
     await disableBrowserPush().catch(() => {});
     clearPersistedChatSession(chatAccountKey(currentUser));
     await clearPersistedChatMedia(chatAccountKey(currentUser)).catch(() => {});
     return authLogout();
   }, [currentUser, authLogout, disableBrowserPush]);
   const [activeTab, setActiveTab] = useState(() => {
-    const hash = typeof window !== 'undefined' ? window.location.hash.replace('#', '') : '';
+    const hash = typeof window !== 'undefined' ? window.location.hash.replace('#', '').split('?')[0] : '';
     return tabs.includes(hash) ? hash : 'kanban';
   });
   useEffect(() => {
     if (!authLoading) void trackPage(currentUser?.id ? activeTab : 'login');
   }, [activeTab, authLoading, currentUser?.id]);
   const [loads, setLoads] = useState([]);
+  const [accountingInitialView, setAccountingInitialView] = useState(null);
   const [trashedLoads, setTrashedLoads] = useState([]);
   const [drivers, setDrivers] = useState([]);
   const [rosterDrivers, setRosterDrivers] = useState([]);
@@ -184,6 +194,9 @@ function Workspace({ auth, browserPush }) {
     [rosterDrivers, selectedDriverId],
   );
   const currentUserId = currentUser?.id;
+  const assignmentAccountRef = useRef(currentUserId);
+  assignmentAccountRef.current = currentUserId;
+  const { queue: backgroundAssignments, tasks: assignmentTasks } = useBackgroundAssignments(currentUserId);
   const currentUserRoleCode = currentUser?.roleCode;
   const currentUserLocale = currentUser?.locale;
 
@@ -271,7 +284,7 @@ function Workspace({ auth, browserPush }) {
       ]);
       if (querySourcesRef.current && querySourcesRef.current !== querySources) {
         void invalidate(key => key === 'fleet-vehicles'
-          || (Array.isArray(key) && ['trip-analytics', 'driver-sessions'].includes(key[0]))).catch(() => {});
+          || (Array.isArray(key) && ['trip-analytics', 'financial-center', 'driver-sessions'].includes(key[0]))).catch(() => {});
       }
       querySourcesRef.current = querySources;
       const partition = partitionTrashedLoads(workspace.loads);
@@ -353,14 +366,15 @@ function Workspace({ auth, browserPush }) {
 
   useEffect(() => {
     const handleHash = () => {
-      const hash = window.location.hash.replace('#', '');
+      const hash = window.location.hash.replace('#', '').split('?')[0];
       const nextTab = currentUser?.roleCode === 'super_admin' ? 'profile' : tabs.includes(hash) ? hash : 'kanban';
       applyTabNavigation(nextTab);
       if (hash !== nextTab) window.history.replaceState(null, '', `#${nextTab}`);
     };
     handleHash();
     window.addEventListener('hashchange', handleHash);
-    return () => window.removeEventListener('hashchange', handleHash);
+    window.addEventListener('popstate', handleHash);
+    return () => { window.removeEventListener('hashchange', handleHash); window.removeEventListener('popstate', handleHash); };
   }, [currentUser?.roleCode, applyTabNavigation]);
 
   useEffect(() => {
@@ -483,17 +497,22 @@ function Workspace({ auth, browserPush }) {
 
   const handleSelectTab = useCallback((tab) => {
     if (!tabs.includes(tab) || (currentUser?.roleCode === 'super_admin' && tab !== 'profile')) return;
+    if (!confirmSettingsNavigation()) return;
     applyTabNavigation(tab);
+    if (tab === 'accounting') setAccountingInitialView(null);
     // The state transition already ran; hashchange is reserved for browser navigation.
-    if (window.location.hash !== `#${tab}`) window.history.pushState(null, '', `#${tab}`);
+    if (window.location.hash !== `#${tab}`) pushSettingsHistory(`#${tab}`);
   }, [currentUser?.roleCode, applyTabNavigation]);
 
   const handleOpenDriverProfile = useCallback((driverOrId) => {
+    if (!confirmSettingsNavigation()) return;
     const driverId = typeof driverOrId === 'string' ? driverOrId : driverOrId?.id;
     setSelectedDriverId(driverId || null);
     // A repeated request must also leave Settings/Integrations for the driver.
     setDriverProfileRequest(request => request + 1);
     handleSelectTab('profile');
+    window.history.replaceState(window.history.state, '', driverId ? `#profile?driver=${encodeURIComponent(driverId)}` : '#profile');
+    window.dispatchEvent(new Event('settings:navigated'));
   }, [handleSelectTab]);
 
   const handleOpenDriverChat = useCallback((driver) => {
@@ -510,6 +529,7 @@ function Workspace({ auth, browserPush }) {
   }, []);
 
   const handleCreateLoad = async (newLoad) => {
+    const actorId = currentUserId;
     setOperationLoading(true);
     let loadId;
     try {
@@ -535,7 +555,11 @@ function Workspace({ auth, browserPush }) {
 
     setOperationLoading(true);
     try {
-      await assignLoadDirectly(loadId, newLoad.targetDriverIds[0]);
+      const assignment = await assignLoadDirectly(loadId, newLoad.targetDriverIds[0]);
+      if (!workspaceActiveRef.current || assignmentAccountRef.current !== actorId) return;
+      workspaceGenerationRef.current += 1;
+      setLoads(current => assignmentAccountRef.current === actorId
+        ? applyConfirmedLoadAssignment(current, { ...newLoad, id: loadId }, newLoad.targetDriverIds[0], assignment) : current);
       showToast(t('loads.assignedDirectly'));
     } catch (error) {
       setAiPreparedLoad({ ...newLoad, id: loadId, databaseStatus: 'ready_for_offer',
@@ -544,8 +568,8 @@ function Workspace({ auth, browserPush }) {
         reason: localizedError(t, error, 'errors.createLoad'),
       }));
     } finally {
-      await refreshWorkspace({ quiet: true });
       setOperationLoading(false);
+      void refreshWorkspace({ quiet: true });
     }
   };
 
@@ -595,6 +619,7 @@ function Workspace({ auth, browserPush }) {
       showToast(t(`errors.${fileError}`));
       return;
     }
+    const timing = import.meta.env.DEV ? createDocumentImportTiming() : null;
     importFileRef.current = file;
     importTabRef.current = brokerSource ? 'drivers' : activeTab;
     const importRequestId = crypto.randomUUID();
@@ -612,21 +637,16 @@ function Workspace({ auth, browserPush }) {
     setAiProcessing(true);
     return importRunnerRef.current.run({
       prepare: () => brokerSource
-        ? prepareLoadFromBrokerAttachment(brokerSource)
-        : prepareLoadFromDocument(file),
+        ? prepareLoadFromBrokerAttachment(brokerSource, { onTiming: timing?.record })
+        : prepareLoadFromDocument(file, { onTiming: timing?.record }),
       onResult: (result) => {
+        if (timing) result = { ...result, preparedLoad: { ...result.preparedLoad, importTiming: timing.ready() } };
         importFileRef.current = result.file || file;
-        const existingLoad = findExistingFinalizedLoad(loads, result.preparedLoad.loadNumber);
-        const preparedResult = existingLoad
-          ? { ...result, preparedLoad: { ...result.preparedLoad, existingFinalizedLoadId: existingLoad.id } }
-          : result;
-        setAiPreparedLoad(current => mergeDocumentImportResult(current, importRequestId, preparedResult));
+        setAiPreparedLoad(current => mergeDocumentImportResult(current, importRequestId, result));
         // A preview has no database/media write, so there is nothing to refresh.
         const warningCount = result.preparedLoad.missingFields?.length || 0;
         showToast(
-          existingLoad
-            ? t('importReview.duplicateLoad')
-            : result.duplicate
+          result.duplicate
             ? t('toasts.duplicateDocument')
             : warningCount
               ? t('toasts.aiPreparedWarnings', { count: warningCount })
@@ -711,28 +731,62 @@ function Workspace({ auth, browserPush }) {
 
   const handleSendAiOffer = async (driverIds) => {
     if (!aiPreparedLoad) return;
+    if (aiPreparedLoad.previewTicket) {
+      const preparedLoad = aiPreparedLoad, sourceFile = importFileRef.current;
+      const actorId = currentUserId, driverId = driverIds[0];
+      if (!actorId || !driverId || !(sourceFile instanceof File)) return t('errors.createLoad');
+      const started = backgroundAssignments.start({ key: backgroundAssignmentKey(preparedLoad),
+        label: preparedLoad.loadNumber || preparedLoad.fileName,
+        driverName: drivers.find(driver => driver.id === driverId)?.name || '',
+        input: { preparedLoad, sourceFile, actorId, driverId },
+        perform: async input => {
+          if (assignmentAccountRef.current !== input.actorId) throw Error('AUTH_SESSION_CHANGED');
+          return sendPreviewDocumentLoad(input.sourceFile, input.preparedLoad.previewTicket, input.driverId, {
+            brokerMessageId: input.preparedLoad.brokerMessageId,
+            brokerAttachmentId: input.preparedLoad.brokerAttachmentId,
+            actorId: input.actorId, checksum: input.preparedLoad.review?.checksum,
+          });
+        },
+        formatError: error => localizedError(t, error, 'errors.createLoad'),
+        confirmed: (result, input) => {
+          if (!workspaceActiveRef.current || assignmentAccountRef.current !== input.actorId) return;
+          workspaceGenerationRef.current += 1;
+          setLoads(current => assignmentAccountRef.current === input.actorId
+            ? applyConfirmedLoadAssignment(current, input.preparedLoad, input.driverId, result) : current);
+          showToast(t('backgroundAssignment.completed', { load: preparedLoad.loadNumber || preparedLoad.fileName }));
+          void refreshWorkspace({ quiet: true });
+        },
+      });
+      if (!started) return t('backgroundAssignment.alreadyQueued');
+      // File/ticket now belong to the app-level task. Releasing the review URL
+      // cannot cancel the captured upload or reopen this page on completion.
+      importFileRef.current = null; importTabRef.current = null;
+      setAiPreparedLoad(null);
+      return true;
+    }
     setOperationLoading(true);
     try {
       const preparedLoad = aiPreparedLoad;
-      if (preparedLoad.previewTicket) {
-        await sendPreviewDocumentLoad(importFileRef.current, preparedLoad.previewTicket, driverIds[0], {
-          brokerMessageId: preparedLoad.brokerMessageId,
-          brokerAttachmentId: preparedLoad.brokerAttachmentId,
-        });
-      } else if (preparedLoad.source === 'saved' && isRecoverableLoad(preparedLoad)) {
-        await recoverSavedLoad(preparedLoad, driverIds[0], {
-          approve: approveLoadDraft, assign: assignLoadDirectly, review: reviewAndAssignDocumentLoad,
-        });
-      } else if (preparedLoad.review?.required) {
-        await reviewAndAssignDocumentLoad(preparedLoad.id, driverIds[0], preparedLoad.review.checksum);
-      } else {
-        await assignLoadDirectly(preparedLoad.id, driverIds[0]);
-      }
-      await refreshWorkspace({ quiet: true });
-      importFileRef.current = null;
-      importTabRef.current = null;
-      setAiPreparedLoad(null);
-      showToast(t('loads.assignedDirectly'));
+      const actorId = currentUserId;
+      await completeLoadAssignment({ assign: async () => {
+        if (preparedLoad.source === 'saved' && isRecoverableLoad(preparedLoad)) {
+          return recoverSavedLoad(preparedLoad, driverIds[0], {
+            approve: approveLoadDraft, assign: assignLoadDirectly, review: reviewAndAssignDocumentLoad,
+          });
+        } else if (preparedLoad.review?.required) {
+          return reviewAndAssignDocumentLoad(preparedLoad.id, driverIds[0], preparedLoad.review.checksum);
+        }
+        return assignLoadDirectly(preparedLoad.id, driverIds[0]);
+      }, confirmed: result => {
+        if (!workspaceActiveRef.current || assignmentAccountRef.current !== actorId) return;
+        // Invalidate reads started before the commit; the trailing refresh will
+        // reconcile durable IDs/documents without blocking the acknowledgement.
+        workspaceGenerationRef.current += 1;
+        setLoads(current => assignmentAccountRef.current === actorId
+          ? applyConfirmedLoadAssignment(current, preparedLoad, driverIds[0], result) : current);
+        setAiPreparedLoad(current => current === preparedLoad ? null : current);
+        showToast(t('loads.assignedDirectly'));
+      }, refresh: () => assignmentAccountRef.current === actorId ? refreshWorkspace({ quiet: true }) : undefined });
       return true;
     } catch (error) {
       const message = localizedError(t, error, 'errors.createLoad');
@@ -744,6 +798,16 @@ function Workspace({ auth, browserPush }) {
     } finally {
       setOperationLoading(false);
     }
+  };
+
+  const reviewBackgroundAssignment = key => {
+    if (aiPreparedLoad) return;
+    const input = backgroundAssignments.takeForReview(key);
+    if (!input || assignmentAccountRef.current !== input.actorId) return;
+    importFileRef.current = input.sourceFile; importTabRef.current = activeTab;
+    setAiProcessing(false);
+    setAiPreparedLoad({ ...input.preparedLoad, preferredDriverId: input.driverId,
+      importRequestId: crypto.randomUUID(), sourceUrl: URL.createObjectURL(input.sourceFile) });
   };
 
   const filteredLoads = useMemo(() => loads.filter((load) => {
@@ -810,12 +874,12 @@ function Workspace({ auth, browserPush }) {
     return (
       <LazyRouteBoundary key="auth">
         <React.Suspense fallback={<div className="grid min-h-screen place-items-center"><LoaderCircle className="h-7 w-7 animate-spin" /></div>}>
-          <AuthView
+          {auth.mfaRequired ? <main className="mfa-challenge-shell"><MfaPanel challengeOnly onVerified={auth.completeMfa} onLogout={logout} /></main> : <AuthView
             onLogin={login}
             externalError={!configured ? t('errors.supabaseConfig') : authError && localizedError(t, new Error(authError))}
             theme={theme}
             toggleTheme={() => setTheme((value) => value === 'dark' ? 'light' : 'dark')}
-          />
+          />}
         </React.Suspense>
       </LazyRouteBoundary>
     );
@@ -885,6 +949,9 @@ function Workspace({ auth, browserPush }) {
           </div>
         )}
 
+        <BackgroundAssignments tasks={assignmentTasks} onRetry={backgroundAssignments.retry}
+          onReview={reviewBackgroundAssignment} onDismiss={backgroundAssignments.dismiss} reviewDisabled={Boolean(aiPreparedLoad)} />
+
         <main className={`workspace-main min-h-0 flex-1 relative ${activeTab === 'chat' || inlineChatVisible ? 'workspace-main-chat' : activeTab === 'map' ? 'workspace-main-map' : importPageVisible ? 'workspace-main-import' : activeTab === 'analytics' ? 'workspace-main-analytics' : activeTab === 'drivers' && !selectedDriverId ? 'workspace-main-drivers' : 'overflow-y-auto p-5 space-y-4'}`}>
           {((refreshLoading && !workspaceReady) || operationLoading) && !importPageVisible && (
             <div className="absolute inset-0 z-30 bg-white/60 dark:bg-zinc-950/60 backdrop-blur-[1px] flex items-center justify-center">
@@ -936,13 +1003,15 @@ function Workspace({ auth, browserPush }) {
               isAiProcessing={aiProcessing}
             />
           )}
-          {activeTab === 'analytics' && <AnalyticsOverview />}
+          {activeTab === 'analytics' && <AnalyticsOverview key={currentUserId} drivers={rosterDrivers} canEditAccounting={['company_admin', 'dispatcher'].includes(currentUserRoleCode)} onOpenLoad={id => { const load = loads.find(item => item.id === id); if (load) handleOpenDocs(load); }} onOpenAccountingSettings={() => { handleSelectTab('accounting'); setAccountingInitialView({ tab: 'settings' }); }} />}
           {activeTab === 'arrivals' && <ArrivalBoard drivers={rosterDrivers} loads={loads} searchQuery={searchQuery} timeZone={displayTimeZone} onOpenChat={handleOpenDriverChat} onOpenLoad={handleOpenDocs} onClearSearch={() => setSearchQuery('')} />}
-          {activeTab === 'accounting' && <AccountingOverview key={currentUserId} company={currentUser?.company} canManageAccounting={currentUserRoleCode === 'company_admin'} loads={loads} drivers={rosterDrivers} onOpenLoad={handleOpenDocs} />}
+          {activeTab === 'accounting' && <AccountingOverview key={currentUserId} initialView={accountingInitialView} company={currentUser?.company} canManageAccounting={currentUserRoleCode === 'company_admin'} loads={loads} drivers={rosterDrivers} onOpenLoad={handleOpenDocs} />}
           {activeTab === 'drivers' && !inlineChatVisible && (
             <DriverRoster
               onWorkspaceRefresh={refreshWorkspace}
               canManageDriver={currentUserRoleCode === 'company_admin'}
+              canEditAccounting={['company_admin', 'dispatcher'].includes(currentUserRoleCode)}
+              onOpenAccountingSettings={() => { handleSelectTab('accounting'); setAccountingInitialView({ tab: 'settings' }); }}
               drivers={rosterDrivers}
               loads={loads}
               onAssignLoad={handleOpenCreateLoad}
@@ -972,7 +1041,7 @@ function Workspace({ auth, browserPush }) {
             initialSection={driverProfileRequest ? 'company' : undefined}
             browserPush={browserPush}
             onSaveProfile={auth.updateProfile}
-                drivers={drivers}
+                drivers={rosterDrivers}
                 members={members}
                 loads={loads}
                 onAddDriver={handleCreateMember}

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { clearUnreadForDriver, countUnreadChatsByDriver } from './chatUnread.js';
+import { clearUnreadForDriver, countUnreadChatsByDriver } from '../../tests/legacy/src/services/chatUnread.js';
 
 test('counts only unread incoming messages for each driver', () => {
   const counts = countUnreadChatsByDriver([

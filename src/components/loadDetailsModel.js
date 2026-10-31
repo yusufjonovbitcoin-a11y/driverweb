@@ -55,6 +55,7 @@ export function buildLoadDetails(load, driver) {
 
   return {
     number: load.loadNumber,
+    brokerLoadNumber: load.brokerLoadNumber || null,
     status: load.databaseStatus || load.status,
     driverName: driver?.name || null,
     broker: load.broker || null,
@@ -85,6 +86,8 @@ export function buildLoadDetails(load, driver) {
 // Latest observed position is display-only: never substitute a START/pay origin.
 export function loadCurrentLocation(load, driver, now = Date.now()) {
   if (!driver || load?.driverId !== driver.id) return null;
+  // Today's presence can belong to another trip; it is not a historical origin.
+  if (['completed', 'delivered', 'cancelled', 'dispute'].includes(load.databaseStatus)) return null;
   const lat = driver.lastKnownPosition?.latitude;
   const lng = driver.lastKnownPosition?.longitude;
   const observedAt = Date.parse(driver.lastKnownPosition?.capturedAt || '');
@@ -112,9 +115,19 @@ export function latestPickupRouteStops(load, location) {
   ];
 }
 
+export function loadRouteOrigin(currentLocation, startState) {
+  if (startState === undefined || startState?.status === 'awaiting_start') {
+    return { origin: currentLocation, source: 'latest' };
+  }
+  if (startState?.status === 'ready') return { origin: startState.location, source: 'start' };
+  // A missing START fix must not be replaced with today's position.
+  return { origin: null, source: startState?.status === 'missing_location' ? 'start' : 'pending' };
+}
 
-export function pickupEstimateScope(loadId, driverId, stops) {
-  return JSON.stringify([loadId, driverId, stops.slice(1)]);
+
+export function pickupEstimateScope(loadId, driverId, stops, assignmentId = null, startLocation = null) {
+  return JSON.stringify([loadId, driverId, stops.slice(1), assignmentId,
+    startLocation ? [startLocation.lat, startLocation.lng, startLocation.observedAt] : null]);
 }
 
 export function selectPickupEstimate(scope, current, completed, hasLocation) {

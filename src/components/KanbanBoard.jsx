@@ -1,10 +1,9 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { DateRangePicker } from './CalendarPicker';
 import { 
   Columns3,
   CalendarDays,
-  ChevronLeft,
-  ChevronRight,
   Plus,
   Table as TableIcon,
   Sparkles,
@@ -19,11 +18,12 @@ import {
   UsersRound,
   FileText,
 } from 'lucide-react';
-import { formatAppointment, formatCurrency, formatDate } from '../i18n/format';
+import { formatAppointment, formatCurrency } from '../i18n/format';
 import { stopCalendarDate } from '../i18n/stopAppointment.js';
 import { displayBoardStage } from '../services/loadBoardStatus';
 import { filterWorkspaceLoads } from './loadWorkspaceModel';
 import { localizedError } from '../i18n/errors';
+import LoadNumber from './LoadNumber.jsx';
 const LoadDetailsModal = React.lazy(() => import('./LoadDetailsModal'));
 
 function getClipboardImage(clipboardData) {
@@ -36,15 +36,6 @@ function getClipboardImage(clipboardData) {
   return Array.from(clipboardData?.files || []).find(
     (file) => file.type.startsWith('image/'),
   ) || null;
-}
-
-function toCalendarDate(year, month, day) {
-  return `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-}
-
-function shiftCalendarMonth({ year, month }, offset) {
-  const shifted = new Date(year, month + offset, 1);
-  return { year: shifted.getFullYear(), month: shifted.getMonth() };
 }
 
 export default function KanbanBoard({ 
@@ -82,10 +73,6 @@ export default function KanbanBoard({
     && (!groupDeliveredWithOnRoad || stage.id !== 'DELIVERED')
   ));
   const stageForLoad = (load) => displayBoardStage(load.status, groupDeliveredWithOnRoad);
-  const calendarDays = Array.from({ length: 7 }, (_, index) => formatDate(
-    new Date(2026, 0, 5 + index),
-    { weekday: 'short' },
-  ));
   const [viewMode, setViewMode] = useState(() => (
     boardOnly || typeof localStorage === 'undefined' || localStorage.getItem('drivex_load_view_mode') === 'kanban' ? 'kanban' : 'table'
   ));
@@ -93,13 +80,8 @@ export default function KanbanBoard({
   const [stageFilter, setStageFilter] = useState('ALL');
   const [tripSearch, setTripSearch] = useState('');
   const [driverFilter, setDriverFilter] = useState('ALL');
-  const [isDateFilterOpen, setIsDateFilterOpen] = useState(false);
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
-  const [calendarMonth, setCalendarMonth] = useState(() => {
-    const today = new Date();
-    return { year: today.getFullYear(), month: today.getMonth() };
-  });
   const [isDraggingOverOffer, setIsDraggingOverOffer] = useState(false);
   const [isPasteTargetHovered, setIsPasteTargetHovered] = useState(false);
   const [loadPendingDelete, setLoadPendingDelete] = useState(null);
@@ -108,7 +90,6 @@ export default function KanbanBoard({
   const detailsLoad = loads.find(load => load.id === selectedLoadDetails?.id);
   const [deleteError, setDeleteError] = useState('');
   const [isDeleting, setIsDeleting] = useState(false);
-  const calendarPopoverRef = useRef(null);
 
   const importDocument = onAssignedDocumentUpload || onDropOnOffer;
   const submitDocumentFile = useCallback((file) => {
@@ -131,19 +112,6 @@ export default function KanbanBoard({
     return () => window.removeEventListener('paste', handleClipboardPaste);
   }, [isPasteTargetHovered, submitDocumentFile]);
 
-  useEffect(() => {
-    if (!isDateFilterOpen) return undefined;
-
-    const closeOnOutsidePointer = (event) => {
-      if (!calendarPopoverRef.current?.contains(event.target)) {
-        setIsDateFilterOpen(false);
-      }
-    };
-
-    document.addEventListener('pointerdown', closeOnOutsidePointer);
-    return () => document.removeEventListener('pointerdown', closeOnOutsidePointer);
-  }, [isDateFilterOpen]);
-
   const pasteTargetProps = {
     onMouseEnter: () => setIsPasteTargetHovered(true),
     onMouseLeave: () => setIsPasteTargetHovered(false),
@@ -158,7 +126,7 @@ export default function KanbanBoard({
   const searchedLoads = fleetWorkspace
     ? filterWorkspaceLoads(boardLoads, { query: tripSearch, driverId: driverFilter, driversById })
     : driverWorkspace && tripSearch.trim()
-    ? boardLoads.filter((load) => [load.loadNumber, load.origin?.city, load.origin?.state, load.destination?.city, load.destination?.state, load.broker]
+    ? boardLoads.filter((load) => [load.loadNumber, load.brokerLoadNumber, load.origin?.city, load.origin?.state, load.destination?.city, load.destination?.state, load.broker]
       .some((value) => String(value || '').toLowerCase().includes(tripSearch.trim().toLowerCase())))
     : boardLoads;
   const dateFilteredLoads = hasDateFilter
@@ -177,21 +145,7 @@ export default function KanbanBoard({
     setViewMode(mode);
   };
 
-  const selectCalendarDay = (day) => {
-    if (!dateFrom || dateTo) {
-      setDateFrom(day);
-      setDateTo('');
-      return;
-    }
 
-    if (day < dateFrom) {
-      setDateTo(dateFrom);
-      setDateFrom(day);
-      return;
-    }
-
-    if (day !== dateFrom) setDateTo(day);
-  };
 
   const getDriver = (driverId) => driversById.get(driverId);
   const hasWorkspaceFilters = Boolean(tripSearch.trim() || driverFilter !== 'ALL' || stageFilter !== 'ALL' || hasDateFilter);
@@ -247,7 +201,7 @@ export default function KanbanBoard({
           </>}
         </div>
 
-        <div ref={calendarPopoverRef} className="relative flex items-center gap-2">
+        <div className="relative flex items-center gap-2">
           {styledWorkspace && <>
             <label className="driver-board-search"><Search size={17} /><input type="search" value={tripSearch} onChange={(event) => setTripSearch(event.target.value)} aria-label={t(fleetWorkspace ? 'loadsWorkspace.searchPlaceholder' : 'drivers.tripSearchPlaceholder')} placeholder={t(fleetWorkspace ? 'loadsWorkspace.searchPlaceholder' : 'drivers.tripSearchPlaceholder')} /></label>
             {fleetWorkspace && <label className="fleet-driver-filter"><UsersRound size={16} aria-hidden="true" /><select value={driverFilter} onChange={(event) => setDriverFilter(event.target.value)} aria-label={t('loadsWorkspace.driverFilter')}>
@@ -288,110 +242,7 @@ export default function KanbanBoard({
             </button>}
           </div>}
 
-          <button
-            type="button"
-            aria-label={t('loads.dateFilter')}
-            aria-expanded={isDateFilterOpen}
-            onClick={() => setIsDateFilterOpen((isOpen) => !isOpen)}
-            className={`inline-flex h-9 w-9 items-center justify-center rounded-lg border transition-colors ${
-              hasDateFilter
-                ? 'border-teal-600 bg-teal-50 text-teal-700 dark:border-teal-500 dark:bg-teal-950/40 dark:text-teal-300'
-                : 'border-zinc-200 bg-white text-zinc-500 hover:border-zinc-300 hover:text-zinc-900 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100'
-            }`}
-            title={t('loads.dateFilter')}
-          >
-            <CalendarDays className="h-5 w-5" />
-            {styledWorkspace && <span>{hasDateFilter ? `${filterStart}${filterStart !== filterEnd ? ` — ${filterEnd}` : ''}` : t('drivers.allDates')}</span>}
-          </button>
-
-          {isDateFilterOpen && (
-            <div className="absolute right-0 top-11 z-30 w-80 rounded-xl border border-zinc-200 bg-white p-4 shadow-xl dark:border-zinc-800 dark:bg-zinc-900">
-              <div className="mb-3">
-                <p className="text-sm font-bold text-zinc-900 dark:text-zinc-100">{t('loads.tripDate')}</p>
-                <p className="mt-0.5 text-xs leading-5 text-zinc-500">{t('loads.dateRangeHint')}</p>
-              </div>
-              <div className="rounded-lg border border-zinc-100 p-2 dark:border-zinc-800">
-                <div className="mb-2 flex items-center justify-between">
-                  <button
-                    type="button"
-                    onClick={() => setCalendarMonth((current) => shiftCalendarMonth(current, -1))}
-                    className="inline-flex h-7 w-7 items-center justify-center rounded-md text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
-                    aria-label={t('loads.previousMonth')}
-                  >
-                    <ChevronLeft className="h-4 w-4" />
-                  </button>
-                  <span className="text-sm font-bold text-zinc-900 dark:text-zinc-100">
-                    {formatDate(new Date(calendarMonth.year, calendarMonth.month, 1), { month: 'long', year: 'numeric' })}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => setCalendarMonth((current) => shiftCalendarMonth(current, 1))}
-                    className="inline-flex h-7 w-7 items-center justify-center rounded-md text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
-                    aria-label={t('loads.nextMonth')}
-                  >
-                    <ChevronRight className="h-4 w-4" />
-                  </button>
-                </div>
-                <div className="grid grid-cols-7 gap-1 text-center">
-                  {calendarDays.map((dayName) => (
-                    <span key={dayName} className="py-1 text-[10px] font-bold text-zinc-400">{dayName}</span>
-                  ))}
-                  {Array.from({ length: (new Date(calendarMonth.year, calendarMonth.month, 1).getDay() + 6) % 7 }).map((_, index) => (
-                    <span key={`blank-${index}`} />
-                  ))}
-                  {Array.from({ length: new Date(calendarMonth.year, calendarMonth.month + 1, 0).getDate() }).map((_, index) => {
-                    const dayNumber = index + 1;
-                    const day = toCalendarDate(calendarMonth.year, calendarMonth.month, dayNumber);
-                    const isRangeDay = Boolean(dateFrom && dateTo && day > dateFrom && day < dateTo);
-                    const isSelectedDay = day === dateFrom || day === dateTo;
-                    const today = new Date();
-                    const isToday = day === toCalendarDate(today.getFullYear(), today.getMonth(), today.getDate());
-
-                    return (
-                      <button
-                        key={day}
-                        type="button"
-                        onClick={() => selectCalendarDay(day)}
-                        className={`h-8 rounded-md text-xs font-semibold transition-colors ${
-                          isSelectedDay
-                            ? 'bg-teal-600 text-white hover:bg-teal-700'
-                            : isRangeDay
-                              ? 'bg-teal-50 text-teal-800 hover:bg-teal-100 dark:bg-teal-950/40 dark:text-teal-200 dark:hover:bg-teal-950/70'
-                              : 'text-zinc-700 hover:bg-zinc-100 dark:text-zinc-200 dark:hover:bg-zinc-800'
-                        } ${isToday && !isSelectedDay ? 'ring-1 ring-teal-500 ring-inset' : ''}`}
-                        aria-label={day}
-                        aria-pressed={isSelectedDay}
-                      >
-                        {dayNumber}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-              {hasDateFilter && (
-                <p className="mt-3 text-xs font-semibold text-teal-700 dark:text-teal-300">
-                  {filterStart}{filterStart !== filterEnd ? ` — ${filterEnd}` : ''}
-                </p>
-              )}
-              <div className="mt-4 flex items-center justify-between gap-2">
-                <button
-                  type="button"
-                  onClick={() => { setDateFrom(''); setDateTo(''); }}
-                  disabled={!hasDateFilter}
-                  className="text-xs font-bold text-zinc-500 transition-colors hover:text-zinc-900 disabled:cursor-not-allowed disabled:opacity-40 dark:hover:text-zinc-100"
-                >
-                  {t('loads.clear')}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setIsDateFilterOpen(false)}
-                  className="rounded-lg bg-zinc-900 px-3 py-2 text-xs font-bold text-white transition-colors hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-950 dark:hover:bg-white"
-                >
-                  {t('loads.view')}
-                </button>
-              </div>
-            </div>
-          )}
+          <DateRangePicker value={{ from: dateFrom, to: dateTo }} onChange={range => { setDateFrom(range.from); setDateTo(range.to); }} title={t('loads.tripDate')} triggerLabel={t('loads.dateFilter')} iconOnly={!styledWorkspace} />
         </div>
       </div>
 
@@ -541,7 +392,7 @@ export default function KanbanBoard({
                           <div key={load.id} role="button" tabIndex={0} className="driver-trip-card" onClick={() => setSelectedLoadDetails(load)} onKeyDown={(event) => {
                             if (event.target === event.currentTarget && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); setSelectedLoadDetails(load); }
                           }}>
-                            <div className="driver-trip-card-top"><strong>#{String(load.loadNumber || '').replace(/^#/, '')}</strong><span className={`driver-trip-stage stage-${col.id.toLowerCase()}`}>{load.status === 'DELIVERED' ? t('loads.awaitingCompletion') : col.title}</span></div>
+                            <div className="driver-trip-card-top"><strong><LoadNumber load={load} /></strong><span className={`driver-trip-stage stage-${col.id.toLowerCase()}`}>{load.status === 'DELIVERED' ? t('loads.awaitingCompletion') : col.title}</span></div>
                             <p className="driver-trip-card-route"><MapPin size={15} /><span>{[load.origin?.city, load.origin?.state].filter(Boolean).join(', ') || t('common.notProvided')}</span><span className="driver-trip-route-arrow">→</span><span>{[load.destination?.city, load.destination?.state].filter(Boolean).join(', ') || t('common.notProvided')}</span></p>
                             <p><CircleDollarSign size={15} /><strong>{formatCurrency(load.rate)}</strong></p>
                             <p><Building2 size={15} /><span>{load.broker || t('inbox.brokerMissing')}</span></p>
@@ -576,7 +427,7 @@ export default function KanbanBoard({
                             {/* Top Row: Load ID & Rate (No line wraps!) */}
                             <div className="flex items-center justify-between gap-2">
                               <span className="font-mono font-bold text-sm text-zinc-500 whitespace-nowrap">
-                                {load.loadNumber}
+                                <LoadNumber load={load} />
                               </span>
                               <div className="flex items-center gap-1.5">
                                 <span className="font-mono font-extrabold text-base text-zinc-900 dark:text-zinc-100 whitespace-nowrap">
@@ -766,7 +617,7 @@ export default function KanbanBoard({
                 return (
                   <tr key={load.id} className="hover:bg-zinc-50 dark:hover:bg-zinc-800/40 transition-colors">
                     <td className="py-3 px-4 font-mono font-bold text-zinc-900 dark:text-zinc-100 whitespace-nowrap">
-                      {load.loadNumber}
+                      <LoadNumber load={load} />
                     </td>
                     <td className="py-3 px-3">
                       <span className="inline-flex items-center space-x-2 text-sm font-semibold">

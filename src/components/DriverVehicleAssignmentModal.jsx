@@ -76,7 +76,7 @@ export default function DriverVehicleAssignmentModal({ driver, onClose, onWorksp
         <form onSubmit={submit} className="p-5">
           {error && <p role="alert" className="mb-4 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm font-semibold text-red-700 dark:border-red-900 dark:bg-red-950/30 dark:text-red-300">{error}</p>}
           {loading ? (
-            <div className="grid min-h-40 place-items-center"><LoaderCircle className="h-6 w-6 animate-spin text-teal-600" /></div>
+            <div className="grid min-h-40 place-items-center"><LoaderCircle className="h-6 w-6 animate-spin text-blue-600" /></div>
           ) : (
             <fieldset className="space-y-2">
               <legend className="mb-2 text-xs font-bold uppercase tracking-wider text-zinc-500">{t('fleet.selectVehicle')}</legend>
@@ -108,7 +108,7 @@ export default function DriverVehicleAssignmentModal({ driver, onClose, onWorksp
           )}
           <footer className="mt-5 flex justify-end gap-2 border-t border-zinc-200 pt-4 dark:border-zinc-800">
             <button type="button" onClick={onClose} disabled={saving} className="rounded-xl border border-zinc-200 px-4 py-2.5 text-sm font-bold dark:border-zinc-700">{t('common.cancel')}</button>
-            <button type="submit" disabled={loading || saving || !changed} className="inline-flex items-center gap-2 rounded-xl bg-teal-700 px-4 py-2.5 text-sm font-bold text-white transition hover:bg-teal-600 disabled:cursor-not-allowed disabled:opacity-50">{saving && <LoaderCircle className="h-4 w-4 animate-spin" />}{t('fleet.saveAssignment')}</button>
+            <button type="submit" disabled={loading || saving || !changed} className="inline-flex items-center gap-2 rounded-xl bg-[var(--action-bg)] px-4 py-2.5 text-sm font-bold text-[var(--action-ink)] transition hover:bg-[var(--action-hover)] disabled:cursor-not-allowed disabled:opacity-50">{saving && <LoaderCircle className="h-4 w-4 animate-spin" />}{t('fleet.saveAssignment')}</button>
           </footer>
         </form>
       </section>
@@ -118,11 +118,11 @@ export default function DriverVehicleAssignmentModal({ driver, onClose, onWorksp
 
 function VehicleOption({ value, selected, onSelect, label, detail, occupied, disabled = false }) {
   return (
-    <label className={`flex items-center gap-3 rounded-xl border px-3.5 py-3 transition ${selected ? 'border-teal-500 bg-teal-50 dark:bg-teal-950/30' : 'border-zinc-200 hover:border-teal-300 dark:border-zinc-700'} ${disabled ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'}`}>
-      <input type="radio" name="assigned-vehicle" value={value} checked={selected} disabled={disabled} onChange={() => onSelect(value)} className="h-4 w-4 accent-teal-700" />
-      <Truck className="h-4 w-4 shrink-0 text-teal-700 dark:text-teal-300" aria-hidden="true" />
+    <label className={`flex items-center gap-3 rounded-xl border px-3.5 py-3 transition ${selected ? 'border-blue-500 bg-blue-50 dark:bg-blue-950/30' : 'border-zinc-200 hover:border-blue-300 dark:border-zinc-700'} ${disabled ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'}`}>
+      <input type="radio" name="assigned-vehicle" value={value} checked={selected} disabled={disabled} onChange={() => onSelect(value)} className="h-4 w-4 accent-blue-700" />
+      <Truck className="h-4 w-4 shrink-0 text-blue-700 dark:text-blue-300" aria-hidden="true" />
       <span className="min-w-0 flex-1"><span className="block truncate text-sm font-bold text-zinc-900 dark:text-zinc-100">{label}</span><span className="block truncate text-xs text-zinc-500">{detail}</span>{occupied && <span className="block text-xs font-semibold text-amber-700 dark:text-amber-300">{occupied}</span>}</span>
-      {selected && <CheckCircle2 className="h-4 w-4 shrink-0 text-teal-700 dark:text-teal-300" aria-hidden="true" />}
+      {selected && <CheckCircle2 className="h-4 w-4 shrink-0 text-blue-700 dark:text-blue-300" aria-hidden="true" />}
     </label>
   );
 }

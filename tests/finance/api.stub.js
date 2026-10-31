@@ -35,7 +35,7 @@ export const savePayRule = (driver, version, values) =>
   ]);
 export const recurringCommand = (op, payload) =>
   rpc("finance_recurring_command", [op, payload]);
-export { financeError } from "../../src/services/finance/errors";
+export { financeError } from "../legacy/src/services/finance/errors";
 
 export const creditInvoice = (op, doc, v) =>
   rpc("finance_credit_invoice", [op, doc.id, v.amount, v.reason, v.account]);

@@ -114,6 +114,7 @@ export function buildGlobalSearchResults({ query, loads = [], drivers = [], limi
       category: translate('search.trip'),
       score: matchScore(query, [
         load.loadNumber,
+        load.brokerLoadNumber,
         load.broker,
         load.origin?.city,
         load.origin?.state,
@@ -129,7 +130,7 @@ export function buildGlobalSearchResults({ query, loads = [], drivers = [], limi
         driver?.name,
         driver?.driverNumber,
         ...availableDocuments,
-      ]) + (matchScore(query, [load.loadNumber]) ? 20 : 0),
+      ]) + (matchScore(query, [load.loadNumber, load.brokerLoadNumber]) ? 20 : 0),
     };
   }).filter((result) => result.score > 0);
 

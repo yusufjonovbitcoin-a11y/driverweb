@@ -1,0 +1,3 @@
+import { defineConfig } from '@playwright/test';
+import { browserOptions } from './playwright.browser.js';
+export default defineConfig({testDir:'./tests/ui',testMatch:'settlement-persistence.check.js',outputDir:'test-results/persistence',use:{...browserOptions,baseURL:'http://127.0.0.1:5192',trace:'retain-on-failure'},projects:[{name:'desktop',use:{viewport:{width:1466,height:892}}},{name:'mobile',use:{viewport:{width:390,height:844}}}],webServer:{command:'npx vite --config tests/ui/settlement-inline.vite.config.js --host 127.0.0.1 --port 5192 --strictPort',url:'http://127.0.0.1:5192/tests/ui/settlement-persistence.html',reuseExistingServer:!process.env.CI}});

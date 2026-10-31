@@ -54,7 +54,7 @@ export function buildImportedLoad(load = {}) {
   const distance = load.distanceKnown === false || unknown.has('loadedMiles') ? null : load.documentDetails ? get('loadedMiles') : load.distanceMiles ?? null;
   return {
     operationalOnly: snapshot?.extractionScope === OPERATIONAL_EXTRACTION_SCOPE,
-    aiDirect: load.review?.method === 'ai_pdf_direct',
+    aiDirect: ['ai_pdf_direct', 'vision_manual_review'].includes(load.review?.method),
     issues: load.review?.issues || [],
     number: get('loadNumber', load.loadNumber),
     pickup: stops[0], delivery: stops.at(-1), stops,
@@ -151,6 +151,7 @@ export function importedTripRatePerMile(details, road, target) {
 
 export function canAssignImportedLoad(load, driverId, drivers, busy = false) {
   return Boolean((load?.id || load?.previewTicket) && !busy && !load.importError
+    && !load.review?.issues?.some(issue => issue.reason?.startsWith('conflicting_'))
     && drivers.some(driver => driver.id === driverId)
     && (!load.lifecycleStatus || ['draft', 'review', 'ready_for_offer', 'offered'].includes(load.lifecycleStatus)));
 }

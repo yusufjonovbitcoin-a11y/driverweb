@@ -3,7 +3,7 @@ import fontkit from "@pdf-lib/fontkit";
 import { statementModel, statementMoney } from "./statementModel.js";
 
 /** Landscape settlement template based on the supplied Mirwell statement. */
-export async function createSettlementPdf(snapshot, { fontBytes, logoBytes }) {
+export async function createSettlementPdf(snapshot, { fontBytes, logoBytes, onFields }) {
   const pdf = await PDFDocument.create();
   pdf.registerFontkit(fontkit);
   const unicode = await pdf.embedFont(fontBytes, { subset: true }),
@@ -23,6 +23,10 @@ export async function createSettlementPdf(snapshot, { fontBytes, logoBytes }) {
     half = 295,
     columns = [92, 137, 85, 70, 49, 66, 44, 55];
   let page, y;
+  const fields = [];
+  function field(key, left, top, w, h, extra = {}) {
+    fields.push({ key, page: pdf.getPageCount(), x: left, y: top, width: w, height: h, ...extra });
+  }
   function face(value, kind = "serif") {
     return /[^\x20-\x7e]/.test(String(value))
       ? unicode
@@ -81,7 +85,10 @@ export async function createSettlementPdf(snapshot, { fontBytes, logoBytes }) {
     page = pdf.addPage([792, 612]);
     if (logo)
       page.drawImage(logo, { x: 66, y: 612 - 155, width: 200, height: 93 });
-    else fit(m.company.name || "T Fleets", 70, 90, 195, 25, "bold");
+    else {
+      fit(m.company.name || "T Fleets", 70, 90, 195, 25, "bold");
+      field('companyName', 70, 90, 195, 32);
+    }
     (m.company.address || [])
       .slice(0, 2)
       .forEach((s, i) => fit(s, 90, 159 + i * 10, 180, 8));
@@ -98,6 +105,8 @@ export async function createSettlementPdf(snapshot, { fontBytes, logoBytes }) {
       draw(label, 365, 77 + i * 11, 8, "sans");
       fit(value, 436, 77 + i * 11, 305, 8);
     });
+    field('driverName', 436, 77, 305, 11);
+    field('period', 436, 88, 220, 11);
     draw("PHONE:", 365, 134, 8, "sans");
     fit(m.company.phone || "—", 436, 134, 300, 8);
     draw("EMAIL:", 365, 145, 8, "sans");
@@ -126,7 +135,7 @@ export async function createSettlementPdf(snapshot, { fontBytes, logoBytes }) {
     band("Earnings");
     row(m.columns, { header: true });
   }
-  function row(values, { header = false, total = false } = {}) {
+  function row(values, { header = false, total = false, loadIndex } = {}) {
     const lines = values.map((v, i) =>
       wrap(
         v,
@@ -147,11 +156,13 @@ export async function createSettlementPdf(snapshot, { fontBytes, logoBytes }) {
       l.forEach((s, j) =>
         draw(s, left + 2, y + 1 + j * 8, 7, header || total ? "bold" : "serif"),
       );
+      const key = ['loadNumber', 'originCity', 'destinationCity', null, null, 'miles', 'rate', 'netOverride'][i];
+      if (loadIndex != null && key) field(`load:${loadIndex}:${key}`, left, y, columns[i], height, { loadIndex, property: key });
       left += columns[i];
     });
     y += height;
   }
-  function fee(label, value, index, { total = false } = {}) {
+  function fee(label, value, index, { total = false, ruleId } = {}) {
     const lines = wrap(label, half - 70, 7, "sans");
     const height = Math.max(11, lines.length * 9 + 2);
     if (y + height > 550) {
@@ -163,19 +174,25 @@ export async function createSettlementPdf(snapshot, { fontBytes, logoBytes }) {
       draw(s, x + 2, y + 1 + i * 9, 7, total ? "bold" : "sans"),
     );
     draw(value, x + half - 64, y + 1, 7, total ? "bold" : "serif");
+    if (ruleId && ruleId !== 'pdf_net_adjustment') field(`rule:${ruleId}`, x, y, half, height, { ruleId });
     y += height;
   }
   newPage();
   if (c.settings.pdf.loads) {
     loadHeader();
-    for (const values of m.rows) row(values);
+    m.rows.forEach((values, loadIndex) => row(values, { loadIndex }));
     row(m.totals, { total: true });
     y += 12;
+    for (const adjustment of m.netAdjustments) {
+      room(24);
+      fee(adjustment.label, adjustment.amount, 0);
+    }
+    if (m.netAdjustments.length) y += 12;
   }
   if (c.settings.pdf.deductions) {
     room(24);
     band("Deductions", half);
-    m.deductions.forEach((r, i) => fee(r.label, r.amount, i));
+    m.deductions.forEach((r, i) => fee(r.label, r.amount, i, { ruleId: r.ruleId }));
     fee("TOTAL DEDUCTIONS:", statementMoney(c.deducted / 100), 0, {
       total: true,
     });
@@ -196,6 +213,7 @@ export async function createSettlementPdf(snapshot, { fontBytes, logoBytes }) {
       9,
       "bold",
     );
+    field('netOverride', x + half - 95, y, 95, 12);
     y += 12;
   }
   const pages = pdf.getPages();
@@ -223,6 +241,11 @@ export async function createSettlementPdf(snapshot, { fontBytes, logoBytes }) {
   }
   pdf.setTitle(`Driver Pay Settlement - ${snapshot.driver.name}`);
   pdf.setProducer("T Fleets");
+  // Stable bytes let an ambiguous delivery response be retried after reopening.
+  const documentTime = new Date(snapshot.approvedAt || '2000-01-01T00:00:00Z');
+  pdf.setCreationDate(documentTime);
+  pdf.setModificationDate(documentTime);
+  onFields?.(fields);
   return pdf.save();
 }
 function periodLabel(period) {

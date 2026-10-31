@@ -63,6 +63,14 @@ export async function cloudinarySignedUrl(reference) {
   });
 }
 
+export async function fetchTripDocumentContentResponse(versionId, { signal, preview = false } = {}) {
+  const token = await accessToken();
+  signal?.throwIfAborted();
+  return fetch(`${supabaseUrl}/functions/v1/document-content?versionId=${encodeURIComponent(versionId)}${preview ? '&preview=1' : ''}`, {
+    signal, headers: { Authorization: `Bearer ${token}`, apikey: supabaseAnonKey },
+  });
+}
+
 export async function deleteCloudinaryMedia(reference) {
   if (!isCloudinaryReference(reference)) return false;
   await request({ action: 'delete', reference });

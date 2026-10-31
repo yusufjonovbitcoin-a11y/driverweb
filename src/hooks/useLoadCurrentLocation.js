@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
-import { loadCurrentLocation, latestPickupRouteStops, pickupEstimateScope, selectPickupEstimate } from '../components/loadDetailsModel.js';
+import { loadCurrentLocation, loadRouteOrigin, latestPickupRouteStops, pickupEstimateScope, selectPickupEstimate } from '../components/loadDetailsModel.js';
 import { useFleetRoute } from './useFleetRoute';
 
-export function useLoadCurrentLocation(load, driver) {
+export function useLoadCurrentLocation(load, driver, startState) {
   const [now, setNow] = useState(() => Date.now());
   const lastRequestAt = useRef(0);
   const [routeInput, setRouteInput] = useState(null);
@@ -12,21 +12,23 @@ export function useLoadCurrentLocation(load, driver) {
     return () => clearInterval(timer);
   }, []);
   const location = loadCurrentLocation(load, driver, now);
-  const stops = latestPickupRouteStops(load, location);
-  const scope = pickupEstimateScope(load.id, driver?.id, stops);
+  const { origin, source } = loadRouteOrigin(location, startState);
+  const stops = latestPickupRouteStops(load, origin);
+  const scope = JSON.stringify([pickupEstimateScope(load.id, driver?.id, stops,
+    load.currentAssignmentId, source === 'start' ? origin : null), source]);
   const requestedKey = JSON.stringify([load.id, driver?.id, stops]);
   const latestObservedAt = useRef(null);
-  useEffect(() => { latestObservedAt.current = location?.observedAt ?? null; }, [location?.observedAt]);
+  useEffect(() => { latestObservedAt.current = origin?.observedAt ?? null; }, [origin?.observedAt]);
   useEffect(() => {
     if (!stops.length) return undefined;
     const timer = setTimeout(() => {
       lastRequestAt.current = Date.now();
       setRouteInput({ scope, key: requestedKey, stops: JSON.parse(requestedKey)[2], observedAt: latestObservedAt.current });
-    }, Math.max(0, 30_000 - (Date.now() - lastRequestAt.current)));
+    }, source === 'start' ? 0 : Math.max(0, 30_000 - (Date.now() - lastRequestAt.current)));
     return () => clearTimeout(timer);
-  }, [requestedKey, stops.length, scope]);
+  }, [requestedKey, stops.length, scope, source]);
   const matchingScope = routeInput?.scope === scope;
-  const result = useFleetRoute(routeInput?.stops || [], true, Boolean(location && matchingScope), scope);
+  const result = useFleetRoute(routeInput?.stops || [], true, Boolean(origin && matchingScope), scope);
   if (result.route && matchingScope && completed?.route !== result.route) {
     setCompleted({ scope, route: result.route, observedAt: routeInput.observedAt });
   }
@@ -34,10 +36,10 @@ export function useLoadCurrentLocation(load, driver) {
   // refresh keeps its previous estimate visible with the captured fix timestamp.
   const estimate = selectPickupEstimate(scope,
     matchingScope ? { scope, route: result.route, observedAt: routeInput?.observedAt } : null,
-    completed, Boolean(location));
+    completed, Boolean(origin));
   const pickupRoute = { ...result, route: estimate?.route ?? null,
     observedAt: estimate?.observedAt ?? null,
-    stale: Boolean(location?.stale || (estimate?.observedAt && now - estimate.observedAt > 120_000)),
-    loading: Boolean(location && !estimate && (!matchingScope || result.loading)) };
-  return { location, pickupRoute };
+    stale: source !== 'start' && Boolean(location?.stale || (estimate?.observedAt && now - estimate.observedAt > 120_000)),
+    loading: Boolean(origin && !estimate && (!matchingScope || result.loading)) };
+  return { location, pickupRoute, routeOrigin: origin, originSource: source };
 }

@@ -45,6 +45,16 @@ test('duplicate loads stay blocked in every tab', async ({ page }) => {
   await expect(page.getByLabel('Assignment attempts')).toHaveText('0');
 });
 
+test('conflicting source values are visible and prevent assignment across tabs', async ({ page }) => {
+  await page.goto('/tests/ui/import-review.html?conflict=1');
+  await expect(page.getByRole('alert').first()).toContainText('19607 / 19611');
+  await page.getByRole('combobox').selectOption('driver-one');
+  await expect(page.locator('.import-assignment button[type="submit"]')).toBeDisabled();
+  await page.getByRole('tab', { name: 'Broker', exact: true }).click();
+  await expect(page.locator('.import-assignment button[type="submit"]')).toBeDisabled();
+  await expect(page.getByLabel('Assignment attempts')).toHaveText('0');
+});
+
 test('assignment remains guarded and errors stay visible across tabs', async ({ page }) => {
   await page.getByRole('combobox').selectOption('driver-one');
   await page.locator('.import-assignment button[type="submit"]').click();
@@ -52,4 +62,42 @@ test('assignment remains guarded and errors stay visible across tabs', async ({ 
   await expect(page.getByLabel('Assignment attempts')).toHaveText('1');
   await expect(page.getByRole('alert')).toHaveText('Synthetic assignment rejected');
   await expect(page.getByRole('combobox')).toHaveValue('driver-one');
+});
+
+test('accepted assignment closes review while the workspace refresh is still pending', async ({ page }) => {
+  await page.goto('/tests/ui/import-review.html?assignmentSuccess=1');
+  await page.getByRole('combobox').selectOption('driver-one');
+  await page.getByRole('button', { name: 'Assign to driver', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Driver assigned', exact: true })).toBeVisible();
+  await expect(page.getByText('Assignment confirmed. Workspace refresh is still pending.')).toBeVisible();
+  await expect(page.getByLabel('Assignment attempts')).toHaveText('1');
+});
+
+test('PDF submission releases review immediately and survives navigation until real acknowledgement', async ({ page }) => {
+  await page.goto('/tests/ui/import-review.html?background=1');
+  await page.getByRole('combobox').selectOption('driver-one');
+  await page.getByRole('button', { name: 'Assign to driver', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Drivers', exact: true })).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Background assignments' })).toContainText('Assigning in background');
+  await expect(page.getByRole('cell', { name: 'Not assigned', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Analytics', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Analytics', exact: true })).toBeVisible();
+  await expect(page.getByLabel('Assignment attempts')).toHaveText('1');
+  await page.getByRole('button', { name: 'Finish assignment', exact: true }).click();
+  await expect(page.getByRole('status')).toHaveText('Assignment confirmed');
+  await expect(page.getByRole('region', { name: 'Background assignments' })).toHaveCount(0);
+});
+
+test('background failure offers guarded retry and document recovery without losing the source', async ({ page }) => {
+  await page.goto('/tests/ui/import-review.html?background=1');
+  await page.getByRole('combobox').selectOption('driver-one');
+  await page.getByRole('button', { name: 'Assign to driver', exact: true }).click();
+  await page.getByRole('button', { name: 'Simulate failure', exact: true }).click();
+  await expect(page.getByRole('region', { name: 'Background assignments' })).toContainText('Synthetic connection interrupted');
+  await page.getByRole('button', { name: 'Retry', exact: true }).click();
+  await expect(page.getByLabel('Assignment attempts')).toHaveText('2');
+  await page.getByRole('button', { name: 'Simulate failure', exact: true }).click();
+  await page.getByRole('button', { name: 'Review document', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Assign to driver', exact: true })).toBeEnabled();
+  await expect(page.getByRole('region', { name: 'Background assignments' })).toHaveCount(0);
 });

@@ -52,7 +52,7 @@ export function arrivalLane(eta, now) {
 
 export function arrivalMatches(job, query) {
   const text = normalizeSearchText([job.driver.name, job.driver.driverNumber, job.driver.phone,
-    job.load?.loadNumber, job.origin, job.destination, job.load?.broker].filter(Boolean).join(' '));
+    job.load?.loadNumber, job.load?.brokerLoadNumber, job.origin, job.destination, job.load?.broker].filter(Boolean).join(' '));
   return normalizeSearchText(query).split(' ').filter(Boolean).every(token => text.includes(token));
 }
 

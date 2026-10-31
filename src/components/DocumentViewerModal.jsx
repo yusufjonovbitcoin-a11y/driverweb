@@ -7,8 +7,10 @@ import DocumentViewerActions from './DocumentViewerActions.jsx';
 import ImageDocumentViewer from './ImageDocumentViewer';
 import { resolveTripDocumentSource, fetchTripDocument, saveDocumentBlob } from '../services/tripDocumentAccess.js';
 import { openChatAttachment } from '../services/openChatAttachment';
+import { loadPdfViewer, preloadPdfViewer } from './pdfViewerLoader.js';
+import { measureDocumentStage } from '../services/documentPerformance.js';
 
-const PdfDocumentViewer = lazy(() => import('./PdfDocumentViewer.jsx'));
+const PdfDocumentViewer = lazy(loadPdfViewer);
 
 export default function DocumentViewerModal({
   isOpen,
@@ -157,11 +159,18 @@ export function FreshDocumentViewer({ document: doc, presentation }) {
   const [downloading, setDownloading] = useState(false);
   const [actionError, setActionError] = useState('');
   const automaticRetries = useRef(0);
+  const forceSourceRefresh = useRef(false);
+  const sourceRequest = useRef(null);
+  const firstPageTime = useRef(null);
+  const firstPreviewTime = useRef(null);
+  const onFirstPagePaint = useCallback(() => { firstPageTime.current?.(); firstPageTime.current = null; }, []);
+  const onPreviewPaint = useCallback(() => { firstPreviewTime.current?.(); firstPreviewTime.current = null; }, []);
   const downloadController = useRef(null);
   const alive = useRef(true);
   useEffect(() => { alive.current = true; return () => { alive.current = false; downloadController.current?.abort(); }; }, []);
-  const resolve = useCallback(async () => {
-    const result = await resolveTripDocumentSource({ versionId: doc.versionId, url: doc.url, mimeType: doc.mimeType, fileName: doc.fileName });
+  const resolve = useCallback(async (_document, options = {}) => {
+    preloadPdfViewer({ mimeType: doc.mimeType, fileName: doc.fileName, url: doc.url });
+    const result = await resolveTripDocumentSource({ versionId: doc.versionId, url: doc.url, mimeType: doc.mimeType, fileName: doc.fileName }, { forPreview: Boolean(options.forPreview), forceRefresh: Boolean(options.forceRefresh || forceSourceRefresh.current) });
     if (!alive.current) throw new DOMException('Document closed', 'AbortError');
     return result;
   }, [doc.versionId, doc.url, doc.mimeType, doc.fileName]);
@@ -171,16 +180,24 @@ export function FreshDocumentViewer({ document: doc, presentation }) {
     setSource(null);
     setAttempt(value => value + 1);
   }, []);
-  const retry = () => { automaticRetries.current = 0; reload(); };
+  const retry = () => { automaticRetries.current = 0; forceSourceRefresh.current = true; reload(); };
   const recoverSource = useCallback(() => {
     if (!doc.versionId || !alive.current || automaticRetries.current >= 1) return false;
     automaticRetries.current += 1;
+    forceSourceRefresh.current = true;
     reload();
     return true;
   }, [doc.versionId, reload]);
   useEffect(() => {
     let active = true;
-    resolve().then(result => { if (active) setSource(result); })
+    firstPageTime.current = measureDocumentStage('open-to-first-page');
+    firstPreviewTime.current = measureDocumentStage('open-to-first-preview');
+    // StrictMode replays effects in local development. Share only this in-flight
+    // opening, not authorization across later closes/reopens or source changes.
+    if (sourceRequest.current?.resolve !== resolve || sourceRequest.current.attempt !== attempt) {
+      sourceRequest.current = { resolve, attempt, promise: resolve(undefined, { forPreview: true }) };
+    }
+    sourceRequest.current.promise.then(result => { if (active) { forceSourceRefresh.current = false; setSource(result); } })
       .catch(() => { if (active) setFailed(true); });
     return () => { active = false; };
   }, [resolve, attempt]);
@@ -211,7 +228,7 @@ export function FreshDocumentViewer({ document: doc, presentation }) {
   const loading = <div role="status" className="flex h-full items-center justify-center gap-2 text-sm text-zinc-500"><LoaderCircle className="h-5 w-5 animate-spin" />{t('documents.loadingPdf')}</div>;
   if (!source) return loading;
   return source.mimeType === 'application/pdf' || /\.pdf(?:$|\?)/i.test(source.mediaUrl)
-    ? <Suspense fallback={loading}><PdfDocumentViewer key={attempt} url={source.mediaUrl} title={doc.fileName || doc.title} presentation={presentation} onOpenOriginal={openOriginal} onRetrySource={retry} onSourceError={recoverSource} onDownload={download} downloading={downloading} actionError={actionError} /></Suspense>
+    ? <Suspense fallback={loading}><PdfDocumentViewer key={attempt} url={source.mediaUrl} loadData={source.loadPdfData} loadPreview={source.loadPdfPreview} onFirstPagePaint={onFirstPagePaint} onPreviewPaint={onPreviewPaint} title={doc.fileName || doc.title} presentation={presentation} onOpenOriginal={openOriginal} onRetrySource={retry} onSourceError={recoverSource} onDownload={download} downloading={downloading} actionError={actionError} /></Suspense>
     : <ImageDocumentViewer key={attempt} url={source.mediaUrl} title={doc.fileName || doc.title} presentation={presentation} onOpenOriginal={openOriginal} onRetrySource={retry} onSourceError={recoverSource} onDownload={download} downloading={downloading} actionError={actionError} />;
 }
 

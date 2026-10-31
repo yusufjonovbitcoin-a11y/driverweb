@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useId, useRef, useState } from "react";
-import { FileText, RefreshCw } from "lucide-react";
+import { useWorkspaceInvalidation } from '../../hooks/WorkspaceCache';
+import { RefreshCw, FileText } from "lucide-react";
 import { displayDayKey } from "../../i18n/timeZone";
 import { usd, day } from "../finance/format";
 import { loadRateCents, accountingMiles } from "../accountingModel";
@@ -13,18 +14,30 @@ import {
   readDeliveryDates,
   writeCalculationSettings,
   settingsError,
+  readSettlementHistory,
+  readSettlementEntry,
+  saveConfirmedSettlement,
+  readConfirmedSettlementPdf,
 } from "./api";
 import SettingsPanel from "./SettingsPanel";
-import Statement from "./Statement";
 import AccountingDateFilter from "../AccountingDateFilter";
 import { place } from "./calculation";
 import { eligibleSettlementLoad, hasSavedSettings } from "./eligibility";
 import { useSettlementText } from "./text";
 import "./settlements.css";
+import CalculatedLoads from './CalculatedLoads.jsx';
+import { appendCalculatedEntry } from './calculatedLoads.js';
+import { approveSettlement } from './settlementReviewModel.js';
+import SettlementPdfReview from './SettlementPdfReview.jsx';
+const TABS = ['settlements', 'calculated', 'settings'];
 const LIVE_API = {
   readCalculationSettings,
   readDeliveryDates,
   writeCalculationSettings,
+  readSettlementHistory,
+  readSettlementEntry,
+  saveConfirmedSettlement,
+  readConfirmedSettlementPdf,
 };
 const EMPTY = {
   version: 0,
@@ -40,12 +53,16 @@ export default function SettlementWorkspace({
   initialView,
   company,
 }) {
+  const invalidate = useWorkspaceInvalidation();
   const t = useSettlementText(),
     tabsId = useId(),
     abort = useRef(null),
     savingRef = useRef(false),
     dirtyRef = useRef(false);
-  const [tab, setTab] = useState(initialView?.tab || "settings"),
+  const [history, setHistory] = useState([]);
+  const [reviewSource, setReviewSource] = useState(null);
+  const pendingApproval = useRef(null);
+  const [tab, setTab] = useState(initialView?.tab || "settlements"),
     [scope, setScope] = useState(""),
     [record, setRecord] = useState(EMPTY),
     [loading, setLoading] = useState(true),
@@ -61,8 +78,7 @@ export default function SettlementWorkspace({
     [selected, setSelected] = useState(
       () => new Set(initialView?.selected || []),
     ),
-    [dates, setDates] = useState({}),
-    [snapshot, setSnapshot] = useState(null);
+    [dates, setDates] = useState({});
   const dirty = useCallback((value) => {
     dirtyRef.current = value;
   }, []);
@@ -79,15 +95,20 @@ export default function SettlementWorkspace({
     setError("");
     setDatesError("");
     try {
-      const [settings, delivery] = await Promise.allSettled([
+      const [settings, delivery, savedHistory] = await Promise.allSettled([
         settingsApi.readCalculationSettings(controller.signal),
         settingsApi.readDeliveryDates(controller.signal),
+        canManageAccounting ? settingsApi.readSettlementHistory(controller.signal) : Promise.resolve(null),
       ]);
       if (!controller.signal.aborted) {
-        if (settings.status === "fulfilled") setRecord(settings.value);
+        if (settings.status === "fulfilled") {
+          setRecord(settings.value);
+        }
         else { setRecord(EMPTY); setError(settingsError(settings.reason)); }
         if (delivery.status === "fulfilled") setDates(delivery.value);
         else { setDates({}); setDatesError(settingsError(delivery.reason)); }
+        if (savedHistory.status === 'fulfilled' && savedHistory.value) setHistory(savedHistory.value);
+        else if (savedHistory.status === 'rejected') setError(settingsError(savedHistory.reason));
       }
     } catch (err) {
       if (!controller.signal.aborted) {
@@ -98,7 +119,7 @@ export default function SettlementWorkspace({
     } finally {
       if (!controller.signal.aborted) setLoading(false);
     }
-  }, [settingsApi]);
+  }, [settingsApi, canManageAccounting]);
   useEffect(() => {
     let active = true;
     queueMicrotask(() => {
@@ -118,6 +139,7 @@ export default function SettlementWorkspace({
       (l) =>
         drivers.some((d) => d.id === driver) && eligibleSettlementLoad(l, driver),
     )
+    .filter(l => !history.some(entry => entry.calculation.rows.some(row => row.load.id === l.id)))
     .map((l) => ({ ...l, deliveredAt: dates[l.id] || l.deliveredAt || null }))
     .filter((l) => {
       if (mode === "manual") return true;
@@ -125,6 +147,8 @@ export default function SettlementWorkspace({
       return d && d >= period.from && d <= period.to;
     });
   const chosen = visible.filter((l) => selected.has(l.id));
+  const calculatedIds = new Set(history.flatMap(entry => entry.calculation.rows.map(row => row.load.id)));
+  const alreadyCalculated = chosen.some(load => calculatedIds.has(load.id));
   let calculation = null,
     calculationError = "";
   const savedSettings = hasSavedSettings(record, driver);
@@ -140,22 +164,30 @@ export default function SettlementWorkspace({
     }
   }
   const canWrite = canManageAccounting && !error && !loading;
-  function preview() {
-    if (!calculation || !drivers.some((d) => d.id === driver) ||
-      calculation.rows.some((row) => !eligibleSettlementLoad(row.load, driver))) return;
-    setSnapshot(
-      structuredClone({
-        calculation,
-        driver: drivers.find((d) => d.id === driver) || { name: driver },
-        version: record.version,
-        company,
-      }),
-    );
+  function previewCalculation() {
+    if (!calculation || alreadyCalculated || !drivers.some(item => item.id === driver)) return;
+    setReviewSource(structuredClone({ calculation, driver: drivers.find(item => item.id === driver), version: record.version, company }));
+  }
+  async function confirmCalculation(snapshot, pdf) {
+    if (snapshot.calculation.rows.some(row => calculatedIds.has(row.load.id)
+      || !loads.some(load => load.id === row.load.id && eligibleSettlementLoad(load, snapshot.driver.id)))) {
+      throw Error('SETTLEMENT_ALREADY_CONFIRMED');
+    }
+    // Keep the same ID/snapshot through upload or acknowledgement retries.
+    if (pendingApproval.current?.snapshot !== snapshot) pendingApproval.current = { snapshot, entry: approveSettlement(snapshot) };
+    let entry = pendingApproval.current.entry;
+    entry = await settingsApi.saveConfirmedSettlement(entry, pdf);
+    void invalidate(key => Array.isArray(key) && key[0] === 'financial-center').catch(() => {});
+    setHistory(previous => appendCalculatedEntry(previous, entry));
+    setReviewSource(null);
+    setSelected(new Set());
+    setTab('calculated');
+    pendingApproval.current = null;
   }
   return (
     <section className="ds-workspace">
       <nav className="ds-tabs" role="tablist" aria-label={t("settlements")}>
-        {["settlements", "settings"].map((key, i) => (
+        {TABS.map((key, i) => (
           <button
             key={key}
             type="button"
@@ -168,12 +200,12 @@ export default function SettlementWorkspace({
             onKeyDown={(e) => {
               if (["ArrowLeft", "ArrowRight", "Home", "End"].includes(e.key)) {
                 e.preventDefault();
-                const next = e.key === "Home" ? 0 : e.key === "End" ? 1 : 1 - i;
+                const next = e.key === "Home" ? 0 : e.key === "End" ? TABS.length - 1 : (i + (e.key === 'ArrowRight' ? 1 : TABS.length - 1)) % TABS.length;
                 if (discard()) {
-                  setTab(["settlements", "settings"][next]);
+                  setTab(TABS[next]);
                   document
                     .getElementById(
-                      `${tabsId}-${["settlements", "settings"][next]}-tab`,
+                      `${tabsId}-${TABS[next]}-tab`,
                     )
                     ?.focus();
                 }
@@ -186,7 +218,7 @@ export default function SettlementWorkspace({
               }
             }}
           >
-            {t(key)}
+            {t(key)}{key === 'calculated' && history.length > 0 && <small title={t('calculationCount')}>{history.length}</small>}
           </button>
         ))}
       </nav>
@@ -227,7 +259,7 @@ export default function SettlementWorkspace({
         id={`${tabsId}-${tab}-panel`}
         aria-labelledby={`${tabsId}-${tab}-tab`}
       >
-        {tab === "settings" ? (
+        {tab === 'calculated' ? <CalculatedLoads entries={history} readEntry={settingsApi.readSettlementEntry} pdfLoader={settingsApi.readConfirmedSettlementPdf} onOpenLoad={onOpenLoad} canSendToDriver={canManageAccounting} /> : tab === "settings" ? (
           <>
             <header className="ds-heading">
               <div>
@@ -268,25 +300,12 @@ export default function SettlementWorkspace({
               onSaved={(next) => {
                 setRecord(next);
                 setNotice("saved");
+                void invalidate(key => Array.isArray(key) && key[0] === 'financial-center').catch(() => {});
               }}
             />
           </>
         ) : (
           <>
-            <header className="ds-heading">
-              <div>
-                <h1>{t("settlements")}</h1>
-                <p>{t("savedOnly")}</p>
-              </div>
-              <button
-                className="ds-primary"
-                disabled={!calculation}
-                onClick={preview}
-              >
-                <FileText size={16} />
-                {t("export")}
-              </button>
-            </header>
             <section className="ds-filters ds-panel">
               <label>
                 {t("driver")}
@@ -343,6 +362,7 @@ export default function SettlementWorkspace({
               />
             </section>
             <p className="ds-muted ds-period-note">
+              <strong><time dateTime={period.from}>{day(period.from)}</time> — <time dateTime={period.to}>{day(period.to)}</time></strong>{' · '}
               {t(mode === "manual" ? "manualHint" : "dateBasis")}
             </p>
             <section className="ds-panel">
@@ -401,10 +421,12 @@ export default function SettlementWorkspace({
                         <td>
                           <button
                             className="ds-link"
+                            disabled={!onOpenLoad}
                             onClick={() => onOpenLoad?.(l)}
                           >
                             {l.loadNumber}
                           </button>
+                          {calculatedIds.has(l.id) && <small className="ds-history-badge">{t('calculatedDraft')}</small>}
                         </td>
                         <td>
                           {place(l.origin)} → {place(l.destination)}
@@ -510,15 +532,14 @@ export default function SettlementWorkspace({
                     <p className="ds-error">{t("negative")}</p>
                   )}
                   <small>{t("draft")}</small>
+                  <button type="button" className="ds-primary ds-record-calculation" disabled={alreadyCalculated} onClick={previewCalculation}><FileText size={20} />{t(alreadyCalculated ? 'alreadyCalculated' : 'reviewPdf')}</button>
                 </div>
               </section>
             )}
           </>
         )}
       </section>
-      {snapshot && (
-        <Statement snapshot={snapshot} onClose={() => setSnapshot(null)} />
-      )}
+      {reviewSource && <SettlementPdfReview source={reviewSource} onClose={() => setReviewSource(null)} onApprove={confirmCalculation} />}
     </section>
   );
 }

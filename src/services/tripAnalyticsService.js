@@ -1,4 +1,7 @@
 import { requireSupabase } from '../lib/supabase';
+import { readFinancialCenter } from './financialCenterReader.js';
+
+export const fetchFinancialCenter = signal => readFinancialCenter(requireSupabase(), signal);
 
 export async function fetchTripAnalytics({ group, search, from, to, page, pageSize = 25 }, signal) {
   const { data, error } = await requireSupabase().rpc('get_company_trip_analytics', {

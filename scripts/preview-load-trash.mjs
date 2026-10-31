@@ -21,7 +21,7 @@ const fixtureSource = String.raw`
 import React, { useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import LoadTrashPanel from '/src/components/LoadTrashPanel.jsx';
-import LoadTrashAction from '/src/components/LoadTrashAction.jsx';
+import LoadTrashAction from '/tests/legacy/src/components/LoadTrashAction.jsx';
 import { setAppLocale } from '/src/i18n/index.js';
 import '/src/index.css';
 import '/src/components/loadDetails.css';

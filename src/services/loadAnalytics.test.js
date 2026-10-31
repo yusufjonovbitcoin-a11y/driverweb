@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { aggregateLoadAnalytics } from './loadAnalytics.js';
+import { aggregateLoadAnalytics } from '../../tests/legacy/src/services/loadAnalytics.js';
 
 test('empty data produces no invented brokers, equipment, or RPM', () => {
   const stats = aggregateLoadAnalytics([]);

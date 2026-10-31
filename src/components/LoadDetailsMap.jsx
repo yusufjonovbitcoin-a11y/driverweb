@@ -7,7 +7,7 @@ import { loadGoogleMapsRoutes } from './loadGoogleMapsModel.js';
 const EMPTY_POINTS = [];
 const MAP_STYLES = ['streets-v12', 'satellite-streets-v12', 'light-v11', 'dark-v11'];
 
-export default function LoadDetailsMap({ load, driver, location, pickupRoute, roadRoute, stops }) {
+export default function LoadDetailsMap({ load, driver, location, startLocation, startStatus, pickupRoute, roadRoute, stops }) {
   const { t } = useTranslation();
   const [mapStyle, setMapStyle] = useState('streets-v12');
   const [stylePickerOpen, setStylePickerOpen] = useState(false);
@@ -28,13 +28,14 @@ export default function LoadDetailsMap({ load, driver, location, pickupRoute, ro
   const { route, loading, retry } = roadRoute;
   const livePosition = location;
   const unavailable = route?.error || route?.data?.routingFailed;
-  const googleRoutes = loadGoogleMapsRoutes(stops);
+  const googleRoutes = ['loading', 'error', 'missing_location'].includes(startStatus) ? [] : loadGoogleMapsRoutes(stops, startLocation);
   return <div ref={containerRef} className="relative h-full w-full">
-    <TrackingMap key={mapStyle} title={t('map.title')} routeKey={`${load.id}:${sizeKey}`}
+    <TrackingMap key={mapStyle} title={t('map.title')} routeKey={JSON.stringify([load.id, load.currentAssignmentId, sizeKey, startLocation])}
       mapStyle={`mapbox://styles/mapbox/${mapStyle}`} lineColor={mapStyle === 'dark-v11' || mapStyle === 'satellite-streets-v12' ? '#2dd4bf' : '#008573'}
       deadheadPoints={pickupRoute?.route?.data?.points || EMPTY_POINTS}
       points={route?.data?.points || EMPTY_POINTS} routeStops={route?.data?.stops || stops}
-      fitToStops={!livePosition} locatingStops={loading} viewportPadding={{ top: 65, bottom: 65, left: 40, right: 40 }} focusRequest={focusRequest}
+      fitToStops={!livePosition && !startLocation} locatingStops={loading} viewportPadding={{ top: 65, bottom: 65, left: 40, right: 40 }} focusRequest={focusRequest}
+      routeStartPosition={startLocation} routeStartLabel={t('map.driverStart')}
       livePosition={livePosition} liveMarkerIcon="truck" liveLabel={`${driver?.name || ''} · ${t(location?.stale ? 'map.locationStale' : 'map.lastKnownLocation')}`}
       pickupLabel={t('inbox.pickup')} deliveryLabel={t('inbox.delivery')} />
     {googleRoutes.length === 1 ? <a className="load-command-open-map" href={googleRoutes[0].url} target="_blank" rel="noopener noreferrer" title={t('map.openGoogleRoute')} aria-label={t('map.openGoogleRoute')}><MapPinned size={20} aria-hidden="true" /></a>

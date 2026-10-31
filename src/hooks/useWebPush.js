@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { dispatchBrowserNotification, getPushPreferences, pushPermission, pushSupported, silenceWebPush, webPush } from '../services/webPush.js';
+import { dispatchBrowserNotification, getPushPreferences, pushConfigurationError, pushPermission, pushSupported, silenceWebPush, webPush } from '../services/webPush.js';
 import { emptyPushPreferences, hasPushCategory, legacyPushPreferenceKey, pushFailureReason, pushPreferencesEvent, pushPreferencesKey } from '../services/webPushPreferences.js';
 
 export function useWebPush(userId, authLoading) {
@@ -40,6 +40,12 @@ export function useWebPush(userId, authLoading) {
       if (!pushSupported()) { setStatus('unsupported'); return; }
       if (!userId) { await silenceWebPush().catch(() => {}); setStatus('off'); return; }
       if (pushPermission() === 'denied') { setStatus('denied'); await silenceWebPush(userId).catch(() => {}); return; }
+      const configurationError = pushConfigurationError();
+      if (configurationError) {
+        setStatus('unconfigured'); setError(configurationError);
+        await silenceWebPush(userId).catch(() => {});
+        return;
+      }
       if (hasPushCategory(saved) && pushPermission() !== 'granted') { setStatus('off'); await silenceWebPush(userId).catch(() => {}); return; }
       if (!force && Date.now() - refreshedAt < 3600000) return;
       pending = true;
@@ -73,6 +79,8 @@ export function useWebPush(userId, authLoading) {
   }, [userId, authLoading, finishOperation]);
   const toggleCategory = useCallback(async (category) => {
     if (!['calls', 'messages'].includes(category) || busyRef.current || !userId) return;
+    const configurationError = pushConfigurationError();
+    if (configurationError) { setStatus('unconfigured'); setError(configurationError); return; }
     const owner = userId;
     const saved = getPushPreferences(owner);
     const next = { ...saved, [category]: !saved[category] };
@@ -94,7 +102,9 @@ export function useWebPush(userId, authLoading) {
       await webPush.disable();
       if (current()) {
         setPreferences(emptyPushPreferences);
-        setStatus(!pushSupported() ? 'unsupported' : pushPermission() === 'denied' ? 'denied' : 'off');
+        const configurationError = pushSupported() && pushPermission() !== 'denied' ? pushConfigurationError() : null;
+        setStatus(!pushSupported() ? 'unsupported' : pushPermission() === 'denied' ? 'denied' : configurationError ? 'unconfigured' : 'off');
+        setError(configurationError);
       }
     } catch (failure) { if (current()) setError(pushFailureReason(failure)); throw failure; }
     finally { finishOperation(operation); }

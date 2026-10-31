@@ -1,5 +1,5 @@
 import { withCors } from "../_shared/cors.ts";
-import { prepareDriverPay } from '../_shared/driver-pay.ts';
+import { confirmNewLoadImport } from '../_shared/confirm-load-import.ts';
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { checkDistributedRateLimit, rateLimitResponse } from "../_shared/rate-limit.ts";
 import { verifyLoadExtraction, EVIDENCE_PATHS } from "../_shared/load-extraction-verification.ts";
@@ -10,6 +10,12 @@ import { reusableLoadImport } from "../_shared/load-import-cache.ts";
 import { issueLoadPreviewTicket, verifyLoadPreviewTicket } from "../_shared/load-preview-ticket.ts";
 import { EXTRA_DOCUMENT_FIELDS, EXTRA_DOCUMENT_PROPERTIES, EXTRA_STOP_FIELDS, EXTRA_STOP_PROPERTIES, DOCUMENT_EXTRACTION_VERSION } from "../_shared/load-document-fields.ts";
 import { operationalExtractionSchemas, OPERATIONAL_EXTRACTION_SCOPE, OPERATIONAL_DOCUMENT_INSTRUCTIONS, OPERATIONAL_DOCUMENT_REQUEST } from '../_shared/load-operational-extraction.ts';
+import { runDocumentEngine, DOCUMENT_ENGINE_VERSION } from '../_shared/load-document-engine.ts';
+import { fetchPdfSource } from '../_shared/pdf-source.ts';
+import { LoadPreviewCache, previewCacheKey } from '../_shared/load-preview-cache.ts';
+import { documentTokenCost } from '../_shared/load-document-cost.ts';
+
+const previewCache = new LoadPreviewCache<any>();
 
 const corsHeaders = {
   "Access-Control-Allow-Headers":
@@ -397,6 +403,45 @@ function normalizeStop(stop: StopExtraction) {
 async function extractAndVerify(file: File, bytes: Uint8Array, apiKey: string, model: string) {
   const started = performance.now();
   try {
+    if (file.type === 'application/pdf' && Deno.env.get('OPENAI_PDF_ENGINE') !== 'direct') {
+      const checksum = await sha256(bytes);
+      const workerUrl = Deno.env.get('PDF_PREPROCESSOR_URL');
+      const workerToken = Deno.env.get('PDF_PREPROCESSOR_TOKEN');
+      try {
+        const result = await runDocumentEngine({ bytes, checksum, model,
+          documentSchema: extractionSchema, stopSchema,
+          retryModel: Deno.env.get('OPENAI_LOAD_RETRY_MODEL') ?? model,
+          ...(workerUrl && workerToken ? { ocrPdf: (data: Uint8Array, hash: string, pages: number[]) =>
+            fetchPdfSource(data, hash, workerUrl, workerToken, fetch, { textOnly: true, ocrPages: pages }) } : {}),
+          request: async body => {
+            const response = await fetch('https://api.openai.com/v1/responses', { method: 'POST',
+              signal: AbortSignal.timeout(45_000),
+              headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+            const payload = await response.json();
+            if (!response.ok) throw Error(response.status === 429 ? 'AI_DOCUMENT_RATE_LIMIT' : 'AI_DOCUMENT_PROVIDER_ERROR');
+            return payload;
+          },
+        });
+        console.info(JSON.stringify({ event: 'load_document_engine', ...result.audit.metrics,
+          costEstimatesUsd: result.audit.metrics.calls.map((call: any) => documentTokenCost(call.model, call.usage)),
+          priceBasis: 'standard-text-2026-10-31' }));
+        return result;
+      } catch (error) {
+        // A scan without configured independent OCR remains a visible,
+        // explicitly unverified vision preview requiring dispatcher review.
+        if (!(error instanceof Error) || error.message !== 'PDF_OCR_REQUIRED') throw error;
+        const result = await runSinglePassExtraction(() => extractLoad(file, bytes, apiKey, model),
+          candidate => verifyLoadExtraction(candidate, null, true));
+        result.audit.method = 'vision_manual_review';
+        result.verified.review.method = 'vision_manual_review';
+        result.verified.review.sourceGrounded = false;
+        (result.candidate as any).extractionEngine = 'vision_manual_review';
+        for (const field of result.verified.documentDetails.fields) (field as any).verificationStatus = 'unverified';
+        console.info(JSON.stringify({ event: 'load_document_engine', strategy: 'vision_manual_review',
+          independentEvidence: false, durationMs: Math.round(performance.now() - started), aiCalls: 1 }));
+        return result;
+      }
+    }
     const result = await runSinglePassExtraction(() => extractLoad(file, bytes, apiKey, model),
       candidate => verifyLoadExtraction(candidate, null, true));
     if ((result.candidate as any).extractionMode === 'ai_pdf_direct') result.audit.method = 'ai_pdf_direct';
@@ -518,6 +563,7 @@ function preparedSnapshot(file: File, checksum: string, verified: ReturnType<typ
 }
 
 Deno.serve((request) => withCors(request, async () => {
+  const requestStarted = performance.now();
   if (request.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
   }
@@ -564,12 +610,14 @@ Deno.serve((request) => withCors(request, async () => {
   }
 
   let form: FormData;
+  const authorizedAt = performance.now();
   try {
     form = await request.formData();
   } catch {
     return json({ error: "Fayl form-data ko'rinishida yuborilishi kerak" }, 400);
   }
   const file = form.get("file");
+  const formReceivedAt = performance.now();
   if (!(file instanceof File) || file.size === 0) {
     return json({ error: "PDF yoki surat tanlang" }, 400);
   }
@@ -587,10 +635,13 @@ Deno.serve((request) => withCors(request, async () => {
   if (!hasExpectedSignature(file.type, bytes)) {
     return json({ error: "Fayl tarkibi PDF yoki qo'llab-quvvatlanadigan surat emas" }, 415);
   }
+  const validatedAt = performance.now();
   const checksum = await sha256(bytes);
+  const hashedAt = performance.now();
   // Do not reuse old worker-backed, source-verified PDF snapshots for AI-only previews.
-  const directPdf = file.type === 'application/pdf';
-  const extractionVersion = DOCUMENT_EXTRACTION_VERSION + (directPdf ? 2 : 0);
+  const hybridPdf = file.type === 'application/pdf' && Deno.env.get('OPENAI_PDF_ENGINE') !== 'direct';
+  const directPdf = file.type === 'application/pdf' && !hybridPdf;
+  const extractionVersion = DOCUMENT_EXTRACTION_VERSION + (hybridPdf ? 1000 : directPdf ? 2 : 0);
   let corrections: any = null;
   if (form.has('corrections')) {
     try { corrections = JSON.parse(String(form.get('corrections'))); }
@@ -634,10 +685,35 @@ Deno.serve((request) => withCors(request, async () => {
     });
     if (!previewLimit.allowed) return rateLimitResponse(previewLimit);
     try {
-      const { candidate, verified } = await extractAndVerify(file, bytes, openAiKey, model);
+      const key = previewCacheKey(profile.id, profile.company_id, checksum, extractionVersion,
+        `${model}:${Deno.env.get('OPENAI_LOAD_RETRY_MODEL') ?? model}:${DOCUMENT_ENGINE_VERSION}`);
+      const cached = await previewCache.getOrCreate(key, async () => {
+        if (hybridPdf) {
+          const { data: saved, error } = await adminClient.from('manual_load_imports')
+            .select('id,status,load_id,extracted_result,raw_extraction,extraction_schema_version')
+            .eq('company_id', profile.company_id).eq('created_by', profile.id)
+            .eq('checksum_sha256', checksum).eq('extraction_schema_version', extractionVersion).maybeSingle();
+          if (error) throw Error('PREVIEW_CACHE_UNAVAILABLE');
+          const candidate = saved?.raw_extraction?.candidate;
+          const metrics = candidate?.engineMetrics;
+          if (saved && reusableLoadImport(saved, extractionVersion, checksum, true)
+            && metrics?.version === DOCUMENT_ENGINE_VERSION && metrics?.requestedModel === model
+            && metrics?.retryModel === (Deno.env.get('OPENAI_LOAD_RETRY_MODEL') ?? model)) {
+            return { candidate, verified: verifyLoadExtraction(candidate, null, true), audit: saved.raw_extraction.audit };
+          }
+        }
+        return extractAndVerify(file, bytes, openAiKey, model);
+      });
+      const { candidate, verified } = cached.value;
+      console.info(JSON.stringify({ event: 'load_preview_cache', hit: cached.hit, engine: candidate.extractionEngine ?? candidate.extractionMode }));
+      const previewStarted = performance.now();
       const previewTicket = await issueLoadPreviewTicket(candidate,
         { actorId: profile.id, companyId: profile.company_id, checksum,
           fileName: file.name, mimeType: file.type, version: extractionVersion }, serviceRoleKey);
+      console.info(JSON.stringify({ event: 'load_preview_stages', cacheHit: cached.hit,
+        authorizationMs: authorizedAt - requestStarted, formReceiveMs: formReceivedAt - authorizedAt,
+        fileValidationMs: validatedAt - formReceivedAt, hashMs: hashedAt - validatedAt,
+        previewSigningMs: performance.now() - previewStarted, totalMs: performance.now() - requestStarted }));
       return json({ preparedLoad: { ...preparedSnapshot(file, checksum, verified).preparedLoad,
         previewTicket }, previewOnly: true });
     } catch (error) {
@@ -658,6 +734,8 @@ Deno.serve((request) => withCors(request, async () => {
           fileName: file.name, mimeType: file.type, version: extractionVersion }, serviceRoleKey);
       const verified = verifyLoadExtraction(candidate, null, true);
       preparedSnapshot(file, checksum, verified);
+      const conflicts = ((candidate as any).engineIssues ?? []).filter((issue: any) => issue.reason?.startsWith('conflicting_'));
+      if (conflicts.length) return json({ error: 'DOCUMENT_CRITICAL_CONFLICT', conflicts }, 422);
       confirmedPreview = { candidate, verified };
     } catch (error) {
       return json({ error: error instanceof Error ? error.message : 'PREVIEW_TICKET_INVALID' }, 422);
@@ -762,7 +840,8 @@ Deno.serve((request) => withCors(request, async () => {
     }
     const { candidate, audit, verified } = confirmedPreview
       ? { candidate: confirmedPreview.candidate,
-        audit: { method: confirmedPreview.candidate.extractionMode === 'ai_pdf_direct' ? 'ai_pdf_direct' : 'single_pass_rules', independentAudit: false },
+        audit: { method: confirmedPreview.verified.review.method, sourceGrounded: confirmedPreview.verified.review.sourceGrounded,
+          metrics: confirmedPreview.candidate.engineMetrics ?? null, independentAudit: false },
         verified: confirmedPreview.verified }
       : correctedCandidate
       ? { candidate: correctedCandidate, audit: { method: correctedCandidate.extractionMode === 'ai_pdf_direct' ? 'ai_pdf_direct' : 'single_pass_rules', independentAudit: false }, verified: verifyLoadExtraction(correctedCandidate, null, true) }
@@ -770,6 +849,8 @@ Deno.serve((request) => withCors(request, async () => {
       ? { ...savedExtraction, verified: verifyLoadExtraction(savedExtraction.candidate, null, true) }
       : await extractAndVerify(file, bytes, openAiKey, model);
     const persistStarted = performance.now();
+    if (((candidate as any).engineIssues ?? []).some((issue: any) => issue.reason?.startsWith('conflicting_')))
+      return await fail('DOCUMENT_CRITICAL_CONFLICT', 422);
     const snapshot = preparedSnapshot(file, checksum, verified);
     const { extracted, normalizedPickup, normalizedDelivery, normalizedStops,
       pickupCity, deliveryCity, loadNumber, driverBrief, requirements, missingFields } = snapshot;
@@ -781,6 +862,27 @@ Deno.serve((request) => withCors(request, async () => {
       pickup: stopPayload(normalizedPickup), delivery: stopPayload(normalizedDelivery),
       broker_message_id: typeof brokerMessageId === 'string' ? brokerMessageId : null,
     };
+    if (confirmedPreview && !upgradeExisting) {
+      let persisted;
+      try { persisted = await confirmNewLoadImport({ caller: callerClient, admin: adminClient,
+        file, checksum, importId, actorId: profile.id, snapshot, draft, candidate, audit,
+        schemaVersion: extractionVersion, model }); }
+      catch (error) { return await fail(error instanceof Error ? error.message : 'IMPORT_CONFIRMATION_FAILED',
+        (error as { status?: number })?.status ?? 502); }
+      const assignmentStarted = performance.now();
+      const { data: assignment, error: assignmentError } = await callerClient.rpc('review_and_assign_document_load', {
+        target_load_id: persisted.loadId, target_driver_id: confirmDriverId, source_checksum: checksum,
+      });
+      if (assignmentError) return json({ error: 'ASSIGN_FAILED_DRAFT_SAVED',
+        loadId: persisted.loadId, detail: assignmentError.message }, 409);
+      if (!assignment?.id || assignment.load_id !== persisted.loadId
+        || assignment.driver_id !== confirmDriverId || assignment.status !== 'active')
+        return json({ error: 'ASSIGN_RESULT_MISSING', loadId: persisted.loadId }, 502);
+      console.info(JSON.stringify({ event: 'load_import_complete', importId,
+        durationMs: Math.round(performance.now() - importStarted), aiCalls: 0,
+        confirmation: true, assignmentMs: Math.round(performance.now() - assignmentStarted) }));
+      return json({ ...persisted, assigned: true, duplicate: false, refreshed: false });
+    }
     const { error: snapshotError } = upgradeExisting ? { error: null } : await adminClient.from('manual_load_imports').update({
       raw_extraction: { candidate, audit, draft }, extraction_schema_version: extractionVersion,
     }).eq('id', importId);
@@ -1010,13 +1112,6 @@ Deno.serve((request) => withCors(request, async () => {
     }).eq("id", importId);
     if (saveError) return await fail('Hujjat tekshiruvi saqlanmadi. Qayta urinib ko‘ring.', 500);
     if (confirmedPreview) {
-      try {
-        if (!confirmDriverId) throw new Error('Driver is required for assignment');
-        await prepareDriverPay(callerClient, adminClient, profile.id, loadId, confirmDriverId);
-      } catch (error) {
-        return json({ error: 'ASSIGN_FAILED_DRAFT_SAVED', loadId,
-          detail: error instanceof Error ? error.message : 'Driver pay route unavailable' }, 409);
-      }
       const { error: assignmentError } = await callerClient.rpc('review_and_assign_document_load', {
         target_load_id: loadId, target_driver_id: confirmDriverId, source_checksum: checksum,
       });

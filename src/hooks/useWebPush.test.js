@@ -10,7 +10,7 @@ const bundle = await rolldown({ input: fileURLToPath(new URL('./useWebPush.js', 
     if (id.endsWith('/webPush.js')) return '\0push';
   }, load(id) {
     if (id === '\0react') return 'export const {useState,useRef,useEffect,useCallback}=globalThis.testReact;';
-    if (id === '\0push') return 'export const {dispatchBrowserNotification,getPushPreferences,pushPermission,pushSupported,silenceWebPush,webPush}=globalThis.testPush;';
+    if (id === '\0push') return 'export const {dispatchBrowserNotification,getPushPreferences,pushConfigurationError,pushPermission,pushSupported,silenceWebPush,webPush}=globalThis.testPush;';
   } }],
 });
 const { output } = await bundle.generate({ format: 'iife', name: 'PushHook' });
@@ -18,8 +18,9 @@ await bundle.close();
 const deferred = () => { let resolve, reject; const promise = new Promise((yes, no) => { resolve = yes; reject = no; }); return { promise, resolve, reject }; };
 const flush = async () => { for (let count = 0; count < 15; count++) await Promise.resolve(); };
 
-function harness() {
+function harness({ configurationError = null } = {}) {
   const slots = []; let cursor = 0; const effects = []; const silences = [];
+  let refreshes = 0; let updates = 0;
   const disabling = deferred();
   const equal = (left, right) => left?.length === right.length && right.every((value, index) => Object.is(value, left[index]));
   const testReact = {
@@ -32,11 +33,13 @@ function harness() {
     window: { addEventListener() {}, removeEventListener() {} }, document: { visibilityState: 'visible' },
     testPush: { getPushPreferences: id => ({ calls: id === 'a', messages: true }),
       pushSupported: () => true, pushPermission: () => 'granted',
+      pushConfigurationError: () => configurationError,
       silenceWebPush: async id => { silences.push(id); }, dispatchBrowserNotification: async () => ({ shown: true }),
-      webPush: { setAccount() {}, refresh: async () => true, disable: () => disabling.promise } },
+      webPush: { setAccount() {}, refresh: async () => { refreshes++; return true; },
+        updatePreferences: async () => { updates++; return true; }, disable: () => disabling.promise } },
   };
   vm.runInNewContext(output[0].code, context);
-  return { disabling, silences, render(id) {
+  return { disabling, silences, refreshes: () => refreshes, updates: () => updates, render(id) {
     cursor = 0; const result = context.PushHook.useWebPush(id, false);
     while (effects.length) effects.shift()();
     return result;
@@ -52,6 +55,22 @@ test('late account A disable completion cannot clear account B settings or worke
   assert.equal(current.status, 'on'); assert.equal(current.preferences.messages, true);
   assert.equal(current.preferences.calls, false); assert.equal(current.error, null);
   assert.deepEqual(h.silences, []);
+});
+
+test('missing Firebase configuration explains the inactive controls before any registration or enable attempt', async () => {
+  const h = harness({ configurationError: 'vapidKeyMissing' });
+  h.render('a'); await flush();
+  assert.equal(h.render('a').status, 'unconfigured');
+  assert.equal(h.render('a').error, 'vapidKeyMissing');
+  assert.equal(h.refreshes(), 0);
+  await h.render('a').toggleCategory('calls');
+  assert.equal(h.updates(), 0);
+  assert.equal(h.render('a').status, 'unconfigured');
+  const pending = h.render('a').disable();
+  h.disabling.resolve(); await pending;
+  assert.equal(h.render('a').preferences.calls, false);
+  assert.equal(h.render('a').status, 'unconfigured');
+  assert.equal(h.render('a').error, 'vapidKeyMissing');
 });
 test('late account A disable failure cannot publish an error or silence account B', async () => {
   const h = harness(); h.render('a'); await flush();

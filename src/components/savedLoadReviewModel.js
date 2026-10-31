@@ -10,7 +10,7 @@ export function loadReviewRequirementRows(details) {
 
 export function savedLoadReviewDetails(load, details, extracted) {
   const values = {
-    loadNumber: details.number, 'broker.name': details.broker, 'broker.contactName': details.brokerContact,
+    loadNumber: load.internalNumber ? load.brokerLoadNumber?.replace(/^#/, '') || null : details.number, 'broker.name': details.broker, 'broker.contactName': details.brokerContact,
     'broker.phone': details.brokerPhone, 'broker.email': details.brokerEmail,
     equipmentType: details.equipment, cargoDescription: details.commodity,
     weightLbs: details.weightLbs, temperatureFahrenheit: details.temperature,

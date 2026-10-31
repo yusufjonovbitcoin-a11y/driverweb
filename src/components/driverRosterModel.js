@@ -6,6 +6,12 @@ export function activeLoadsForDriver(loads, driverId) {
   ));
 }
 
+export function driverRosterState(driver, activeLoads) {
+  if (driver.accountStatus === 'suspended') return 'SUSPENDED';
+  if (activeLoads.length) return 'ON_LOAD';
+  return driver.dutyStatus === 'OFF_DUTY' ? 'OFF_DUTY' : 'AVAILABLE';
+}
+
 export function partitionDriverLoads(loads) {
   const workflow = [];
   const exceptions = [];

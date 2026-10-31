@@ -4,7 +4,6 @@ import { useTranslation } from 'react-i18next';
 import { roleLabel } from '../i18n/labels';
 import {
   Wallet,
-  Truck,
   ChartNoAxesCombined,
   MapPin,
   Users,
@@ -39,7 +38,6 @@ export default function Sidebar({
       label: t('nav.map'),
       icon: MapPin
     },
-    { id: 'arrivals', label: t('arrival.nav'), icon: Truck },
     { id: 'accounting', label: t('accounting.title'), icon: Wallet },
     { id: 'analytics', label: t('analytics.title'), icon: ChartNoAxesCombined },
     {

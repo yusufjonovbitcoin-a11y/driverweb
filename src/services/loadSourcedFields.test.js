@@ -74,7 +74,7 @@ test('human corrections are auditable, scoped and still pass semantic rules',()=
 });
 test('multi-stop road route sums every leg and never invents driver GPS',async()=>{
   let legs=0;
-  const fetcher=async(url)=> url.includes('/geocode/') ? Response.json({features:[{geometry:{type:'Point',coordinates:[-100,35]},properties:{feature_type:'address',match_code:{confidence:'exact',street:'matched',place:'matched'},context:{address:{address_number:'1'},region:{region_code:'TX'},country:{country_code:'US'}}}}]})
+  const fetcher=async(url)=> url.includes('/geocode/') ? Response.json({features:[{geometry:{type:'Point',coordinates:[-100,35]},properties:{feature_type:'address',match_code:{confidence:'exact',street:'matched',place:'matched'},context:{address:{address_number:'1',street_name:'Main Street'},place:{name:'Test'},region:{region_code:'TX'},country:{country_code:'US'}}}}]})
     : (++legs,Response.json({code:'Ok',routes:[{distance:1609.344,duration:60,geometry:'_p~iF~ps|U_ulLnnqC_mqNvxq`@'}]}));
   const stops=['pickup','delivery','delivery'].map(type=>({type,address_line:'1 Main St',city:'Test',region:'TX'}));
   const result=await previewLoadRoute(stops,[],['driver'],'',fetcher,Date.now(),'token','mapbox');

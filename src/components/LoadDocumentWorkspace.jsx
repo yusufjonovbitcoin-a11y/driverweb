@@ -6,6 +6,8 @@ import { DocumentCard } from './LoadDocumentsManager.jsx';
 import { documentWorkspaceEntries, documentRegistryEntries, selectedWorkspaceEntry, documentViewerLoad, managedDocumentTypes } from './loadDocumentsModel.js';
 import DocumentVersionHistory from './DocumentVersionHistory.jsx';
 import './load-document-workspace.css';
+import { preloadPdfViewer } from './pdfViewerLoader.js';
+import usePdfDocumentWarmup from './usePdfDocumentWarmup.js';
 
 const shortType = doc => ({ rateCon: 'Rate Con', shipperBol: 'BOL', receiverPod: 'POD' })[doc.id] || doc.title;
 function fileSize(bytes) {
@@ -19,6 +21,7 @@ export default function LoadDocumentWorkspace({ load, documents, context, editab
   const allEntries = documentWorkspaceEntries(documents, context);
   const [extraKey, setExtraKey] = useState(null);
   const entries = documentRegistryEntries(allEntries, editable ? extraKey : null);
+  usePdfDocumentWarmup(entries.filter(entry => entry.document.available).map(entry => entry.document));
   const [selectedKey, setSelectedKey] = useState(null);
   const [historyDocument, setHistoryDocument] = useState(null);
   const [busyKey, setBusyKey] = useState(null);
@@ -114,12 +117,12 @@ function RegistryRowView({ document, entry, state, editable, missingStop, replac
   return <>
     <tr hidden={!visible} className={`document-registry-row${selected ? ' is-selected' : ''}${entry.add ? ' is-add' : ''}`} aria-selected={selected} aria-busy={state.busy} onClick={event => { if (!event.target.closest('button,input,summary,details,dialog') && !locked) onSelect(); }}>
       <td><div className="document-registry-type"><DocumentFileIcon document={document} /><div><strong>{document.id === 'rateCon' ? t('documentWorkspace.brokerDocument') : shortType(document)}</strong><span>{document.id === 'rateCon' ? 'Rate Con' : document.id === 'shipperBol' ? 'Bill of Lading' : document.id === 'receiverPod' ? 'Proof of Delivery' : t('documentWorkspace.optional')}</span></div></div>{controls}</td>
-      <td><button type="button" className="document-registry-filename" disabled={locked} onClick={document.available ? onOpen : onSelect}>{document.available ? document.fileName || t('documentManagement.filenameUnavailable') : '—'}</button>{!document.available && <small>{t('documents.notUploaded')}</small>}</td>
+      <td><button type="button" className="document-registry-filename" onPointerEnter={() => preloadPdfViewer(document)} onFocus={() => preloadPdfViewer(document)} disabled={locked} onClick={document.available ? onOpen : onSelect}>{document.available ? document.fileName || t('documentManagement.filenameUnavailable') : '—'}</button>{!document.available && <small>{t('documents.notUploaded')}</small>}</td>
       <td><strong>{entry.marker ? `${entry.marker} · ${entry.stop?.facility_name || entry.stop?.city || '—'}` : '—'}</strong><small>{entry.stop ? [entry.stop.city, entry.stop.region].filter(Boolean).join(', ') : entry.legacy ? label : ''}</small></td>
-      <td><span className={`document-registry-status${document.available ? ' is-uploaded' : ' is-pending'}`}><i className={`registry-dot is-${document.available ? 'uploaded' : 'pending'}`} aria-hidden="true" />{t(document.available ? 'documents.uploaded' : 'documentRegistry.pending')}</span></td>
+      <td><span className={`document-registry-status${document.available ? ' is-uploaded' : ' is-pending'}`}><i className={`registry-dot is-${document.available ? 'uploaded' : 'pending'}`} aria-hidden="true" />{t(document.available ? 'documents.uploaded' : 'common.no')}</span></td>
       <td className="document-registry-size">{fileSize(document.sizeBytes)}</td>
       <td><div className="document-registry-row-actions">
-        {document.available ? <><button type="button" className={`document-registry-open${selected ? ' is-primary' : ''}`} disabled={locked} onClick={onOpen}><ExternalLink size={14} aria-hidden="true" />{t('documentManagement.view')}</button>
+        {document.available ? <><button type="button" className={`document-registry-open${selected ? ' is-primary' : ''}`} disabled={locked} onPointerEnter={() => preloadPdfViewer(document)} onFocus={() => preloadPdfViewer(document)} onClick={onOpen}><ExternalLink size={14} aria-hidden="true" />{t('documentManagement.view')}</button>
           <button type="button" className="document-registry-icon-button" disabled={locked || downloadState.busy} onClick={download} aria-label={downloadLabel} title={downloadLabel}>{downloadState.busy ? <LoaderCircle className="animate-spin" size={16} /> : <Download size={16} />}</button>
           {editable && <button type="button" className="document-registry-icon-button" disabled={locked || !replaceAllowed} onClick={onChooseFile} aria-label={t('documentManagement.replaceDocument', { document: document.title })} title={t('documentManagement.replace')}><Replace size={16} /></button>}</>
           : editable && !missingStop ? <button type="button" className="document-registry-upload" disabled={locked} onClick={onChooseFile}><FileUp size={16} aria-hidden="true" />{t('documentManagement.add')}</button> : <span className="document-workspace-view-only">{t(missingStop ? 'documentManagement.stopUnavailable' : 'documentManagement.viewOnly')}</span>}

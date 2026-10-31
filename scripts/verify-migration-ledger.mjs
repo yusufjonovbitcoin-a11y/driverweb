@@ -7,7 +7,7 @@ import assert from 'node:assert/strict';
 // Offline, read-only verification. It never connects to Supabase or repairs a ledger.
 const root = fileURLToPath(new URL('..', import.meta.url));
 const manifest = JSON.parse(await readFile(path.join(root, 'supabase/migration-ledger/2026-10-07.json'), 'utf8'));
-const digest = value => createHash('sha256').update(value.trim()).digest('hex');
+const digest = value => createHash('sha256').update(value.replaceAll('\r\n', '\n').trim()).digest('hex');
 const exists = async name => access(name).then(() => true, () => false);
 assert.equal(manifest.projectRef, 'gsnbjpqwwpvqtmphsyfs');
 for (const entry of manifest.canonicalMigrations) {

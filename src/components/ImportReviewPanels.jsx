@@ -1,32 +1,41 @@
 import { lazy, Suspense, useId, useRef, useState } from 'react';
-import { ArrowRight, Building2, Check, ClipboardList, DollarSign, FileText, Info, LayoutDashboard, LoaderCircle, Mail, MapPin, Package, Phone, Route, Truck, Weight } from 'lucide-react';
+import { ArrowRight, Building2, Check, ClipboardList, DollarSign, ExternalLink, FileText, Info, LayoutDashboard, LoaderCircle, Mail, MapPin, MapPinned, Package, Phone, Route, Truck, Weight, TriangleAlert } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { formatCurrency, formatNumber } from '../i18n/format';
 import { briefFieldLabel } from '../services/driverBrief';
 import { stopAddress, stopScheduleParts } from './importedLoadModel';
 import { loadReviewRequirementRows } from './savedLoadReviewModel.js';
+import { loadGoogleMapsRoutes } from './loadGoogleMapsModel.js';
 
 const DocumentReader = lazy(() => import('./DocumentViewerModal').then(module => ({ default: module.FreshDocumentViewer })));
 const TABS = [
   ['overview', LayoutDashboard], ['route', MapPin], ['cargo', Package],
   ['broker', Building2], ['requirements', ClipboardList], ['documents', FileText],
 ];
-const CARGO_FIELDS = ['cargoDescription', 'equipmentType', 'weightPrinted', 'weightLbs', 'lengthPrinted', 'widthPrinted', 'heightPrinted', 'quantityPrinted', 'palletCount', 'caseCount', 'pieceCount', 'packageCount', 'temperatureFahrenheit', 'isHazmat', 'bolNumber'];
-const PAYMENT_FIELDS = ['paymentTerms', 'billingEmail', 'requiredDocuments', 'documentDeadline', 'accessorialTerms', 'carrierName', 'carrierMc', 'carrierDot', 'documentDriverName', 'documentDriverPhone'];
+const CARGO_FIELDS = ['cargoDescription', 'equipmentType', 'weightPrinted', 'weightLbs', 'lengthPrinted', 'widthPrinted', 'heightPrinted', 'quantityPrinted', 'palletCount', 'caseCount', 'pieceCount', 'packageCount', 'temperatureFahrenheit', 'isHazmat', 'bolNumber', 'trailerLengthPrinted'];
+const PAYMENT_FIELDS = ['paymentTerms', 'billingEmail', 'requiredDocuments', 'documentDeadline', 'accessorialTerms', 'carrierName', 'carrierMc', 'carrierDot', 'documentDriverName', 'documentDriverPhone', 'currency', 'accessorialChargesPrinted', 'brokerMc', 'brokerAddress'];
+const OPTIONAL_ENGINE_FIELDS = new Set(['trailerLengthPrinted', 'currency', 'accessorialChargesPrinted', 'brokerMc', 'brokerAddress']);
 const show = value => value == null || value === '' ? '—' : String(value);
 
 export default function ImportReviewPanels({ load, details, selectedDriver, stops, map, roadSummary, road, ratePerMile, showRouteFacts = true,
-  overviewContent, documentsContent, requirementsContent, sourceNoteKey = 'importWorkspace.sourceNote', keepMounted = false }) {
+  overviewContent, documentsContent, requirementsContent, routeStartLocation, routeStartStatus, sourceNoteKey = 'importWorkspace.sourceNote', keepMounted = false }) {
   const { t } = useTranslation();
   const id = useId();
   const [tab, setTab] = useState('overview');
   const tabRefs = useRef({});
   const panelRef = useRef(null);
   const fields = new Map(details.fields.map(field => [field.key, field]));
+  const conflicts = (details.issues || []).filter(issue => issue.reason?.startsWith('conflicting_'));
   const fileName = load.fileName || load.driverBrief?.sourceFileName || load.documentMeta?.rateCon?.fileName || t('documents.brokerRateCon');
   const sourceUrl = load.sourceUrl || load.documents?.rateCon;
   const requirements = loadReviewRequirementRows(details);
+  const startUnavailable = ['loading', 'error', 'missing_location'].includes(routeStartStatus);
+  const googleRoutes = startUnavailable ? [] : loadGoogleMapsRoutes(details.stops, routeStartLocation);
   const weight = details.weightPrinted || (details.weight == null ? '—' : `${formatNumber(details.weight)} lb`);
+  const driverNotes = [...new Set([details.instructions, ...details.stops.flatMap(stop => [stop.note, stop.timingNote]), ...requirements.map(row => row.value)]
+    .filter(value => typeof value === 'string' && value.trim()).map(value => value.replace(/\s+/g, ' ').trim()))];
+  const priorityNotes = driverNotes.map((text, index) => ({ text, index, priority: /hazmat|hazard|danger|placard|temperature|seal|do not|must|appointment|no touch|driver assist/i.test(text) ? 1 : 0 }))
+    .sort((a, b) => b.priority - a.priority || a.index - b.index).slice(0, 3);
   const display = value => typeof value === 'boolean' ? t(value ? 'common.yes' : 'common.no') : show(value);
   function selectTab(key, focus = false) {
     setTab(key);
@@ -73,6 +82,14 @@ export default function ImportReviewPanels({ load, details, selectedDriver, stop
             <Stat icon={MapPin} label={t('importWorkspace.stops')} value={details.stops.length} />
             <Stat icon={ClipboardList} label={t('importWorkspace.requirements')} value={requirements.length} />
           </div>
+          {conflicts.length > 0 && <section className="review-card" role="alert">
+            <div className="review-card-heading"><h2><TriangleAlert size={18} /> {t('importReview.sourceConflicts')}</h2></div>
+            <p>{t('importReview.sourceConflictsHint')}</p>
+            <ul>{conflicts.map((issue, index) => <li key={`${issue.field}-${index}`}>
+              <strong>{briefFieldLabel(t, issue.field)}</strong>{' — '}
+              {(issue.alternatives || [issue.value]).map(value => String(value ?? '—')).join(' / ')}
+            </li>)}</ul>
+          </section>}
           {overviewContent}
           <div className="review-columns">
             <section className="review-card">
@@ -90,15 +107,41 @@ export default function ImportReviewPanels({ load, details, selectedDriver, stop
             </section>
             {shortcuts}
           </div>
+          <section className="review-card review-driver-brief">
+            <div className="review-card-heading"><h2><Truck size={20} />{t('importWorkspace.driverSummary')}</h2><button type="button" className="import-button" onClick={() => selectTab('requirements', true)}>{t('importWorkspace.requirements')}<ArrowRight size={16} /></button></div>
+            <p className="review-driver-cargo">{[details.cargo, details.equipment, weight === '—' ? null : weight].filter(Boolean).join(' · ') || t('loadImport.notProvided')}</p>
+            <div className="review-driver-alerts">
+              {details.hazmat === true && <p className="review-driver-hazard"><TriangleAlert size={17} />{t('importWorkspace.hazmatWarning')}</p>}
+              {details.temperature != null && <p>{briefFieldLabel(t, 'temperatureFahrenheit')}: {details.temperature} °F</p>}
+              {priorityNotes.map(({ text }) => <p key={text} title={text} className="review-driver-note"><Info size={16} /><span>{text.length > 200 ? `${text.slice(0, 197).trimEnd()}…` : text}</span></p>)}
+              {!priorityNotes.length && details.hazmat !== true && details.temperature == null && <p className="review-note">{t('importWorkspace.noDriverNotes')}</p>}
+            </div>
+          </section>
         </>}
         {(keepMounted || tab === key) && key === 'route' && <div className="review-route-columns">
-          <section className="review-card"><div className="review-card-heading"><h2><Route size={20} />{t('importWorkspace.routeStops')}</h2><span className="review-count">{details.stops.length}</span></div>{stops}</section>
+          <section className="review-card review-route-card"><div className="review-card-heading"><h2><Route size={20} />{t('importWorkspace.routeStops')}</h2><span className="review-count">{details.stops.length}</span></div>
+            <div className="review-route-stop-list">{stops}</div>
+            <div className="review-route-footer">
+              {googleRoutes.length === 1 ? <a className="import-button review-full-route" href={googleRoutes[0].url} target="_blank" rel="noopener noreferrer">
+                <MapPinned size={18} aria-hidden="true" /><span>{t('map.openFullRoute')}</span><ExternalLink size={16} aria-hidden="true" />
+              </a> : googleRoutes.length > 1 ? <details className="review-route-parts" onKeyDown={event => {
+                if (event.key === 'Escape') { event.stopPropagation(); event.currentTarget.open = false; event.currentTarget.querySelector('summary')?.focus(); }
+              }}>
+                <summary className="import-button review-full-route"><MapPinned size={18} aria-hidden="true" /><span>{t('map.openFullRoute')}</span></summary>
+                <nav aria-label={t('map.googleRouteParts')}><p>{t('map.googleRouteSplit')}</p>{googleRoutes.map((part, index) => <a key={part.url} href={part.url} target="_blank" rel="noopener noreferrer">
+                  {t('map.googleRoutePart', { number: index + 1, from: part.from, to: part.to })}<ExternalLink size={16} aria-hidden="true" />
+                </a>)}</nav>
+              </details> : <button type="button" className="import-button review-full-route" disabled title={t(routeStartStatus === 'loading' ? 'common.loading' : routeStartStatus === 'error' ? 'map.startLocationError' : startUnavailable ? 'map.startLocationUnavailable' : 'map.googleRouteUnavailable')}>
+                <MapPinned size={18} aria-hidden="true" /><span>{t('map.openFullRoute')}</span>
+              </button>}
+            </div>
+          </section>
           <div className="review-stack"><div className="review-map-frame">{map}</div>{roadSummary}{showRouteFacts && <section className="review-card"><dl className="review-inline-facts"><Fact label={t('loadImport.documentMiles')} value={details.distance == null ? '—' : `${formatNumber(details.distance)} mi`} /><Fact label={t(ratePerMile.source === 'route' ? 'loadImport.estimatedRpm' : 'loadImport.documentRpm')} value={ratePerMile.value == null ? '—' : `${formatCurrency(ratePerMile.value)}/mi`} /></dl></section>}</div>
         </div>}
         {(keepMounted || tab === key) && key === 'cargo' && <div className="review-columns">
           <section className="review-card"><h2><Package size={20} />{t('importWorkspace.cargoInfo')}</h2>
             <div className="review-cargo-banner"><span className="review-icon"><Package size={28} /></span><div><small>{t('importWorkspace.cargoDescription')}</small><h3>{show(details.cargo)}</h3><p>{show(details.equipment)}</p></div></div>
-            <dl className="review-data-grid">{CARGO_FIELDS.map(fieldKey => {
+            <dl className="review-data-grid">{CARGO_FIELDS.filter(key => !OPTIONAL_ENGINE_FIELDS.has(key) || fields.has(key)).map(fieldKey => {
               const fallback = { cargoDescription: details.cargo, equipmentType: details.equipment, weightPrinted: details.weightPrinted, weightLbs: details.weight, palletCount: details.pallets, caseCount: details.cases, pieceCount: details.pieces, packageCount: details.packages, temperatureFahrenheit: details.temperature, isHazmat: details.hazmat, bolNumber: details.bolNumber };
               const field = fields.get(fieldKey);
               return <div key={fieldKey}><dt>{briefFieldLabel(t, fieldKey)}</dt><dd>{display(field?.value ?? fallback[fieldKey])}<Evidence field={field} t={t} aiDirect={details.aiDirect} /></dd></div>;
@@ -107,7 +150,7 @@ export default function ImportReviewPanels({ load, details, selectedDriver, stop
             {details.instructions && <section className="review-card"><h2>{t('importWorkspace.instructions')}</h2><p className="review-prose">{details.instructions}</p><Evidence field={fields.get('specialInstructions')} t={t} aiDirect={details.aiDirect} /></section>}</div>
         </div>}
         {(keepMounted || tab === key) && key === 'broker' && <div className="review-columns">
-          <section className="review-card"><h2><Building2 size={20} />{t('loadImport.broker')}</h2><div className="review-company"><span className="review-icon"><Building2 size={32} /></span><div><small>{t('importWorkspace.broker')}</small><h3>{show(details.broker)}</h3><Evidence field={fields.get('broker.name')} t={t} aiDirect={details.aiDirect} /></div></div>
+          <section className="review-card"><h2><Building2 size={20} />{t('loadImport.broker')}</h2><dl className="review-broker-facts"><Fact label={t('loads.brokerLoadNumber')} value={load.internalNumber ? load.brokerLoadNumber : details.number} /></dl><div className="review-company"><span className="review-icon"><Building2 size={32} /></span><div><small>{t('importWorkspace.broker')}</small><h3>{show(details.broker)}</h3><Evidence field={fields.get('broker.name')} t={t} aiDirect={details.aiDirect} /></div></div>
             <dl className="review-broker-facts">{[['broker.contactName', details.brokerContact, null], ['broker.phone', details.brokerPhone, details.brokerPhone ? `tel:${details.brokerPhone.replace(/[^+\d]/g, '')}` : null], ['broker.email', details.brokerEmail, /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(details.brokerEmail || '') ? `mailto:${details.brokerEmail}` : null]].map(([fieldKey, value, href]) => <div key={fieldKey}><dt>{briefFieldLabel(t, fieldKey)}</dt><dd>{href ? <a href={href}>{fieldKey === 'broker.phone' ? <Phone size={17} /> : <Mail size={17} />}{value}</a> : show(value)}<Evidence field={fields.get(fieldKey)} t={t} aiDirect={details.aiDirect} /></dd></div>)}</dl>
           </section><div className="review-stack"><section className="review-card"><h2><FileText size={20} />{t('importWorkspace.documentSource')}</h2><p className="review-filename">{fileName}</p>{sourceNote}<button type="button" className="import-button" onClick={() => selectTab('documents', true)}>{t('importWorkspace.checkOriginal')}<ArrowRight size={16} /></button></section><section className="review-card"><h2><ClipboardList size={20} />{t('importWorkspace.requirements')}</h2><p className="review-muted">{t('importWorkspace.requirementsHint')}</p><button type="button" className="review-text-button" onClick={() => selectTab('requirements', true)}>{t('importWorkspace.openRequirements')}<span className="review-count">{requirements.length}</span><ArrowRight size={16} /></button></section></div>
         </div>}
@@ -117,7 +160,7 @@ export default function ImportReviewPanels({ load, details, selectedDriver, stop
             {requirementsContent}
             {requirements.length ? <ol className="review-requirements">{requirements.map((field, index) => <li key={field.key}><span>{index + 1}</span><div><p>{display(field.value)}</p><Evidence field={field} t={t} aiDirect={details.aiDirect} /></div></li>)}</ol> : <p className="review-empty">{t('loadImport.notProvided')}</p>}
             {!details.operationalOnly && <>
-              <details className="review-extra"><summary>{t('importDetails.payment')}</summary><p className="review-note">{t('importDetails.staffOnly')}</p>{details.documentDriverName && <p className="import-detail-notice warning">{t('importDetails.driverCheck', { documentDriver: details.documentDriverName, selectedDriver: selectedDriver?.name || '—' })}</p>}<dl className="review-data-grid">{PAYMENT_FIELDS.map(fieldKey => <div key={fieldKey}><dt>{briefFieldLabel(t, fieldKey)}</dt><dd>{display(fields.get(fieldKey)?.value)}<Evidence field={fields.get(fieldKey)} t={t} aiDirect={details.aiDirect} /></dd></div>)}</dl></details>
+              <details className="review-extra"><summary>{t('importDetails.payment')}</summary><p className="review-note">{t('importDetails.staffOnly')}</p>{details.documentDriverName && <p className="import-detail-notice warning">{t('importDetails.driverCheck', { documentDriver: details.documentDriverName, selectedDriver: selectedDriver?.name || '—' })}</p>}<dl className="review-data-grid">{PAYMENT_FIELDS.filter(key => !OPTIONAL_ENGINE_FIELDS.has(key) || fields.has(key)).map(fieldKey => <div key={fieldKey}><dt>{briefFieldLabel(t, fieldKey)}</dt><dd>{display(fields.get(fieldKey)?.value)}<Evidence field={fields.get(fieldKey)} t={t} aiDirect={details.aiDirect} /></dd></div>)}</dl></details>
               <details className="review-extra"><summary>{t('importDetails.terms')}</summary><p className="review-note">{t(details.aiDirect ? 'importDetails.aiDirectTerms' : 'importDetails.originalTerms')}</p>{details.fields.filter(field => field.key.startsWith('contractTerms.')).map(field => <div className="review-prose" key={field.key}>{display(field.value)}<Evidence field={field} t={t} aiDirect={details.aiDirect} /></div>)}</details>
             </>}
           </section><div className="review-stack"><section className="review-card"><h2><Info size={20} />{t('importWorkspace.instructions')}</h2><p className="review-prose">{details.instructions || t('loadImport.notProvided')}</p><Evidence field={fields.get('specialInstructions')} t={t} aiDirect={details.aiDirect} /></section><section className="review-card">{sourceNote}<button type="button" className="import-button" onClick={() => selectTab('documents', true)}>{t('importWorkspace.checkOriginal')}<ArrowRight size={16} /></button></section></div>
@@ -143,5 +186,6 @@ function Schedule({ stop, t }) {
 }
 function Evidence({ field, t, aiDirect }) {
   if (!field || (!field.page && !field.quote)) return null;
-  return <details className="import-field-evidence"><summary>{field.page ? t(aiDirect ? 'importDetails.aiPage' : 'importDetails.page', { page: field.page }) : t('importDetails.aiQuote')}</summary>{field.quote && <blockquote>{field.quote}</blockquote>}</details>;
+  const unverified = aiDirect || field.verificationStatus === 'unverified';
+  return <details className="import-field-evidence"><summary>{field.page ? t(unverified ? 'importDetails.aiPage' : 'importDetails.page', { page: field.page }) : t('importDetails.aiQuote')}</summary>{field.quote && <blockquote>{field.quote}</blockquote>}</details>;
 }

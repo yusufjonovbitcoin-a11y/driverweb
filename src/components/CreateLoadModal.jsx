@@ -10,7 +10,7 @@ const inputClass = 'mt-1 w-full rounded-lg border border-zinc-200 bg-zinc-50 px-
 export default function CreateLoadModal({ isOpen, onClose, drivers = [], onCreateLoad, onDocument, initialDriverId = null }) {
   const { t } = useTranslation();
   const [form, setForm] = useState(() => ({
-    loadNumber: `MANUAL-${crypto.randomUUID()}`,
+    loadNumber: '',
     broker: '', equipment: '', commodity: '', rate: '', distanceMiles: '', weightLbs: '',
     originCity: '', originState: '', originAddress: '', originFacility: '',
     destinationCity: '', destinationState: '', destinationAddress: '', destinationFacility: '',
@@ -110,7 +110,8 @@ export default function CreateLoadModal({ isOpen, onClose, drivers = [], onCreat
               <input type="file" aria-label={t('errors.fileRequired')} accept=".pdf,image/*" onChange={attachDocument} className="absolute inset-0 cursor-pointer opacity-0" />
             </label>}
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              {field('loadNumber', t('loads.loadNumber'), { required: true })}
+              <div>{field('loadNumber', t('loads.brokerLoadNumber'))}
+                <p className="mt-1 text-xs text-zinc-500">{t('loads.internalNumberAutomatic')}</p></div>
               {field('broker', t('loads.broker'), { required: true })}
             </div>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">

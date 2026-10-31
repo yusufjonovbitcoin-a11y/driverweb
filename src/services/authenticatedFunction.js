@@ -31,18 +31,28 @@ async function refreshSession(client, session, { allowValidToken = false } = {})
 }
 
 export async function invokeAuthenticatedFunction(client, name, body, options = {}) {
-  let session = await readSession(client);
+  const { onTiming, ...invokeOptions } = options;
+  const timed = async (stage, work) => {
+    if (!onTiming) return work();
+    const started = performance.now();
+    try { return await work(); }
+    finally {
+      // Diagnostics must never interrupt authentication or replay a request.
+      try { onTiming?.({ stage, durationMs: performance.now() - started }); } catch { /* observer only */ }
+    }
+  };
+  let session = await timed('session', () => readSession(client));
   if (!session.expires_at || session.expires_at * 1000 <= Date.now() + 5 * 60 * 1000) {
-    session = await refreshSession(client, session, { allowValidToken: true });
+    session = await timed('refresh', () => refreshSession(client, session, { allowValidToken: true }));
   }
   const invoke = () => client.functions.invoke(name, {
-    ...options, body,
-    headers: { ...options.headers, Authorization: `Bearer ${session.access_token}` },
+    ...invokeOptions, body,
+    headers: { ...invokeOptions.headers, Authorization: `Bearer ${session.access_token}` },
   });
-  let result = await invoke();
+  let result = await timed('request', invoke);
   if (result.error?.context?.status === 401) {
-    session = await refreshSession(client, session);
-    result = await invoke();
+    session = await timed('retry_refresh', () => refreshSession(client, session));
+    result = await timed('retry_request', invoke);
   }
   return result;
 }

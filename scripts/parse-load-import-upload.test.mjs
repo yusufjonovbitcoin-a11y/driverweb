@@ -3,6 +3,15 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import vm from 'node:vm';
 import { rolldown } from 'rolldown';
+import { PDFDocument, StandardFonts } from 'pdf-lib';
+import { getDocumentProxy, getResolvedPDFJS } from 'unpdf';
+
+const nativePdf = await PDFDocument.create();
+const nativePage = nativePdf.addPage([612, 792]);
+const nativeFont = await nativePdf.embedFont(StandardFonts.Helvetica);
+['Load # TEST-42', 'Pickup', '1 First Ave', 'Phoenix, AZ', 'Delivery', '2 Second Ave', 'Dallas, TX'].forEach((line, i) =>
+  nativePage.drawText(line, { x: 40, y: 740 - i * 45, size: 12, font: nativeFont }));
+const nativeBytes = await nativePdf.save();
 
 // Execute the actual bundled Edge handler. Only external Supabase/OpenAI I/O is
 // replaced. The stateful fake models commits surviving a failed HTTP response;
@@ -11,8 +20,10 @@ const bundle = await rolldown({
   input: fileURLToPath(new URL('../supabase/functions/parse-load-document/index.ts', import.meta.url)),
   plugins: [{ name: 'isolated-supabase', resolveId(id) {
     if (id.startsWith('https://esm.sh/@supabase/')) return '\0isolated-supabase';
+    if (id === 'npm:unpdf@1.8.1') return '\0native-pdf';
   }, load(id) {
     if (id === '\0isolated-supabase') return 'export const createClient = (...args) => globalThis.createTestClient(...args);';
+    if (id === '\0native-pdf') return 'export const getDocumentProxy = bytes => globalThis.testPdf(bytes); export const getResolvedPDFJS = () => globalThis.testPdfOps();';
   } }],
 });
 const { output } = await bundle.generate({ format: 'iife' });
@@ -88,6 +99,20 @@ function harness(options = {}) {
       from: table => new Query(table, actor),
       async rpc(name, args) {
         events.push({ type: 'rpc', actor, name, args: clone(args) });
+        if (name === 'prepare_import_assignment_upload') {
+          const created = await this.rpc('create_document_import_draft', {
+            target_import_id: args.p_import_id, expected_checksum: args.p_expected_checksum });
+          const plan = await this.rpc('begin_import_document_upload', args);
+          return { ...plan, data: plan.data ? { ...plan.data, loadId: created.data } : null };
+        }
+        if (name === 'finalize_import_assignment_source') {
+          const { p_model, ...finishArgs } = args;
+          assert.ok(p_model);
+          const result = await this.rpc('complete_import_document_upload', finishArgs);
+          if (!result.error) Object.assign(state.imports[0], { status: 'needs_review', storage_path: STORAGE_PATH,
+            extracted_result: { ...state.imports[0].raw_extraction.confirmation, id: 'load' } });
+          return result;
+        }
         if (name === 'consume_edge_rate_limit' || name === 'can_access_driver') return { data: true, error: null };
         if (name === 'begin_document_upload' || name === 'complete_document_upload') {
           return { data: null, error: { message: 'Use staff document management for load-wide documents', code: '42501' } };
@@ -137,7 +162,7 @@ function harness(options = {}) {
           assert.equal(state.assignments.length, 0, 'retry must not create a second assignment');
           state.assignments.push({ id: 'assignment', driver_id: DRIVER, status: 'active' });
           state.loads[0].current_assignment_id = 'assignment'; state.loads[0].status = 'assigned';
-          return { data: null, error: null };
+          return { data: { id: 'assignment', load_id: 'load', driver_id: DRIVER, status: 'active' }, error: null };
         }
         assert.ok(['refresh_verified_import_draft', 'apply_ai_import_metadata', 'refresh_ai_import_metadata',
           'save_import_ordered_stops'].includes(name), `Unexpected RPC ${name}`);
@@ -165,19 +190,26 @@ function harness(options = {}) {
     };
   }
   const environment = { SUPABASE_URL: 'https://test.invalid', SUPABASE_ANON_KEY: 'test-anon',
-    SUPABASE_SERVICE_ROLE_KEY: 'test-service', OPENAI_API_KEY: 'test-ai' };
+    SUPABASE_SERVICE_ROLE_KEY: 'test-service', OPENAI_API_KEY: 'test-ai', OPENAI_PDF_ENGINE: options.hybrid ? 'hybrid' : 'direct' };
   vm.runInNewContext(output[0].code, {
     createTestClient: (_url, key) => client(key === 'test-service' ? 'admin' : 'caller'),
+    testPdf: getDocumentProxy, testPdfOps: getResolvedPDFJS,
     Deno: { env: { get: name => environment[name] }, serve: fn => { handler = fn; } },
     console: { info() {}, error() {} }, performance, AbortSignal, Response, Request, File, FormData, Headers,
     URL, crypto, TextEncoder, TextDecoder, Uint8Array, btoa, Intl, structuredClone, Error,
     fetch: async url => {
       assert.equal(url, 'https://api.openai.com/v1/responses', 'no other network is allowed'); state.aiCalls++;
-      return Response.json({ status: 'completed', output: [{ content: [{ type: 'output_text', text: JSON.stringify(providerExtraction()) }] }] });
+      const fact = (field, value, ref) => ({ field, value, source_ids: [ref] });
+      const candidate = options.hybrid ? { documentReview: providerExtraction().documentReview,
+        facts: [fact('loadNumber', 'TEST-42', 'p1b0')], requirements: [], contractTerms: [], stops: [
+          { role: 'pickup', anchor_ids: ['p1b1'], facts: [fact('addressLine', '1 First Ave', 'p1b2'), fact('city', 'Phoenix', 'p1b3'), fact('region', 'AZ', 'p1b3')] },
+          { role: 'delivery', anchor_ids: ['p1b4'], facts: [fact('addressLine', '2 Second Ave', 'p1b5'), fact('city', 'Dallas', 'p1b6'), fact('region', 'TX', 'p1b6')] },
+        ] } : providerExtraction();
+      return Response.json({ status: 'completed', output: [{ content: [{ type: 'output_text', text: JSON.stringify(candidate) }] }] });
     },
   });
   async function run({ preview = false, ticket, auth = true } = {}) {
-    const form = new FormData(); form.set('file', new File(['%PDF-1.7\nTest'], 'rate.pdf', { type: 'application/pdf' }));
+    const form = new FormData(); form.set('file', new File([options.hybrid ? nativeBytes : '%PDF-1.7\nTest'], 'rate.pdf', { type: 'application/pdf' }));
     if (preview) form.set('previewOnly', 'true');
     if (ticket) {
       form.set('previewPayload', ticket.payload); form.set('previewSignature', ticket.signature); form.set('confirmDriverId', DRIVER);
@@ -195,6 +227,15 @@ function harness(options = {}) {
   return { state, events, run, preview };
 }
 const rpcs = (h, name) => h.events.filter(event => event.type === 'rpc' && event.name === name);
+
+test('native hybrid preview confirms through the existing upload transaction with zero additional AI calls', async () => {
+  const h = harness({ hybrid: true }); const ticket = await h.preview(); const result = await h.run({ ticket });
+  assert.equal(result.status, 200, JSON.stringify(result.body));
+  assert.equal(result.body.assigned, true); assert.equal(h.state.aiCalls, 1);
+  assert.equal(h.state.createCount, 1); assert.equal(h.state.uploadCalls, 1);
+  assert.equal(h.state.assignments.length, 1);
+  assert.equal(h.state.imports[0].raw_extraction.audit.sourceGrounded, true);
+});
 
 test('fresh confirmed import uses a caller-bound plan and server-attested completion before assigning once', async () => {
   const h = harness(); const ticket = await h.preview(); const result = await h.run({ ticket });

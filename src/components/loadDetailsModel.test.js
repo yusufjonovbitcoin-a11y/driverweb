@@ -1,6 +1,35 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildLoadDetails, loadCurrentLocation, latestPickupRouteStops, pickupEstimateScope, selectPickupEstimate, savedLoadRoadSummary, savedStopContactPhone } from './loadDetailsModel.js';
+import { buildLoadDetails, loadCurrentLocation, loadRouteOrigin, latestPickupRouteStops, pickupEstimateScope, selectPickupEstimate, savedLoadRoadSummary, savedStopContactPhone } from './loadDetailsModel.js';
+
+test('START fixes the initial route independently of subsequent GPS movement or offline presence', () => {
+  const start = { lat: 40, lng: -74, observedAt: 1000 };
+  const state = { status: 'ready', location: start };
+  assert.deepEqual(loadRouteOrigin({ lat: 42, lng: -80 }, state), { origin: start, source: 'start' });
+  assert.deepEqual(loadRouteOrigin(null, state), { origin: start, source: 'start' });
+  const live = { lat: 45, lng: -81 };
+  assert.deepEqual(loadRouteOrigin(live, { status: 'awaiting_start' }), { origin: live, source: 'latest' });
+  for (const status of ['loading', 'error', 'missing_location']) assert.equal(loadRouteOrigin(live, { status }).origin, null);
+});
+
+test('a completed trip never uses the driver current position from a different trip', () => {
+  const driver = { id: 'driver', isOnline: true, lastKnownPosition: {
+    latitude: 40, longitude: -75, capturedAt: '2026-10-31T12:00:00Z',
+  } };
+  const load = { driverId: 'driver', databaseStatus: 'completed' };
+  assert.equal(loadCurrentLocation(load, driver, Date.parse('2026-10-31T12:00:01Z')), null);
+});
+
+test('reassignment or a different START invalidates a previous initial-leg estimate immediately', () => {
+  const stops = [{ latitude: 40, longitude: -74 }, { address: '10 Dock St' }];
+  const start = { lat: 40, lng: -74, observedAt: 1000 };
+  const original = pickupEstimateScope('load', 'driver', stops, 'first', start);
+  const saved = { scope: original, route: { data: { distanceMeters: 1000 } } };
+  const reassigned = pickupEstimateScope('load', 'driver', stops, 'second', start);
+  const differentOrigin = pickupEstimateScope('load', 'driver', stops, 'first', { ...start, lat: 41 });
+  assert.equal(selectPickupEstimate(reassigned, null, saved, true), null);
+  assert.equal(selectPickupEstimate(differentOrigin, null, saved, true), null);
+});
 
 test('detail cards retain all pickups and deliveries with independent labels and appointments', () => {
   const details = buildLoadDetails({ driverBrief: { stops: [

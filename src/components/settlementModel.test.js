@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { settlementDraft, normalizeSettlementDraft, previewSettlement, settlementValue } from './settlementModel.js';
+import { settlementDraft, normalizeSettlementDraft, previewSettlement, settlementValue } from '../../tests/legacy/src/components/settlementModel.js';
 test('settlement preview uses exact cents and percentage of original gross', () => {
   const defaults = normalizeSettlementDraft(settlementDraft({ insurance_weekly: '350', logbook_weekly: '45', dispatch_percent: '0.5' }));
   assert.deepEqual(previewSettlement('8500', '10', defaults), { gross: 850000, commission: 85000, afterCommission: 765000, deductions: 43750, remainder: 721250 });

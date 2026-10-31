@@ -1,3 +1,4 @@
+import { requireUserMfa } from "../_shared/mfa.ts";
 import { withCors } from "../_shared/cors.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { checkDistributedRateLimit, rateLimitResponse } from "../_shared/rate-limit.ts";
@@ -89,6 +90,7 @@ Deno.serve((request) => withCors(request, async () => {
     if (authError || !authData.user) {
       return json({ error: "Invalid session" }, 401);
     }
+    await requireUserMfa(authorization);
     const { data: profile } = await admin.from("profiles")
       .select("id,status").eq("id", authData.user.id).maybeSingle();
     if (!profile || profile.status !== "active") {
@@ -127,6 +129,7 @@ Deno.serve((request) => withCors(request, async () => {
       expiresAt: Math.floor(Date.now() / 1000) + ttlSeconds,
     });
   } catch (error) {
+    if (error instanceof Response) return error;
     return json({
       error: error instanceof Error
         ? error.message

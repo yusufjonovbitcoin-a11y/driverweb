@@ -17,9 +17,15 @@ test('manual data preserves explicit zero and never invents missing logistics de
   assert.equal(load.documents.rateCon, null);
 });
 test('required values cannot silently fall back to sample data', () => {
-  for (const field of ['loadNumber', 'broker', 'equipment', 'originCity', 'destinationCity', 'originState', 'destinationState', 'distanceMiles', 'rate']) {
+  for (const field of ['broker', 'equipment', 'originCity', 'destinationCity', 'originState', 'destinationState', 'distanceMiles', 'rate']) {
     assert.throws(() => normalize({ [field]: ' ' }));
   }
+});
+
+test('broker reference is optional and is never a generated internal number', () => {
+  assert.equal(normalize({ loadNumber: ' ' }).loadNumber, '');
+  assert.equal(normalize({ loadNumber: 'SAME-123' }).loadNumber, 'SAME-123');
+  assert.equal(Object.hasOwn(normalize(), 'internalNumber'), false);
 });
 test('rejects invalid financial and numeric input', () => {
   for (const field of ['rate', 'distanceMiles', 'weightLbs']) {

@@ -1,5 +1,6 @@
+import { postgresHost, postgresStartOptions, postgresSpawnOptions, normalizePostgresOutput, removeTestCluster } from './isolated-postgres.mjs';
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdtemp, readFile } from 'node:fs/promises';
 import { spawn, spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -9,12 +10,12 @@ import { fileURLToPath } from 'node:url';
 // DATABASE_URL, credentials, or a production connection string.
 const root = fileURLToPath(new URL('..', import.meta.url));
 const dir = await mkdtemp(path.join(tmpdir(), 'tfleets-gmail-cloud-'));
-const bin = process.env.PG_BIN || '';
-const connection = ['-h', dir, '-p', '55449', '-d', 'postgres', '-v', 'ON_ERROR_STOP=1', '-Atq'];
+const bin = process.env.PG_BIN || (process.platform === 'win32' ? 'C:/Program Files/PostgreSQL/18/bin' : '');
+const connection = ['-h', postgresHost(dir), '-p', '55449', '-d', 'postgres', '-v', 'ON_ERROR_STOP=1', '-Atq'];
 function run(exe, args, input) {
-  const result = spawnSync(path.join(bin, exe), args, { cwd: root, input, encoding: 'utf8', maxBuffer: 8 * 1024 * 1024 });
+  const result = spawnSync(path.join(bin, exe), args, postgresSpawnOptions(exe, { cwd: root, input, encoding: 'utf8', maxBuffer: 8 * 1024 * 1024 }));
   if (result.error || result.status !== 0) throw result.error || new Error(result.stderr + result.stdout);
-  return result.stdout;
+  return normalizePostgresOutput(result.stdout);
 }
 const sql = text => run('psql', connection, text);
 const source = file => readFile(path.join(root, file), 'utf8');
@@ -24,7 +25,7 @@ function session(text, marker) {
   const ready = new Promise(resolve => { signal = resolve; });
   const done = new Promise((resolve, reject) => {
     const timer = setTimeout(() => { child.kill(); reject(new Error('Local concurrency test timed out')); }, 10_000);
-    child.stdout.on('data', chunk => { out += chunk; if (marker && out.includes(marker)) signal(); });
+    child.stdout.on('data', chunk => { out += normalizePostgresOutput(String(chunk)); if (marker && out.includes(marker)) signal(); });
     child.stderr.on('data', chunk => { err += chunk; });
     child.on('error', reject);
     child.on('close', code => { clearTimeout(timer); resolve({ code, out, err }); });
@@ -44,11 +45,11 @@ async function waitForLock(name) {
 let started = false;
 try {
   run('initdb', ['-D', dir + '/data', '-A', 'trust', '--no-locale', '--encoding=UTF8']);
-  run('pg_ctl', ['-D', dir + '/data', '-l', dir + '/server.log', '-o', `-k ${dir} -h '' -p 55449`, 'start']);
+  run('pg_ctl', ['-D', dir + '/data', '-l', dir + '/server.log', '-o', postgresStartOptions(dir, 55449, ''), 'start']);
   started = true;
   sql(await source('scripts/gmail-cloud-test-fixtures/bootstrap.sql'));
   sql(await source('supabase/migrations/20261007214350_gmail_cloud_worker_paused.sql'));
-  sql(await source('supabase/migrations/20261013221758_gmail_business_pending_scope.sql'));
+  sql(await source('supabase/migrations/20261024130621_gmail_business_pending_scope.sql'));
   sql(await source('scripts/gmail-cloud-test-fixtures/checks.sql'));
   sql(await source('scripts/gmail-cloud-test-fixtures/maintenance.sql'));
   sql(await source('scripts/gmail-cloud-test-fixtures/business-maintenance.sql'));
@@ -93,5 +94,5 @@ try {
   console.log('PASS: paused defaults, service-only invoker/RLS, tenant/version/explicit UID fences, monotonic checkpoints, stale owners, bounded recovery/backlog selection, rollback, concurrent claim/checkpoint/maintenance disable races');
 } finally {
   if (started) run('pg_ctl', ['-D', dir + '/data', '-m', 'fast', 'stop']);
-  await rm(dir, { recursive: true, force: true });
+  await removeTestCluster(dir);
 }

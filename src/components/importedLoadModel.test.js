@@ -2,6 +2,11 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { buildImportedLoad, canAssignImportedLoad, importedMapState, importedRatePerMile, importedTripRatePerMile, stopAddress, stopScheduleParts } from './importedLoadModel.js';
 
+test('manual scan vision evidence stays visibly unverified in the review model', () => {
+  const details = buildImportedLoad({ review: { method: 'vision_manual_review' }, documentDetails: { fields: [] } });
+  assert.equal(details.aiDirect, true);
+});
+
 test('stop schedule prints the same appointment window only once', () => {
   assert.deepEqual(stopScheduleParts({ scheduledDate: '09/28/2026', timePrinted: '07:30 - 14:00',
     appointment: ' 07:30  -  14:00 ', readyDate: null, hours: null }),

@@ -1,20 +1,11 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
-import { spawnSync } from 'node:child_process';
-import { tmpdir } from 'node:os';
+import { readFile } from 'node:fs/promises';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { withIsolatedPostgres } from './isolated-postgres.mjs';
 
 // Only a disposable local PostgreSQL cluster and synthetic fixtures are used.
-const root = fileURLToPath(new URL('..', import.meta.url));
-const directory = await mkdtemp(path.join(tmpdir(), 'settlement-settings-'));
-const binary = process.env.PG_BIN || '/usr/lib/postgresql/18/bin';
-function run(name, args, input) {
-  const result = spawnSync(path.join(binary, name), args, { input, encoding: 'utf8', maxBuffer: 2 ** 21 });
-  if (result.error || result.status !== 0) throw result.error || Error(result.stderr);
-  return result.stdout.trim();
-}
-const sql = text => run('psql', ['-h', directory, '-p', '55443', '-d', 'postgres', '-v', 'ON_ERROR_STOP=1', '-Atq'], text);
+await withIsolatedPostgres(async ({ sql: query, root }) => {
+const sql = text => query(text).trim();
 const id = n => `00000000-0000-0000-0000-${String(n).padStart(12, '0')}`;
 const actor = n => `set role authenticated; set "test.user"='${id(n)}';`;
 const settings = {
@@ -28,11 +19,6 @@ const save = (driver, version, config) => `select version from save_driver_calcu
 function fails(actorId, command, message) {
   assert.throws(() => sql(actor(actorId) + command), error => error.message.includes(message), command);
 }
-let started = false;
-try {
-  run('initdb', ['-D', `${directory}/data`, '-A', 'trust', '--no-locale']);
-  run('pg_ctl', ['-D', `${directory}/data`, '-l', `${directory}/server.log`, '-o', `-k ${directory} -h '' -p 55443`, 'start']);
-  started = true;
   sql(await readFile(path.join(root, 'tests/finance/fixture.sql'), 'utf8'));
   sql(`alter table audit_events add column old_value jsonb;
     alter table assignments add column assigned_at timestamptz default '2026-01-01';
@@ -99,7 +85,4 @@ try {
   sql(`update assignments set ended_at=null; update loads set trashed_at=now();`);
   assert.equal(sql(actor(1) + 'select driver_settlement_delivery_dates();'), '{}');
   console.log('PASS: current final delivery only; intermediate/stale/cross-company/wrong-actor/future/pre-assignment/ended/trash excluded; tolerated clock skew capped at server receipt');
-} finally {
-  if (started) run('pg_ctl', ['-D', `${directory}/data`, '-m', 'immediate', 'stop']);
-  await rm(directory, { recursive: true, force: true });
-}
+}, { port: 55443 });

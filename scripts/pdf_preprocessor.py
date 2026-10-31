@@ -20,7 +20,7 @@ MAX_PAGES = 50
 MAX_OUTPUT = 28 * 1024 * 1024
 
 
-def preprocess(data):
+def preprocess(data, text_only=False, ocr_pages=None):
     if not data.startswith(b"%PDF-") or len(data) > MAX_BYTES:
         raise ValueError("PDF_SOURCE_INVALID")
     pages = []
@@ -38,10 +38,11 @@ def preprocess(data):
             large_image = any(pymupdf.Rect(i['bbox']).get_area() > page.rect.get_area() * .02 for i in images)
             poor_text = len(''.join(text.split())) < 30 or text.count('\ufffd') > max(2, len(text) * .01)
             vector_text = len(page.get_drawings()) > 500
-            ocr = poor_text or large_image or vector_text
+            ocr = number in ocr_pages if ocr_pages is not None else poor_text or large_image or vector_text
             if ocr:
                 try:
-                    textpage = page.get_textpage_ocr(language="eng", dpi=150, full=poor_text)
+                    textpage = page.get_textpage_ocr(language="eng", dpi=150, full=poor_text,
+                        tessdata=os.environ.get('TESSDATA_PREFIX'))
                 except Exception as exc:
                     raise ValueError("PDF_OCR_UNAVAILABLE") from exc
             words = page.get_text("words", textpage=textpage, sort=False)
@@ -59,11 +60,12 @@ def preprocess(data):
                     "words": [{"text": item[1], "bbox": [round(v, 2) for v in item[2]]} for item in items]})
             if not blocks:
                 raise ValueError("PDF_PAGE_UNREADABLE")
-            scale = min(1.8, 1800 / max(page.rect.width, page.rect.height))
-            pix = page.get_pixmap(matrix=pymupdf.Matrix(scale, scale), colorspace=pymupdf.csRGB, alpha=False)
             pages.append({"number": number, "width": page.rect.width, "height": page.rect.height,
-                "ocr": ocr, "blocks": blocks,
-                "image": "data:image/jpeg;base64," + base64.b64encode(pix.tobytes("jpeg", jpg_quality=80)).decode()})
+                "ocr": ocr, "blocks": blocks})
+            if not text_only:
+                scale = min(1.8, 1800 / max(page.rect.width, page.rect.height))
+                pix = page.get_pixmap(matrix=pymupdf.Matrix(scale, scale), colorspace=pymupdf.csRGB, alpha=False)
+                pages[-1]["image"] = "data:image/jpeg;base64," + base64.b64encode(pix.tobytes("jpeg", jpg_quality=80)).decode()
     manifest = {"version": 1, "checksum": hashlib.sha256(data).hexdigest(),
         "engine": "PyMuPDF-" + pymupdf.VersionBind, "pageCount": len(pages), "pages": pages}
     encoded = json.dumps(manifest, ensure_ascii=False, separators=(',', ':')).encode()
@@ -115,7 +117,15 @@ def serve():
                     return self.reply(400, b'{"error":"PDF_SOURCE_INCOMPLETE"}')
                 # One bounded subprocess per document: native parser crashes/timeouts
                 # cannot leave a shared in-process document or other tenant's state.
-                result = subprocess.run([sys.executable, __file__], input=data, capture_output=True, timeout=60)
+                arguments = [sys.executable, __file__]
+                if self.headers.get('X-PDF-Mode') == 'text':
+                    arguments.append('--text-only')
+                requested_pages = self.headers.get('X-PDF-OCR-Pages')
+                if requested_pages:
+                    if not all(value.isdigit() and 1 <= int(value) <= MAX_PAGES for value in requested_pages.split(',')):
+                        return self.reply(400, b'{"error":"PDF_OCR_PAGES_INVALID"}')
+                    arguments.extend(['--ocr-pages', requested_pages])
+                result = subprocess.run(arguments, input=data, capture_output=True, timeout=60)
                 if result.returncode:
                     return self.reply(422, b'{"error":"PDF_PREPROCESS_FAILED"}')
                 self.reply(200, result.stdout)
@@ -138,11 +148,17 @@ if __name__ == '__main__':
     else:
         try:
             # Per-job address-space / CPU limits (Unix worker).
-            import resource
-            resource.setrlimit(resource.RLIMIT_CPU, (55, 55))
-            if sys.platform.startswith('linux'):
-                resource.setrlimit(resource.RLIMIT_AS, (2 * 1024**3, 2 * 1024**3))
-            sys.stdout.buffer.write(preprocess(sys.stdin.buffer.read(MAX_BYTES + 1)))
+            if os.name != 'nt':
+                import resource
+                resource.setrlimit(resource.RLIMIT_CPU, (55, 55))
+                if sys.platform.startswith('linux'):
+                    resource.setrlimit(resource.RLIMIT_AS, (2 * 1024**3, 2 * 1024**3))
+            requested = None
+            if '--ocr-pages' in sys.argv:
+                requested = {int(value) for value in sys.argv[sys.argv.index('--ocr-pages') + 1].split(',')}
+                if not requested or not all(1 <= value <= MAX_PAGES for value in requested):
+                    raise ValueError('PDF_OCR_PAGES_INVALID')
+            sys.stdout.buffer.write(preprocess(sys.stdin.buffer.read(MAX_BYTES + 1), '--text-only' in sys.argv, requested))
         except Exception as error:
             print(str(error) if str(error).startswith('PDF_') else 'PDF_PREPROCESS_FAILED', file=sys.stderr)
             sys.exit(1)

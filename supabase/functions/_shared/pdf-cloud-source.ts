@@ -2,11 +2,33 @@ import { validatePdfSource, type PdfSource } from './pdf-source.ts';
 
 type TextItem = { str?: string; transform?: number[]; width?: number; height?: number; hasEOL?: boolean };
 type PdfPage = { getViewport(options: { scale: number }): { width: number; height: number };
-  getTextContent(): Promise<{ items: TextItem[] }> };
-type PdfDocument = { numPages: number; getPage(number: number): Promise<PdfPage> };
-type PdfLoader = () => Promise<{ getDocumentProxy(bytes: Uint8Array): Promise<PdfDocument> }>;
+  getTextContent(): Promise<{ items: TextItem[] }>;
+  getOperatorList?(): Promise<{ fnArray: number[]; argsArray: any[] }>; cleanup?(): void };
+type PdfDocument = { numPages: number; getPage(number: number): Promise<PdfPage>; loadingTask?: { destroy(): Promise<void> } };
+type PdfLoader = () => Promise<{ getDocumentProxy(bytes: Uint8Array): Promise<PdfDocument>;
+  getResolvedPDFJS?(): Promise<{ OPS: Record<string, number> }> }>;
 
-export type CloudPdfResult = { source: PdfSource | null; scanPages: number[] };
+async function hasLargeRaster(page: PdfPage, width: number, height: number, ops?: Record<string, number>) {
+  if (!ops || !page.getOperatorList) return false;
+  const list = await page.getOperatorList();
+  let matrix = [1, 0, 0, 1, 0, 0];
+  const stack: number[][] = [];
+  for (const [index, operation] of list.fnArray.entries()) {
+    if (operation === ops.save) stack.push([...matrix]);
+    else if (operation === ops.restore) matrix = stack.pop() ?? [1, 0, 0, 1, 0, 0];
+    else if (operation === ops.transform) {
+      const [a, b, c, d, e, f] = list.argsArray[index];
+      const [x, y, z, w, tx, ty] = matrix;
+      matrix = [x * a + z * b, y * a + w * b, x * c + z * d, y * c + w * d,
+        x * e + z * f + tx, y * e + w * f + ty];
+    } else if ([ops.paintImageXObject, ops.paintInlineImageXObject].includes(operation)) {
+      if (Math.abs(matrix[0] * matrix[3] - matrix[1] * matrix[2]) > width * height * .18) return true;
+    }
+  }
+  return false;
+}
+
+export type CloudPdfResult = { source: PdfSource | null; scanPages: number[]; partialSource: PdfSource };
 
 // The bytes are parsed inside the authenticated Edge Function. A native PDF
 // text layer supplies independent evidence; the original PDF supplies page
@@ -19,18 +41,24 @@ export async function extractCloudPdfSource(
   if (bytes.length > 20 * 1024 * 1024 || new TextDecoder().decode(bytes.subarray(0, 5)) !== '%PDF-')
     throw Error('PDF_SOURCE_INVALID');
   let document: PdfDocument;
+  let operations: Record<string, number> | undefined;
   try {
-    const { getDocumentProxy } = await loadPdf();
-    document = await getDocumentProxy(bytes);
+    const module = await loadPdf();
+    // PDF.js may transfer/detach its input buffer. Keep the authenticated
+    // original intact for checksum binding, selective OCR and final upload.
+    document = await module.getDocumentProxy(bytes.slice());
+    operations = (await module.getResolvedPDFJS?.())?.OPS;
   } catch {
     throw Error('PDF_SOURCE_UNREADABLE');
   }
-  if (!Number.isInteger(document.numPages) || document.numPages < 1 || document.numPages > 50)
+  if (!Number.isInteger(document.numPages) || document.numPages < 1 || document.numPages > 50) {
+    await document.loadingTask?.destroy();
     throw Error('PDF_SOURCE_LOCKED_OR_TOO_LARGE');
+  }
 
   const pages: PdfSource['pages'] = [];
   const scanPages: number[] = [];
-  for (let number = 1; number <= document.numPages; number++) {
+  try { for (let number = 1; number <= document.numPages; number++) {
     let page: PdfPage;
     let items: TextItem[];
     try {
@@ -78,13 +106,17 @@ export async function extractCloudPdfSource(
       if (blocks.length > 25000) throw Error('PDF_SOURCE_TOO_LARGE');
     }
     const nativeText = blocks.map(block => block.text).join('').replace(/\s/g, '');
-    if (nativeText.length < 30 || (nativeText.match(/\uFFFD/g)?.length ?? 0) > Math.max(2, nativeText.length * .01))
+    const mixedPage = nativeText.length < 1500 && await hasLargeRaster(page, width, height, operations);
+    if (nativeText.length < 30 || mixedPage || (nativeText.match(/\uFFFD/g)?.length ?? 0) > Math.max(2, nativeText.length * .01))
       scanPages.push(number);
-    pages.push({ number, width, height, ocr: false, blocks });
-  }
+    pages.push({ number, width, height, ocr: false, blocks,
+      quality: scanPages.includes(number) ? 'vision_required' : 'native' });
+    page.cleanup?.();
+  } } finally { await document.loadingTask?.destroy(); }
+  const partialSource = validatePdfSource({ version: 1, checksum, engine: 'PDF.js-unpdf-1.8.1',
+    pageCount: pages.length, pages }, checksum);
   // A partially scanned document also needs manual review. We avoid mixing
   // unverifiable image facts into a trusted source manifest.
-  if (scanPages.length) return { source: null, scanPages };
-  return { source: validatePdfSource({ version: 1, checksum, engine: 'PDF.js-unpdf-1.8.1',
-    pageCount: pages.length, pages }, checksum), scanPages: [] };
+  if (scanPages.length) return { source: null, scanPages, partialSource };
+  return { source: partialSource, scanPages: [], partialSource };
 }

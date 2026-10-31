@@ -10,7 +10,7 @@ import {
   eligibleLoad,
   csv,
   driverReport,
-} from "./model.js";
+} from "../../../tests/legacy/src/services/finance/model.js";
 test("money parsing rejects nonfinancial values and preserves exact cents", () => {
   assert.equal(cents("12.05"), 1205);
   for (const value of ["NaN", "Infinity", "1.005", "-1", "", null])

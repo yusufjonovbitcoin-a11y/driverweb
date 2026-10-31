@@ -76,10 +76,12 @@ test('reversed appointment window remains blocked', () => {
   }
   assert.ok(verify(v).review.blockingFields.includes('pickup.appointmentTo'));
 });
-test('deployed parser path has no automatic AI audit or repair loop', () => {
+test('direct rollback and scan fallback keep single-pass extraction without full-document retry loops', () => {
   const source = readFileSync(new URL('../../supabase/functions/parse-load-document/index.ts', import.meta.url), 'utf8');
   const flow = source.slice(source.indexOf('async function extractAndVerify'), source.indexOf('function stopPayload'));
-  assert.equal((flow.match(/extractLoad\(/g) || []).length, 1);
+  assert.equal((flow.match(/extractLoad\(/g) || []).length, 2); // Separate guarded strategies, never a retry loop.
+  assert.ok(flow.includes("error.message !== 'PDF_OCR_REQUIRED'"));
+  assert.ok(flow.includes('runDocumentEngine'));
   assert.ok(flow.includes('runSinglePassExtraction'));
   assert.ok(!/if\s*\([^)]*blockingFields/.test(flow));
   assert.ok(source.includes("payload.status !== 'completed'"));

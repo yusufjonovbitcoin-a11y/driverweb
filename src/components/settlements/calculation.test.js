@@ -223,3 +223,41 @@ test("fixed company fee cannot exceed one load gross even if total earnings are 
     /overCommission/,
   );
 });
+
+test('independent driver examples reconcile gross, all fees and exact take-home cents', () => {
+  const examples = [
+    { rates: [5300, 3200], company: '10', dispatch: '0.5', extras: { insurance: '350', eld: '45' }, expected: [850000, 85000, 43750, 721250] },
+    { rates: [2800, 3600, 4100], company: '8', dispatch: '0.5', extras: { insurance: '350', eld: '45', trailer: '200', fuel: '375' }, expected: [1050000, 84000, 102250, 863750] },
+    { rates: [2200], company: '10', dispatch: '0.5', extras: { insurance: '350', eld: '45' }, expected: [220000, 22000, 40600, 157400] },
+  ];
+  for (const example of examples) {
+    const rules = { company: { value: example.company }, dispatch: { value: example.dispatch },
+      ...Object.fromEntries(Object.entries(example.extras).map(([id, value]) => [id, { value }])) };
+    const result = calculateSettlement(example.rates.map((rate, i) => ({ id: String(i), driverId: 'a', rate })), settings(rules), period);
+    assert.deepEqual([result.gross, result.commission, result.deducted, result.net], example.expected);
+  }
+});
+
+test('per-load and per-settlement percentage rounding differ by cents without losing the company allocation', () => {
+  const tiny = [1, 2, 3].map(id => ({ id: String(id), driverId: 'a', rate: '0.01' }));
+  for (const [frequency, expected] of [['per_load', 3], ['per_settlement', 2]]) {
+    const result = calculateSettlement(tiny, settings({ company: { value: '50', frequency } }), period);
+    assert.equal(result.commission, expected);
+    assert.equal(result.rows.reduce((sum, row) => sum + row.commission, 0), expected);
+    assert.equal(result.net, 3 - expected);
+  }
+});
+
+test('after-company basis is applied to the earnings, not the original gross', () => {
+  const result = calculateSettlement(loads, settings({ company: { value: '10' }, dispatch: { value: '0.5', basis: 'after_company' } }), period);
+  assert.equal(result.deducted, 3825);
+  assert.equal(result.net, 761175);
+});
+
+test('eight-day and cross-month expenses use inclusive dates and calendar month lengths', () => {
+  const weekly = settings({ insurance: { value: '350' } });
+  assert.equal(calculateSettlement(loads, weekly, { from: '2026-01-01', to: '2026-01-08' }).deducted, 40000);
+  const monthly = settings({ truck: { value: '310', frequency: 'monthly' } });
+  assert.equal(calculateSettlement(loads, monthly, { from: '2026-01-31', to: '2026-02-01' }).deducted, 2107);
+  assert.equal(calculateSettlement(loads, monthly, { from: '2024-01-31', to: '2024-02-01' }).deducted, 2069);
+});

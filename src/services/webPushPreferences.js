@@ -14,7 +14,7 @@ export async function withPushDeadline(operation, milliseconds = 20_000) {
 }
 export function pushFailureReason(error, fallback = 'error') {
   const safe = ['denied', 'unsupported', 'off', 'signedOut', 'workerTimeout', 'workerFailed',
-    'workerProtocol', 'registrationFailed', 'disableFailed', 'testFailed'];
+    'workerProtocol', 'registrationFailed', 'disableFailed', 'testFailed', 'firebaseConfigMissing', 'vapidKeyMissing'];
   if (safe.includes(error?.message)) return error.message;
   if (typeof error?.code === 'string' && error.code.startsWith('messaging/')) return 'registrationFailed';
   return fallback;

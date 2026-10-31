@@ -18,7 +18,7 @@ export function tripStops(load) {
 export function tripMatchesSearch(load, query) {
   const tokens = normalizeSearchText(query).split(' ').filter(Boolean);
   if (!tokens.length) return true;
-  const values = [load?.loadNumber, ...tripStops(load).flatMap(stop => [
+  const values = [load?.loadNumber, load?.brokerLoadNumber, ...tripStops(load).flatMap(stop => [
     stop.address, stop.addressLine, stop.street, stop.city, stop.state, stop.region,
     stop.postalCode, stop.zip, stop.facility, stop.facilityName,
   ])].map(normalizeSearchText).filter(Boolean);

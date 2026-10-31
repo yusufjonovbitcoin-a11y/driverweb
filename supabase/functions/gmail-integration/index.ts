@@ -1,4 +1,5 @@
 import { withCors } from "../_shared/cors.ts";
+import { requireUserMfa } from "../_shared/mfa.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
 const headers = {
@@ -44,6 +45,7 @@ Deno.serve((request) => withCors(request, async () => {
     const token = authorization.replace(/^Bearer\s+/i, '');
     const { data: authData, error: authError } = await admin.auth.getUser(token);
     if (authError || !authData.user) return json({ error: 'Invalid session' }, 401);
+    await requireUserMfa(authorization);
 
     const { data: profile, error: profileError } = await admin
       .from('profiles')
@@ -106,6 +108,7 @@ Deno.serve((request) => withCors(request, async () => {
 
     return json({ error: 'Unsupported action' }, 400);
   } catch (error) {
+    if (error instanceof Response) return error;
     console.error('Gmail integration failed:', error instanceof Error ? error.name : 'unknown_error');
     return json({ code: 'INTERNAL_ERROR', error: 'Gmail integratsiyasida server xatosi yuz berdi.' }, 500);
   }

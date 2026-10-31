@@ -1,4 +1,5 @@
-import { mkdtemp, rm } from 'node:fs/promises';
+import { postgresHost, postgresStartOptions, postgresSpawnOptions, normalizePostgresOutput, removeTestCluster } from './isolated-postgres.mjs';
+import { mkdtemp } from 'node:fs/promises';
 import { spawn, spawnSync } from 'node:child_process';
 import assert from 'node:assert/strict';
 import { tmpdir } from 'node:os';
@@ -8,15 +9,15 @@ import { fileURLToPath } from 'node:url';
 // Always creates its own cluster; never reads production DATABASE_URL or app credentials.
 const root = fileURLToPath(new URL('..', import.meta.url));
 const directory = await mkdtemp(path.join(tmpdir(), 'drivex-chat-test-'));
-const pgBin = process.env.PG_BIN || '';
+const pgBin = process.env.PG_BIN || (process.platform === 'win32' ? 'C:/Program Files/PostgreSQL/18/bin' : '');
 function run(binary, args) {
-  const result = spawnSync(path.join(pgBin, binary), args, { stdio: 'inherit', cwd: root });
+  const result = spawnSync(path.join(pgBin, binary), args, postgresSpawnOptions(binary, { stdio: 'inherit', cwd: root }));
   if (result.error || result.status !== 0) throw result.error || new Error(`${binary} failed: ${result.status}`);
 }
 function runSql(sql, onOutput = () => {}) {
   return new Promise((resolve, reject) => {
     const process = spawn(path.join(pgBin, 'psql'), [
-      '-h', directory, '-p', '55439', '-d', 'postgres', '-v', 'ON_ERROR_STOP=1', '-Atqc', sql,
+      '-h', postgresHost(directory), '-p', '55439', '-d', 'postgres', '-v', 'ON_ERROR_STOP=1', '-Atqc', sql,
     ], { cwd: root, stdio: ['ignore', 'pipe', 'pipe'] });
     let stdout = '';
     let stderr = '';
@@ -24,7 +25,7 @@ function runSql(sql, onOutput = () => {}) {
       process.kill();
       reject(new Error('Isolated chat concurrency check timed out'));
     }, 10_000);
-    process.stdout.on('data', (chunk) => { stdout += chunk; onOutput(stdout); });
+    process.stdout.on('data', (chunk) => { stdout += normalizePostgresOutput(String(chunk)); onOutput(stdout); });
     process.stderr.on('data', (chunk) => { stderr += chunk; });
     process.on('error', (error) => { clearTimeout(timeout); reject(error); });
     process.on('close', (code) => { clearTimeout(timeout); resolve({ code, stdout, stderr }); });
@@ -33,9 +34,9 @@ function runSql(sql, onOutput = () => {}) {
 let started = false;
 try {
   run('initdb', ['-D', `${directory}/data`, '-A', 'trust', '--no-locale', '--encoding=UTF8']);
-  run('pg_ctl', ['-D', `${directory}/data`, '-l', `${directory}/server.log`, '-o', `-k ${directory} -h '' -p 55439 -c wal_level=logical`, 'start']);
+  run('pg_ctl', ['-D', `${directory}/data`, '-l', `${directory}/server.log`, '-o', postgresStartOptions(directory, 55439, '-c wal_level=logical'), 'start']);
   started = true;
-  run('psql', ['-h', directory, '-p', '55439', '-d', 'postgres', '-v', 'ON_ERROR_STOP=1',
+  run('psql', ['-h', postgresHost(directory), '-p', '55439', '-d', 'postgres', '-v', 'ON_ERROR_STOP=1',
     '-f', 'scripts/chat-test-fixtures/bootstrap.sql',
     '-f', 'supabase/migrations/20261001141119_chat_reliability_hardening.sql',
     '-f', 'scripts/chat-test-fixtures/checks.sql',
@@ -114,5 +115,5 @@ try {
   console.log('PASS: orphan cleanup cannot race a successful chat-media commit');
 } finally {
   if (started) run('pg_ctl', ['-D', `${directory}/data`, '-m', 'fast', 'stop']);
-  await rm(directory, { recursive: true, force: true });
+  await removeTestCluster(directory);
 }

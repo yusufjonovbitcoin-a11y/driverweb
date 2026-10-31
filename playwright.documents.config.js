@@ -1,7 +1,8 @@
 import { defineConfig } from '@playwright/test';
+import { browserOptions } from './playwright.browser.js';
 export default defineConfig({
   testDir: './tests', testMatch: 'document-workspace.spec.js', fullyParallel: true,
-  use: { baseURL: 'http://127.0.0.1:5187', launchOptions: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH ? { executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH } : {} },
+  use: { ...browserOptions, baseURL: 'http://127.0.0.1:5187' },
   projects: [
     { name: 'desktop', use: { viewport: { width: 1400, height: 900 } } },
     { name: 'mobile', use: { viewport: { width: 390, height: 844 } } },

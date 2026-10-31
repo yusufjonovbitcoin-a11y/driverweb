@@ -1,13 +1,15 @@
 import { partitionWorkspaceMembers } from './workspaceMembers';
 import { requireSupabase } from '../lib/supabase';
 import { invokeAuthenticatedFunction as invokeWithSession } from './authenticatedFunction.js';
-import { prepareDriverPayAssignment } from './driverPay.js';
+import { assignDriverLoad, readConfirmedPreviewAssignment } from './loadAssignment.js';
 import { cloudinarySignedUrl } from './cloudinaryMediaService';
 import { isCloudinaryReference } from './cloudinaryMediaErrors';
 import { loadImportFileError } from './loadImportFile';
 import { fetchBrokerInboxRows, fetchBrokerUnreadCount } from './brokerInboxQueries';
 import { createCoalescedAsyncTrigger } from './realtimeRefresh';
 import { readAllRows, readAllPages } from './readAllRows.js';
+import { loadMileage } from './loadMileage.js';
+import { loadIdentity } from './loadIdentity.js';
 import { driverPresenceFields } from './driverPresence.js';
 import { normalizeLocale } from '../i18n/locales';
 import { vehicleRowToModel } from './fleetVehicleModel';
@@ -63,7 +65,7 @@ function splitAppointment(value) {
   };
 }
 
-function toUiLoad(row, offersByLoad, documentsByLoad, warningsByLoad, reviewsByDocument, stagesByAssignment) {
+function toUiLoad(row, offersByLoad, documentsByLoad, warningsByLoad, reviewsByDocument, stagesByAssignment, payByAssignment) {
   const pickup = splitAppointment(row.pickup_from);
   const delivery = splitAppointment(row.delivery_from);
   const offers = offersByLoad.get(row.id) || [];
@@ -84,7 +86,7 @@ function toUiLoad(row, offersByLoad, documentsByLoad, warningsByLoad, reviewsByD
   ];
   return {
     id: row.id,
-    loadNumber: row.load_number?.startsWith('#') ? row.load_number : `#${row.load_number}`,
+    ...loadIdentity(row),
     status: loadBoardStatus(row, stagesByAssignment.get(row.current_assignment_id)),
     databaseStatus: row.status,
     ...loadTrashMetadata(row),
@@ -95,8 +97,7 @@ function toUiLoad(row, offersByLoad, documentsByLoad, warningsByLoad, reviewsByD
     brokerFax: row.broker_fax || '',
     rate: Number(row.broker_rate || 0),
     rateKnown: row.broker_rate != null && !row.driver_brief?.unknownFields?.includes('brokerRate'),
-    distanceMiles: Number(row.loaded_miles || 0),
-    distanceKnown: row.loaded_miles != null && !row.driver_brief?.unknownFields?.includes('loadedMiles'),
+    ...loadMileage(row, payByAssignment.get(row.current_assignment_id)),
     ratePerMile: Number(row.loaded_rpm || 0),
     origin: {
       city: row.pickup_city || null,
@@ -234,16 +235,18 @@ export async function fetchWorkspace() {
     presenceResult,
     warningsResult,
     reviewsResult,
+    payResult,
   ] = await Promise.all([
     () => readAllRows(() => client.from('load_overview').select('*')),
     () => readAllRows(() => client.from('offers').select('id,load_id,driver_id,status,compatibility_warnings,created_at')),
     () => readAllRows(() => client.from('assignments').select('id,driver_stage').eq('status', 'active')),
-    () => readAllRows(() => client.from('documents').select('id,load_id,document_type,stop_id,current_version_id,current_version:document_versions!documents_current_version_fk(file_name,mime_type)')),
+    () => readAllRows(() => client.from('documents').select('id,load_id,document_type,stop_id,current_version_id,current_version:document_versions!documents_current_version_fk(file_name,mime_type,size_bytes,uploaded_at)')),
     () => readAllRows(() => client.from('member_directory').select('*')),
     () => fetchDriverPresence(),
     () => readAllRows(() => client.from('warnings').select('id,load_id,code,message,params,created_at').eq('is_active', true)),
     () => readAllPages(() => client.from('document_review_overview').select('*')
       .order('document_id').order('check_id', { nullsFirst: true })),
+    () => readAllRows(() => client.from('assignment_driver_pay').select('assignment_id,load_id,driver_id,currency,loaded_miles'), 'assignment_id'),
   ].map(async read => ({ data: await read() })));
   for (const result of [
     loadsResult,
@@ -265,6 +268,7 @@ export async function fetchWorkspace() {
   // when it is opened, not before the entire workspace can become interactive.
   const documents = (documentsResult.data || []).map(({ current_version: version, ...document }) => ({
     ...document, fileName: version?.file_name || null, mimeType: version?.mime_type || null,
+    sizeBytes: version?.size_bytes ?? null, uploadedAt: version?.uploaded_at ?? null,
   }));
   const offersByLoad = new Map();
   for (const offer of offersResult.data || []) {
@@ -291,9 +295,10 @@ export async function fetchWorkspace() {
     (assignmentsResult.data || []).map((assignment) => [assignment.id, assignment.driver_stage]),
   );
   const presenceByDriver = new Map((presenceResult.data || []).map(item => [item.driver_id, item]));
+  const payByAssignment = new Map((payResult.data || []).map(item => [item.assignment_id, item]));
   return {
     loads: (loadsResult.data || []).map((row) => (
-      toUiLoad(row, offersByLoad, documentsByLoad, warningsByLoad, reviewsByDocument, stagesByAssignment)
+      toUiLoad(row, offersByLoad, documentsByLoad, warningsByLoad, reviewsByDocument, stagesByAssignment, payByAssignment)
     )),
     drivers: members.filter((member) => member.role === 'driver').map((member) => (
       toUiDriver(
@@ -303,7 +308,7 @@ export async function fetchWorkspace() {
     )),
     rosterDrivers: rosterMembers.map((member) => toUiDriver(member, presenceByDriver.get(member.id))),
     rosterMembers: rosterMembers.map((member) => toUiMember(member)),
-    members: members.map((member) => toUiMember(member)),
+    members: (membersResult.data || []).filter(member => ['active', 'suspended'].includes(member.status)).map(member => toUiMember(member)),
   };
 }
 
@@ -532,7 +537,7 @@ export async function createManualLoad(newLoad) {
   return loadId;
 }
 
-export async function prepareLoadFromDocument(file, { brokerMessageId, brokerAttachmentId, corrections } = {}) {
+export async function prepareLoadFromDocument(file, { brokerMessageId, brokerAttachmentId, corrections, onTiming } = {}) {
   if (!(file instanceof File)) throw new Error('PDF yoki surat tanlang.');
   const formData = new FormData();
   formData.append('file', file, file.name);
@@ -542,14 +547,14 @@ export async function prepareLoadFromDocument(file, { brokerMessageId, brokerAtt
     formData.append('brokerMessageId', brokerMessageId);
     formData.append('brokerAttachmentId', brokerAttachmentId);
   }
-  const { data, error } = await invokeAuthenticatedFunction('parse-load-document', formData);
+  const { data, error } = await invokeAuthenticatedFunction('parse-load-document', formData, { onTiming });
   if (error) await throwFunctionError(error, 'AI hujjatni tahlil qila olmadi.');
   if (data?.error) throw new Error(data.error);
   if (!data?.previewOnly || !data?.preparedLoad?.previewTicket) throw new Error('IMPORT_RESULT_MISSING');
   return { preparedLoad: data.preparedLoad, duplicate: false };
 }
 
-export async function sendPreviewDocumentLoad(file, ticket, driverId, { brokerMessageId, brokerAttachmentId } = {}) {
+export async function sendPreviewDocumentLoad(file, ticket, driverId, { brokerMessageId, brokerAttachmentId, actorId, checksum } = {}) {
   if (!(file instanceof File) || !ticket?.payload || !ticket?.signature || !driverId) {
     throw new Error('PREVIEW_TICKET_INVALID');
   }
@@ -562,14 +567,24 @@ export async function sendPreviewDocumentLoad(file, ticket, driverId, { brokerMe
     formData.append('brokerMessageId', brokerMessageId);
     formData.append('brokerAttachmentId', brokerAttachmentId);
   }
-  const { data, error } = await invokeAuthenticatedFunction('parse-load-document', formData);
-  if (error) await throwFunctionError(error, 'Yukni haydovchiga yuborib bo‘lmadi.');
-  if (data?.error) throw new Error(data.error);
-  if (!data?.assigned || !data?.loadId) throw new Error('ASSIGN_RESULT_MISSING');
-  return data;
+  try {
+    const { data, error } = await invokeAuthenticatedFunction('parse-load-document', formData);
+    if (error) await throwFunctionError(error, 'Yukni haydovchiga yuborib bo‘lmadi.');
+    if (data?.error) throw new Error(data.error);
+    if (!data?.assigned || !data?.loadId) throw new Error('ASSIGN_RESULT_MISSING');
+    return data;
+  } catch (error) {
+    // Retry after a lost response must recognize the committed assignment,
+    // rather than reporting failure or creating another load.
+    try {
+      const confirmed = await readConfirmedPreviewAssignment(requireSupabase(), { actorId, checksum, driverId });
+      if (confirmed) return confirmed;
+    } catch { /* retain the original actionable error */ }
+    throw error;
+  }
 }
 
-export async function prepareLoadFromBrokerAttachment({ messageId, attachmentId }) {
+export async function prepareLoadFromBrokerAttachment({ messageId, attachmentId }, { onTiming } = {}) {
   if (!messageId || !attachmentId) throw new Error('Broker xati yoki biriktirma topilmadi.');
   const client = requireSupabase();
   const { data: attachment, error } = await client.from('broker_attachments')
@@ -601,6 +616,7 @@ export async function prepareLoadFromBrokerAttachment({ messageId, attachmentId 
   const result = await prepareLoadFromDocument(file, {
     brokerMessageId: messageId,
     brokerAttachmentId: attachmentId,
+    onTiming,
   });
   return { ...result, sourceUrl, fileName: attachment.file_name, file };
 }
@@ -630,13 +646,9 @@ export async function fetchImportPreviewContacts(previewTicket, signal) {
 
 export async function assignLoadDirectly(loadId, driverId) {
   if (!loadId || !driverId) throw new Error('Tayinlash uchun bitta haydovchini tanlang.');
-  const client = requireSupabase();
-  await prepareDriverPayAssignment(client, loadId, driverId);
-  const { data, error } = await client.rpc('assign_load_directly', {
-    load_id: loadId,
-    driver_id: driverId,
-  });
-  if (error) {
+  try {
+    return await assignDriverLoad(requireSupabase(), { loadId, driverId });
+  } catch (error) {
     if (error.message?.includes('not available for direct assignment')) {
       throw new Error('Bu yukni tayinlab bo‘lmaydi. Yuk tayyor emas yoki yakunlangan.');
     }
@@ -645,17 +657,11 @@ export async function assignLoadDirectly(loadId, driverId) {
     }
     throw error;
   }
-  return data;
 }
 
 export async function reviewAndAssignDocumentLoad(loadId, driverId, checksum) {
-  const client = requireSupabase();
-  await prepareDriverPayAssignment(client, loadId, driverId);
-  const { data, error } = await client.rpc('review_and_assign_document_load', {
-    target_load_id: loadId, target_driver_id: driverId, source_checksum: checksum,
-  });
-  if (error) throw error;
-  return data;
+  if (!checksum) throw new Error('DOCUMENT_CHECKSUM_REQUIRED');
+  return assignDriverLoad(requireSupabase(), { loadId, driverId, checksum });
 }
 
 export async function deleteUnassignedLoad(loadId) {

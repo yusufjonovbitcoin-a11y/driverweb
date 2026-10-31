@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { resolveLoadImportResult } from './loadImportResult.js';
+import { resolveLoadImportResult } from '../../tests/legacy/src/services/loadImportResult.js';
 import { reusableLoadImport } from '../../supabase/functions/_shared/load-import-cache.ts';
 import { localizedError } from '../i18n/errors.js';
 

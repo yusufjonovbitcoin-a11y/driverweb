@@ -6,10 +6,10 @@ import React, { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useR
 import {
   Check, CheckCheck, Clock3, Download, FileText, Image as ImageIcon, Link2, LoaderCircle,
   Mail, Maximize2, Mic, MicOff, MonitorUp, Music2, PanelRight, Paperclip, Pencil, Phone, PhoneOff,
-  Search, Send, ShieldCheck, Smile, Square, Trash2, UserRound, Video, VideoOff, X,
+  Search, Send, ShieldCheck, Square, Trash2, UserRound, Video, VideoOff, X,
 } from 'lucide-react';
 import {
-  clearChatUnread, deleteChatMessage, editChatMessage, fetchCallSignals, fetchChatMessages, fetchChatPreviews, fetchRingingCalls, fetchRtcIceServers, fetchUnreadChatCountsByDriver, heartbeatCall, hydrateChatMessageMedia, markChatUnread, openChat, refreshChatMessageMedia, syncChatHistory, searchChatMessages, fetchChatMediaCounts,
+  clearChatUnread, deleteChatMessage, editChatMessage, fetchCallSignals, fetchChatCall, fetchChatMessages, fetchChatPreviews, fetchRingingCalls, fetchRtcIceServers, fetchUnreadChatCountsByDriver, heartbeatCall, hydrateChatMessageMedia, markChatUnread, openChat, refreshChatMessageMedia, syncChatHistory, searchChatMessages, fetchChatMediaCounts,
   publishSignal, respondCall, sendMediaMessage, sendTextMessage, startCall, subscribeCalls, subscribeChat, subscribeChatPreviews,
 } from '../services/chatService';
 import { buildChatCursor, mergeChatMessages } from '../services/chatReliability';
@@ -27,6 +27,9 @@ import { chatMediaRefreshDelay } from '../services/chatMediaExpiry';
 import { openChatAttachment } from '../services/openChatAttachment';
 import { createChatRecovery } from '../services/chatRecovery';
 import { ChatPaginationScope } from '../services/chatPaginationScope';
+import { CHAT_MEDIA_ACCEPT } from '../services/chatMediaPolicy';
+import { createVoiceRecording, VOICE_MAX_DURATION_MS } from '../services/chatVoiceRecording';
+import { createChatRtcConnection } from '../services/chatRtcConnection';
 import { Virtuoso } from 'react-virtuoso';
 
 const terminalCallStates = new Set(['declined', 'missed', 'ended']);
@@ -254,6 +257,8 @@ export default function DispatchChat({
   const [connectionStatus, setConnectionStatus] = useState('connecting');
   const [error, setError] = useState('');
   const [recording, setRecording] = useState(false);
+  const [recordingSeconds, setRecordingSeconds] = useState(0);
+  const [recordingLimitReached, setRecordingLimitReached] = useState(false);
   const [driverSearch, setDriverSearch] = useState('');
   const [driverPreviews, setDriverPreviews] = useState({});
   const [driverConversationIds, setDriverConversationIds] = useState({});
@@ -269,7 +274,6 @@ export default function DispatchChat({
   const [editDraft, setEditDraft] = useState('');
   const [savingEdit, setSavingEdit] = useState(false);
   const [mediaFilter, setMediaFilter] = useState('all');
-  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [incomingCall, setIncomingCall] = useState(null);
   const [activeCall, setActiveCall] = useState(null);
   const [remoteStream, setRemoteStream] = useState(null);
@@ -281,26 +285,24 @@ export default function DispatchChat({
   const [callConnectionState, setCallConnectionState] = useState('connecting');
   const [callSeconds, setCallSeconds] = useState(0);
   const fileInputRef = useRef(null);
-  const composerRef = useRef(null);
   const messagesRef = useRef([]);
   const syncRef = useRef(null);
   const [searchPage, setSearchPage] = useState({ messages: [], hasMore: false });
   const [searchLoading, setSearchLoading] = useState(false);
   const [mediaStats, setMediaStats] = useState({ image: 0, video: 0, audio: 0, file: 0, links: 0 });
   const recorderRef = useRef(null);
-  const recorderChunksRef = useRef([]);
-  const recordingStartedRef = useRef(0);
+  const voiceRecordingRef = useRef(null);
   const peerRef = useRef(null);
   const activeCallRef = useRef(null);
   const incomingCallRef = useRef(null);
-  const pendingIceRef = useRef([]);
   const [signalQueue] = useState(() => new RtcSignalQueue());
   const localVideoRef = useRef(null);
   const remoteVideoRef = useRef(null);
   const callOverlayRef = useRef(null);
   const screenStreamRef = useRef(null);
   const uploadAbortRef = useRef(null);
-  const disconnectTimerRef = useRef(null);
+  const rtcConnectionRef = useRef(null);
+  const signalCursorRef = useRef(null);
   const ownedLocalStreamRef = useRef(null);
   const recordingStreamRef = useRef(null);
   const [callScope] = useState(() => new OperationScope());
@@ -526,8 +528,9 @@ export default function DispatchChat({
     callStartingRef.current = false;
     stopMediaStream(ownedLocalStreamRef.current);
     ownedLocalStreamRef.current = null;
-    window.clearTimeout(disconnectTimerRef.current);
-    disconnectTimerRef.current = null;
+    rtcConnectionRef.current?.dispose();
+    rtcConnectionRef.current = null;
+    signalCursorRef.current = null;
     peerRef.current?.close();
     peerRef.current = null;
     screenStreamRef.current?.getTracks().forEach((track) => track.stop());
@@ -546,7 +549,6 @@ export default function DispatchChat({
     setIncomingCall(null);
     activeCallRef.current = null;
     incomingCallRef.current = null;
-    pendingIceRef.current = [];
     signalQueue.reset();
   }, [callScope, signalQueue]);
 
@@ -555,26 +557,7 @@ export default function DispatchChat({
     if (!call || signal.call_id !== call.id || signal.recipient_id !== currentUser.id) return;
     const peer = peerRef.current;
     if (!peer) throw new Error('WebRTC peer hali tayyor emas.');
-    const stillCurrent = () => peerRef.current === peer && activeCallRef.current?.id === call.id;
-
-    if (signal.kind === 'offer') {
-      await peer.setRemoteDescription(signal.payload);
-      if (!stillCurrent()) return;
-      const answer = await peer.createAnswer();
-      if (!stillCurrent()) return;
-      await peer.setLocalDescription(answer);
-      if (!stillCurrent()) return;
-      await publishSignal(call.id, 'answer', answer);
-      if (!stillCurrent()) return;
-      for (const candidate of pendingIceRef.current.splice(0)) { if (!stillCurrent()) return; await peer.addIceCandidate(candidate); }
-    } else if (signal.kind === 'answer') {
-      await peer.setRemoteDescription(signal.payload);
-      if (!stillCurrent()) return;
-      for (const candidate of pendingIceRef.current.splice(0)) { if (!stillCurrent()) return; await peer.addIceCandidate(candidate); }
-    } else if (signal.kind === 'ice') {
-      if (peer.remoteDescription) await peer.addIceCandidate(signal.payload);
-      else pendingIceRef.current.push(signal.payload);
-    }
+    await rtcConnectionRef.current.receive(signal);
   }, [currentUser.id]);
   const handleSignal = useCallback(async (signal) => {
     const call = activeCallRef.current || incomingCallRef.current;
@@ -654,30 +637,17 @@ export default function DispatchChat({
         return next;
       });
     };
+    const connection = createChatRtcConnection({ peer, polite: !caller,
+      publish: (kind, payload, signal) => publishSignal(call.id, kind, payload, signal),
+      onState: state => { if (isCurrent()) { setCallConnectionState(state); if (state === 'connected') setConnectedAt(value => value || Date.now()); } },
+      onError: cause => { if (isCurrent()) setError(localizedError(translationRef.current, cause, 'errors.call')); },
+      onExhausted: () => { if (isCurrent()) { respondCall(call.id, 'ended').catch(() => {}); cleanupCall(); setError(translationRef.current('chat.connectionLost')); } },
+    });
+    rtcConnectionRef.current = connection;
     peer.onicecandidate = ({ candidate }) => {
-      if (candidate && isCurrent()) publishSignal(call.id, 'ice', candidate.toJSON()).catch(() => {});
+      if (candidate && isCurrent()) connection.sendCandidate(candidate.toJSON()).catch(cause => { if (isCurrent()) setError(localizedError(translationRef.current, cause, 'errors.call')); });
     };
-    peer.onconnectionstatechange = () => {
-      if (!isCurrent()) return;
-      if (peer.connectionState === 'connected') {
-        setCallConnectionState('connected');
-        setConnectedAt((value) => value || Date.now());
-        window.clearTimeout(disconnectTimerRef.current);
-        disconnectTimerRef.current = null;
-      }
-      if (peer.connectionState === 'disconnected' && !disconnectTimerRef.current) {
-        setCallConnectionState('reconnecting');
-        disconnectTimerRef.current = window.setTimeout(() => {
-          respondCall(call.id, 'ended').catch(() => {});
-          cleanupCall();
-        }, 15_000);
-      }
-      if (peer.connectionState === 'failed') {
-        setCallConnectionState('failed');
-        respondCall(call.id, 'ended').catch(() => {});
-        cleanupCall();
-      }
-    };
+    peer.onconnectionstatechange = () => { if (isCurrent()) connection.connectionChanged(); };
     peerRef.current = peer;
     setMicrophoneEnabled(stream.getAudioTracks().some((track) => track.enabled));
     setCameraEnabled(stream.getVideoTracks().some((track) => track.enabled));
@@ -691,10 +661,7 @@ export default function DispatchChat({
     await signalQueue.drain(processSignal);
     if (!isCurrent()) throw new DOMException('Call cancelled', 'AbortError');
     if (caller) {
-      const offer = await peer.createOffer();
-      await peer.setLocalDescription(offer);
-      if (!isCurrent()) throw new DOMException('Call cancelled', 'AbortError');
-      await publishSignal(call.id, 'offer', offer);
+      await connection.offer();
       await waitForRemoteDescription(call.id);
     }
   }, [cleanupCall, processSignal, signalQueue, waitForRemoteDescription]);
@@ -735,6 +702,19 @@ export default function DispatchChat({
             setIncomingCall(null);
           }
         }
+        const active = activeCallRef.current;
+        if (active && !cancelled) {
+          const savedCall = await fetchChatCall(active.id);
+          if (cancelled || activeCallRef.current?.id !== active.id) return;
+          if (!savedCall) { cleanupCall(); return; }
+          processCall(savedCall);
+          if (activeCallRef.current?.id !== active.id) return;
+          const signals = await fetchCallSignals(active.id, signalCursorRef.current);
+          if (!cancelled && activeCallRef.current?.id === active.id) {
+            for (const signal of signals) await handleSignal(signal);
+            if (!cancelled && activeCallRef.current?.id === active.id && signals.length) signalCursorRef.current = signals.at(-1).id;
+          }
+        }
       } catch { /* Realtime remains available; foreground/reconnect retries. */ }
       finally { refreshing = false; }
     };
@@ -744,10 +724,10 @@ export default function DispatchChat({
       onReconnect: refreshCalls,
     });
     void refreshCalls();
-    const onVisible = () => { if (document.visibilityState === 'visible') void refreshCalls(); };
+    const onVisible = () => { rtcConnectionRef.current?.connectionChanged(); if (document.visibilityState === 'visible' || activeCallRef.current) void refreshCalls(); };
     window.addEventListener('online', onVisible);
     document.addEventListener('visibilitychange', onVisible);
-    const timer = window.setInterval(() => { if (incomingCallRef.current) void refreshCalls(); }, 15_000);
+    const timer = window.setInterval(() => { if (activeCallRef.current || incomingCallRef.current || document.visibilityState === 'visible') void refreshCalls(); }, 10_000);
     return () => {
       cancelled = true;
       unsubscribe();
@@ -755,7 +735,7 @@ export default function DispatchChat({
       document.removeEventListener('visibilitychange', onVisible);
       window.clearInterval(timer);
     };
-  }, [handleSignal, processCall]);
+  }, [cleanupCall, handleSignal, processCall]);
 
   useEffect(() => {
     // Keep the selected conversation connected across workspace navigation.
@@ -764,12 +744,13 @@ export default function DispatchChat({
     const isCurrent = conversationScope.begin();
     conversationCurrentRef.current = isCurrent;
     uploadAbortRef.current?.abort();
-    if (recorderRef.current?.state === 'recording') { recorderRef.current.onstop = null; recorderRef.current.stop(); }
     recordingScopeRef.current += 1;
+    voiceRecordingRef.current?.cancel();
     stopMediaStream(recordingStreamRef.current);
     recordingStreamRef.current = null;
     // oxlint-disable-next-line react/set-state-in-effect -- external conversation selection resets owned upload and recorder state.
     setRecording(false);
+    setRecordingLimitReached(false);
     setSending(false);
     setLoadingOlder(false);
     setUploadProgress(null);
@@ -872,10 +853,7 @@ export default function DispatchChat({
   useEffect(() => {
     if (isVisible) return;
     recordingScopeRef.current += 1;
-    if (recorderRef.current) {
-      recorderRef.current.onstop = null;
-      if (recorderRef.current.state !== 'inactive') recorderRef.current.stop();
-    }
+    voiceRecordingRef.current?.cancel();
     stopMediaStream(recordingStreamRef.current);
     recordingStreamRef.current = null;
     // oxlint-disable-next-line react/set-state-in-effect -- hide discards an owned microphone recording.
@@ -898,13 +876,17 @@ export default function DispatchChat({
     }
   }, [activeChatDriver?.id, selectionRequestKey]);
 
+  const heartbeatCallId = activeCall?.status === 'accepted' ? activeCall.id : null;
   useEffect(() => {
-    const call = activeCall?.status === 'accepted' ? activeCall : null;
-    if (!call) return undefined;
-    heartbeatCall(call.id).catch(() => {});
-    const timer = window.setInterval(() => heartbeatCall(call.id).catch(() => {}), 20_000);
-    return () => window.clearInterval(timer);
-  }, [activeCall]);
+    if (!heartbeatCallId) return undefined;
+    let cancelled = false;
+    const heartbeat = () => heartbeatCall(heartbeatCallId).catch(cause => {
+      if (!cancelled && activeCallRef.current?.id === heartbeatCallId && /Active call not found|Active authentication required/.test(cause.message || '')) cleanupCall();
+    });
+    void heartbeat();
+    const timer = window.setInterval(heartbeat, 20_000);
+    return () => { cancelled = true; window.clearInterval(timer); };
+  }, [heartbeatCallId, cleanupCall]);
 
   useEffect(() => () => {
     const call = activeCallRef.current;
@@ -913,10 +895,7 @@ export default function DispatchChat({
     conversationScope.cancel();
     uploadAbortRef.current?.abort();
     recordingScopeRef.current += 1;
-    if (recorderRef.current) {
-      recorderRef.current.onstop = null;
-      if (recorderRef.current.state !== 'inactive') recorderRef.current.stop();
-    }
+    voiceRecordingRef.current?.cancel();
     stopMediaStream(recordingStreamRef.current);
   }, [cleanupCall, conversationScope]);
 
@@ -1117,7 +1096,7 @@ export default function DispatchChat({
 
   const toggleRecording = async () => {
     if (recording) {
-      recorderRef.current?.stop();
+      voiceRecordingRef.current?.stop();
       setRecording(false);
       return;
     }
@@ -1131,23 +1110,21 @@ export default function DispatchChat({
       recordingStreamRef.current = stream;
       const options = MediaRecorder.isTypeSupported('audio/webm') ? { mimeType: 'audio/webm' } : undefined;
       const recorder = new MediaRecorder(stream, options);
-      recorderChunksRef.current = [];
-      recorder.ondataavailable = ({ data }) => { if (data.size) recorderChunksRef.current.push(data); };
-      recorder.onstop = async () => {
-        stream.getTracks().forEach((track) => track.stop());
-        recordingStreamRef.current = null;
-        if (scope !== recordingScopeRef.current || !isCurrent()) return;
-        const blob = new Blob(recorderChunksRef.current, { type: recorder.mimeType || 'audio/webm' });
-        const file = new File([blob], `voice-${Date.now()}.webm`, { type: blob.type });
-        await uploadFile(file, Date.now() - recordingStartedRef.current);
-      };
       recorderRef.current = recorder;
-      recordingStartedRef.current = Date.now();
-      recorder.start(250);
+      const current = () => scope === recordingScopeRef.current && isCurrent();
+      voiceRecordingRef.current = createVoiceRecording({ recorder, stream,
+        onTick: seconds => { if (current()) setRecordingSeconds(seconds); },
+        onStop: () => { if (current()) { recordingStreamRef.current = null; setRecording(false); } },
+        onLimit: () => { if (current()) setRecordingLimitReached(true); },
+        onComplete: (file, duration) => { if (current()) return uploadFile(file, duration); },
+        onError: cause => { if (current()) setError(localizedError(t, cause, 'errors.microphone')); },
+      });
+      setRecordingSeconds(0);
+      setRecordingLimitReached(false);
       setRecording(true);
     } catch (recordError) {
       stopMediaStream(stream);
-      if (!isCurrent()) return;
+      if (scope !== recordingScopeRef.current || !isCurrent()) return;
       setError(localizedError(t, recordError, 'errors.microphone'));
     }
   };
@@ -1495,7 +1472,7 @@ export default function DispatchChat({
                   {mine && message.status !== 'sending' && <button type="button" onClick={() => removeMessage(message)} title={t('chat.deleteMessage')} className="p-1.5 rounded-full text-zinc-400 opacity-0 group-hover:opacity-100 focus:opacity-100 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30 transition"><Trash2 className="w-4 h-4" /></button>}
                   <div className={`max-w-[82%] rounded-2xl px-3.5 py-2 shadow-sm ${mine ? 'bg-blue-600 text-white rounded-br-md' : 'bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-bl-md'}`}>
                     {editingMessageId === message.id ? <form onSubmit={saveEditedMessage} className="min-w-48 space-y-2">
-                      <textarea autoFocus value={editDraft} onChange={(event) => setEditDraft(event.target.value)} onKeyDown={(event) => { if (event.key === 'Escape') { setEditingMessageId(null); setEditDraft(''); } else if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); saveEditedMessage(); } }} rows={2} maxLength={4000} aria-label={t('chat.editMessage')} className="chat-accessible-input w-full resize-y rounded-lg bg-white px-2 py-1 text-sm text-zinc-900 outline-none" />
+                      <textarea autoFocus value={editDraft} onChange={(event) => setEditDraft(event.target.value)} onKeyDown={(event) => { if (event.nativeEvent.isComposing || event.keyCode === 229) return; if (event.key === 'Escape') { setEditingMessageId(null); setEditDraft(''); } else if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); saveEditedMessage(); } }} rows={2} maxLength={4000} aria-label={t('chat.editMessage')} className="chat-accessible-input w-full resize-y rounded-lg bg-white px-2 py-1 text-sm text-zinc-900 outline-none" />
                       <div className="flex justify-end gap-2 text-xs font-bold"><button type="button" onClick={() => { setEditingMessageId(null); setEditDraft(''); }} disabled={savingEdit}>{t('common.cancel')}</button><button type="submit" disabled={savingEdit || !editDraft.trim()}>{savingEdit ? t('common.loading') : t('common.save')}</button></div>
                     </form> : message.kind === 'text' ? <p className="text-sm whitespace-pre-wrap break-words">{message.body}</p> : message.status ? <p className="flex items-center gap-2 break-all text-sm"><FileText className="h-5 w-5 shrink-0" />{message.file_name}</p> : <MediaMessage message={message} onRefresh={refreshMedia} />}
                     <div className={`mt-1 text-[10px] flex items-center justify-end gap-1 ${mine ? 'text-blue-100' : 'text-zinc-400'}`}>
@@ -1519,23 +1496,20 @@ export default function DispatchChat({
           </div>
         )}
         <form onSubmit={sendMessage} className="relative shrink-0 px-3 py-3 bg-white dark:bg-zinc-950 border-t border-zinc-200 dark:border-zinc-800 flex items-end gap-2">
-          <input ref={fileInputRef} type="file" className="hidden" accept="image/*,video/*,audio/*,.pdf" onChange={(event) => { uploadFile(event.target.files?.[0]); event.target.value = ''; }} />
-          <button type="button" onClick={() => fileInputRef.current?.click()} title={t('chat.sendMedia')} className="p-2.5 rounded-full text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800"><Paperclip className="w-5 h-5" /></button>
-          <div className="flex-1 rounded-2xl border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-900 px-3">
-            <textarea ref={composerRef} rows="1" maxLength={4000} value={inputMessage} onChange={(event) => setInputMessage(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); sendMessage(); } }} aria-label={t('chat.typeMessage')} placeholder={t('chat.typeMessage')} className="chat-accessible-input w-full max-h-28 resize-none bg-transparent py-2.5 text-sm outline-none" />
+          {!recording && recordingLimitReached && <p role="status" className="absolute bottom-full left-0 right-0 bg-amber-50 px-4 py-2 text-xs text-amber-800 dark:bg-amber-950 dark:text-amber-200">{t('chat.recordingLimit')}</p>}
+          <input ref={fileInputRef} type="file" className="hidden" accept={CHAT_MEDIA_ACCEPT} onChange={(event) => { uploadFile(event.target.files?.[0]); event.target.value = ''; }} />
+          {recording && <div className="absolute bottom-full left-0 right-0 flex items-center justify-between border-t border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-200">
+            <span role="timer">{t('chat.recordingTime', { seconds: recordingSeconds, max: VOICE_MAX_DURATION_MS / 1000 })}</span>
+            <button type="button" onClick={() => { recordingScopeRef.current += 1; voiceRecordingRef.current?.cancel(); setRecording(false); }} className="rounded px-2 py-1 font-semibold hover:bg-red-100 dark:hover:bg-red-900">{t('common.cancel')}</button>
+          </div>}
+          <button type="button" disabled={recording || sending} onClick={() => fileInputRef.current?.click()} title={t('chat.sendMedia')} className="p-2.5 rounded-full text-zinc-500 hover:bg-zinc-100 disabled:opacity-50 dark:hover:bg-zinc-800"><Paperclip className="w-5 h-5" /></button>
+          <div className="chat-composer-field flex-1 rounded-2xl border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-900 px-3">
+            <textarea rows="1" maxLength={4000} value={inputMessage} onChange={(event) => setInputMessage(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing && event.keyCode !== 229) { event.preventDefault(); sendMessage(); } }} aria-label={t('chat.typeMessage')} placeholder={t('chat.typeMessage')} className="chat-composer-input w-full max-h-28 resize-none bg-transparent py-2.5 text-sm outline-none" />
           </div>
-          <button type="button" onClick={() => setShowEmojiPicker((current) => !current)} title={t('chat.emoji')} className="p-2.5 rounded-full text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800"><Smile className="w-5 h-5" /></button>
           {inputMessage.trim() ? (
             <button type="submit" aria-label={t('chat.sendMessage')} className="p-2.5 rounded-full bg-blue-600 text-white hover:bg-blue-500"><Send className="w-5 h-5" /></button>
           ) : (
             <button type="button" onClick={toggleRecording} title={t('common.audio')} className={`p-2.5 rounded-full text-white ${recording ? 'bg-red-600 animate-pulse' : 'bg-blue-600'}`}>{recording ? <Square className="w-5 h-5" /> : <Mic className="w-5 h-5" />}</button>
-          )}
-          {showEmojiPicker && (
-            <div className="absolute bottom-[calc(100%+8px)] right-14 flex flex-wrap gap-1 rounded-2xl border border-zinc-200 bg-white p-2 shadow-xl dark:border-zinc-700 dark:bg-zinc-900">
-              {['😀', '👍', '✅', '🚛', '📍', '📄', '🙏', '🔥'].map((emoji) => (
-                <button key={emoji} type="button" onClick={() => { setInputMessage((current) => `${current}${emoji}`); setShowEmojiPicker(false); composerRef.current?.focus(); }} className="grid h-9 w-9 place-items-center rounded-lg text-xl hover:bg-zinc-100 dark:hover:bg-zinc-800">{emoji}</button>
-              ))}
-            </div>
           )}
         </form>
       </section>

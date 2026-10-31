@@ -19,7 +19,7 @@ test('versioned categories override legacy enabled and malformed data fails clos
   assert.deepEqual(readPushPreferences('a', read), { calls: false, messages: false });
 });
 test('only safe diagnostic codes reach notification settings, never provider messages', () => {
-  for (const code of ['signedOut', 'workerTimeout', 'workerFailed', 'workerProtocol', 'registrationFailed', 'disableFailed']) {
+  for (const code of ['signedOut', 'workerTimeout', 'workerFailed', 'workerProtocol', 'registrationFailed', 'disableFailed', 'firebaseConfigMissing', 'vapidKeyMissing']) {
     assert.equal(pushFailureReason(new Error(code)), code);
   }
   assert.equal(pushFailureReason(new Error('private provider response')), 'error');

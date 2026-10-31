@@ -1,14 +1,15 @@
 import { useEffect, useId, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Check, LoaderCircle, ShieldCheck, Truck } from 'lucide-react';
+import { Check, KeyRound, LoaderCircle, ShieldCheck, Truck } from 'lucide-react';
 import { fetchDriverPaySettings, updateCompanyDriverContact } from '../services/operationsService';
 import { fetchDriverAccountStatus, fetchDriverSettingsHistory, setDriverAccountStatus } from '../services/driverSettingsService';
 import { parseDriverMileageRate } from '../services/driverPay';
 import { formatDate } from '../i18n/format';
+import DriverPasswordModal from './DriverPasswordModal';
 import DriverVehicleAssignmentModal from './DriverVehicleAssignmentModal';
 import './driverSettings.css';
 
-export default function DriverSettingsPanel({ driver, onWorkspaceRefresh, canManageDriver }) {
+export default function DriverSettingsPanel({ driver, onWorkspaceRefresh, canManageDriver, title, onDirtyChange, onBusyChange }) {
   const { t } = useTranslation();
   const id = useId();
   const [form, setForm] = useState({ name: driver.name || '', phone: driver.phone || '', fixedPay: false, rate: '', hideRateCon: false });
@@ -18,6 +19,7 @@ export default function DriverSettingsPanel({ driver, onWorkspaceRefresh, canMan
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [saved, setSaved] = useState(false);
+  const [passwordOpen, setPasswordOpen] = useState(false);
   const [vehicleOpen, setVehicleOpen] = useState(false);
   const [account, setAccount] = useState(null);
   const [accountError, setAccountError] = useState(false);
@@ -62,9 +64,12 @@ export default function DriverSettingsPanel({ driver, onWorkspaceRefresh, canMan
   }, [driver.id, attempt]);
   const update = (key, value) => { setForm((previous) => ({ ...previous, [key]: value })); setSaved(false); };
   const dirty = baseline && JSON.stringify(form) !== JSON.stringify(baseline);
+  useEffect(() => { onDirtyChange?.(Boolean(dirty)); }, [dirty, onDirtyChange]);
+  useEffect(() => { onBusyChange?.(saving || statusBusy); }, [saving, statusBusy, onBusyChange]);
   const save = async (event) => {
     event.preventDefault();
     if (!canManageDriver || saving || !baseline || !dirty) return;
+    if (form.phone && (!/^[+0-9() .-]+$/.test(form.phone) || !/\d/.test(form.phone))) { setError('profile.editPhoneInvalid'); return; }
     const rate = form.fixedPay ? parseDriverMileageRate(form.rate) : null;
     if (form.fixedPay && rate == null) { setError('driverPay.invalidRate'); return; }
     setSaving(true); setError(''); setSaved(false);
@@ -79,18 +84,18 @@ export default function DriverSettingsPanel({ driver, onWorkspaceRefresh, canMan
   const sectionTitle = (number, key) => <div className="driver-settings-section-heading"><span>{number}</span><h3>{t(`driverSettings.${key}`)}</h3></div>;
   const lastSeen = driver.lastSeenAt && Number.isFinite(Date.parse(driver.lastSeenAt)) ? formatDate(driver.lastSeenAt, { dateStyle: 'medium', timeStyle: 'short' }) : null;
   return <div className="driver-settings-layout">
-    <form className="driver-settings-form" onSubmit={save}>
-      <header><h2>{t('driverSettings.title')}</h2><p>{t('driverSettings.subtitle')}</p></header>
+    <form className="driver-settings-form" onSubmit={save} aria-busy={saving}>
+      <header><h2>{title || t('driverSettings.title')}</h2><p>{t('driverSettings.subtitle')}</p></header>
       <fieldset disabled={saving || loading || !baseline || !canManageDriver}>
         <section>{sectionTitle('01', 'contacts')}<div className="driver-settings-fields">
           <label>{t('profile.fullName')}<input value={form.name} onChange={(e) => update('name', e.target.value)} required minLength={2} maxLength={120} autoComplete="name" /></label>
-          <label>{t('common.phone')}<input type="tel" value={form.phone} onChange={(e) => update('phone', e.target.value)} maxLength={40} autoComplete="tel" /></label>
+          <label>{t('common.phone')}<input type="tel" aria-invalid={error === 'profile.editPhoneInvalid' ? true : undefined} aria-describedby={error ? `${id}-error` : undefined} value={form.phone} onChange={(e) => update('phone', e.target.value)} maxLength={40} autoComplete="tel" /></label>
           <label>{t('common.email')}<input value={driver.email || '—'} readOnly /></label>
           <label>{t('driverDetailTabs.driverNumber')}<input value={driver.driverNumber || '—'} readOnly /></label>
-        </div><p className="driver-settings-hint">{t('profile.driverSystemFieldsHint')}</p></section>
+        </div><p className="driver-settings-hint">{t('profile.driverSystemFieldsHint')}</p>{canManageDriver && <button type="button" className="driver-password-trigger" disabled={saving || loading} onClick={() => setPasswordOpen(true)}><KeyRound size={16} aria-hidden="true" />{t('driverPassword.manage')}</button>}</section>
         <section>{sectionTitle('02', 'equipment')}<div className="driver-settings-vehicle"><Truck size={22} /><div><strong>{driver.truck || t('common.notProvided')}</strong><p>{[driver.vehicle?.make, driver.vehicle?.model, driver.vehicle?.year].filter(Boolean).join(' · ') || t('driverSettings.vehicleHint')}</p></div><button type="button" onClick={() => setVehicleOpen(true)} disabled={loading || saving}>{t('driverSettings.manageVehicle')}</button></div><p className="driver-settings-hint">{t('driverDetailTabs.trailer')}: {driver.trailer || '—'}</p></section>
         <section>{sectionTitle('03', 'pay')}<label className="driver-settings-toggle"><span><strong>{t('driverPay.enabled')}</strong><small>{t('driverPay.hint')}</small></span><input type="checkbox" checked={form.fixedPay} disabled={loading || !baseline} onChange={(e) => update('fixedPay', e.target.checked)} /></label>
-          {form.fixedPay && <label className="driver-settings-rate">{t('driverPay.rate')}<input type="number" inputMode="decimal" min="0.0001" max="100" step="0.0001" required value={form.rate} disabled={loading || !baseline} onChange={(e) => update('rate', e.target.value)} /></label>}
+          {form.fixedPay && <label className="driver-settings-rate">{t('driverPay.rate')}<input type="number" aria-invalid={error === 'driverPay.invalidRate' ? true : undefined} aria-describedby={error ? `${id}-error` : undefined} inputMode="decimal" min="0.0001" max="100" step="0.0001" required value={form.rate} disabled={loading || !baseline} onChange={(e) => update('rate', e.target.value)} /></label>}
         </section>
         <section>{sectionTitle('04', 'documents')}<label className="driver-settings-toggle"><span><strong>{t('driverSettings.showRateCon')}</strong><small id={`${id}-privacy`}>{t('driverSettings.documentHint')}</small></span><input type="checkbox" role="switch" aria-describedby={`${id}-privacy`} checked={!form.hideRateCon} disabled={loading || !baseline} onChange={(e) => update('hideRateCon', !e.target.checked)} /></label></section>
       </fieldset>
@@ -99,7 +104,7 @@ export default function DriverSettingsPanel({ driver, onWorkspaceRefresh, canMan
         <button type="button" disabled={!dirty || saving} onClick={() => { setForm(baseline); setError(''); setSaved(false); }}>{t('common.cancel')}</button>
         <button type="submit" className="driver-settings-save" disabled={!canManageDriver || !dirty || saving || loading || form.name.trim().length < 2}>{saving && <LoaderCircle size={16} className="animate-spin" />}{t('common.save')}</button>
       </footer>
-      {error && <div className="driver-settings-error" role="alert">{t(error)}{!baseline && <button type="button" onClick={() => { setLoading(true); setAttempt((value) => value + 1); }}>{t('driverSettings.retry')}</button>}</div>}
+      {error && <div id={`${id}-error`} className="driver-settings-error" role="alert">{t(error)}{!baseline && <button type="button" onClick={() => { setLoading(true); setAttempt((value) => value + 1); }}>{t('driverSettings.retry')}</button>}</div>}
     </form>
     <aside className="driver-settings-aside">
       <section><ShieldCheck size={22} /><h3>{t('driverSettings.account')}</h3>
@@ -109,9 +114,10 @@ export default function DriverSettingsPanel({ driver, onWorkspaceRefresh, canMan
         {canManageDriver && ['active', 'suspended'].includes(account) && <div className="driver-settings-account-action">{confirmStatus ? <><p>{t('driverSettings.confirmStatus')}</p><button type="button" disabled={statusBusy} onClick={changeStatus}>{t(account === 'active' ? 'driverSettings.suspend' : 'driverSettings.activate')}</button><button type="button" disabled={statusBusy} onClick={() => setConfirmStatus(false)}>{t('common.cancel')}</button></> : <button type="button" disabled={saving || statusBusy} onClick={() => setConfirmStatus(true)}>{t(account === 'active' ? 'driverSettings.suspend' : 'driverSettings.activate')}</button>}</div>}
       </section>
       <section><h3>{t('driverSettings.history')}</h3>{lastSeen && <p><strong>{t('driverDetailTabs.lastSeen')}</strong><br />{lastSeen}</p>}
-        {historyError ? <p role="alert">{t('driverSettings.historyError')} <button type="button" onClick={() => setHistoryAttempt((value) => value + 1)}>{t('driverSettings.retry')}</button></p> : history === null ? <p>{t('driverSettings.loading')}</p> : history.length ? <><ol id={`${id}-history`} className="driver-settings-history">{(expandedHistory ? history : history.slice(0, 3)).map((event) => <li key={event.id}><strong>{t(event.action === 'member.status_changed' ? 'driverSettings.statusChanged' : ['driver.contact_updated', 'driver.pay_settings_updated', 'driver.rate_con_privacy_updated'].includes(event.action) ? 'driverSettings.contactChanged' : 'driverSettings.otherChange')}</strong><time dateTime={event.occurred_at}>{formatDate(event.occurred_at, { dateStyle: 'medium', timeStyle: 'short' })}</time>{event.actor_id && <small>{t('driverSettings.actor')} · {event.actor_id.slice(0, 8)}</small>}</li>)}</ol>{history.length > 3 && <button type="button" aria-expanded={expandedHistory} aria-controls={`${id}-history`} onClick={() => setExpandedHistory((value) => !value)}>{t(expandedHistory ? 'driverSettings.lessHistory' : 'driverSettings.allHistory')}</button>}</> : <p className="driver-settings-hint">{t('driverSettings.noHistory')}</p>}
+        {historyError ? <p role="alert">{t('driverSettings.historyError')} <button type="button" onClick={() => setHistoryAttempt((value) => value + 1)}>{t('driverSettings.retry')}</button></p> : history === null ? <p>{t('driverSettings.loading')}</p> : history.length ? <><ol id={`${id}-history`} className="driver-settings-history">{(expandedHistory ? history : history.slice(0, 3)).map((event) => <li key={event.id}><strong>{t(event.action === 'driver.password_viewed' ? 'driverPassword.historyViewed' : event.action === 'driver.password_secret_saved' ? 'driverPassword.historyStored' : event.action === 'driver.password_reset_requested' ? 'driverPassword.historyRequested' : event.action === 'member.status_changed' ? 'driverSettings.statusChanged' : ['driver.contact_updated', 'driver.pay_settings_updated', 'driver.rate_con_privacy_updated'].includes(event.action) ? 'driverSettings.contactChanged' : 'driverSettings.otherChange')}</strong><time dateTime={event.occurred_at}>{formatDate(event.occurred_at, { dateStyle: 'medium', timeStyle: 'short' })}</time>{event.actor_id && <small>{t('driverSettings.actor')} · {event.actor_id.slice(0, 8)}</small>}</li>)}</ol>{history.length > 3 && <button type="button" aria-expanded={expandedHistory} aria-controls={`${id}-history`} onClick={() => setExpandedHistory((value) => !value)}>{t(expandedHistory ? 'driverSettings.lessHistory' : 'driverSettings.allHistory')}</button>}</> : <p className="driver-settings-hint">{t('driverSettings.noHistory')}</p>}
       </section>
     </aside>
+    {canManageDriver && passwordOpen && <DriverPasswordModal driver={driver} onClose={() => setPasswordOpen(false)} onSaved={() => setHistoryAttempt(value => value + 1)} onViewed={() => setHistoryAttempt(value => value + 1)} />}
     {vehicleOpen && <DriverVehicleAssignmentModal driver={driver} onClose={() => setVehicleOpen(false)} onWorkspaceRefresh={onWorkspaceRefresh} />}
   </div>;
 }

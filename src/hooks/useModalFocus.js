@@ -24,6 +24,8 @@ export default function useModalFocus(dialogRef, { open = true, onClose, busy = 
       if (!isTop()) return;
       // Native confirmation dialogs own Escape and focus while they are open.
       if (dialog.querySelector('dialog[open]')) return;
+      // The shared date popup owns its first Escape, including inside PDF editors.
+      if (event.key === 'Escape' && dialog.querySelector('[data-workspace-calendar]')) return;
       if (event.key === 'Escape') {
         event.preventDefault();
         event.stopImmediatePropagation();

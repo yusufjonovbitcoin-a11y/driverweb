@@ -50,7 +50,7 @@ export function normalizeManualLoad(form, selectedDriverIds, availableDriverIds,
     throw new Error('Og‘irlik musbat butun son bo‘lishi kerak.');
   }
   return {
-    loadNumber: requiredText(form.loadNumber, 'Yuk raqamini'),
+    loadNumber: text(form.loadNumber) || '',
     broker: requiredText(form.broker, 'Broker nomini'),
     equipment: requiredText(form.equipment, 'Texnika turini'),
     commodity: text(form.commodity),

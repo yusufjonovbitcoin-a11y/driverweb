@@ -3,6 +3,10 @@ import { isSupabaseConfigured, supabase } from '../lib/supabase';
 import { createAuthStateController } from '../services/authStateController';
 import { normalizeLocale } from '../i18n/locales';
 import { savePersonalProfile } from '../services/personalProfile';
+import { requireMfaAssurance } from '../services/mfa';
+import { chatAccountKey, clearPersistedChatSession } from '../services/chatSession';
+import { clearPersistedChatMedia } from '../services/chatMediaOutbox';
+import { createChatPrivacyLifecycle } from '../services/chatPrivacyLifecycle';
 
 function toUiUser(profile, companyName) {
   if (!profile) return null;
@@ -21,6 +25,7 @@ function toUiUser(profile, companyName) {
 }
 
 async function loadProfile(userId) {
+  await requireMfaAssurance(supabase);
   const { data: verified, error: verificationError } = await supabase.auth.getUser();
   if (verificationError) throw verificationError;
   if (verified.user?.id !== userId) throw new Error('Sessiya tugagan. Hisobga qayta kiring.');
@@ -51,7 +56,14 @@ export function useAuth() {
 
   useEffect(() => {
     if (!supabase) return undefined;
-    const controller = createAuthStateController({ loadUser: loadProfile, onChange: setState });
+    const privacy = createChatPrivacyLifecycle({ keyOf: chatAccountKey, clear: scope => {
+      clearPersistedChatSession(scope);
+      void clearPersistedChatMedia(scope).catch(() => {});
+    } });
+    const controller = createAuthStateController({ loadUser: loadProfile, onChange: next => {
+      privacy.update(next);
+      setState(next);
+    } });
     controllerRef.current = controller;
     // INITIAL_SESSION also supplies the persisted session. One source of auth
     // events avoids a slower getSession response restoring a logged-out user.
@@ -90,5 +102,10 @@ export function useAuth() {
     return saved;
   };
 
-  return { ...state, configured: isSupabaseConfigured, login, logout, updateProfile };
+  const completeMfa = async () => {
+    const { data, error } = await supabase.auth.getSession();
+    if (error) throw error;
+    await controllerRef.current?.setSession(data.session);
+  };
+  return { ...state, mfaRequired: state.authError === 'MFA_REQUIRED', completeMfa, configured: isSupabaseConfigured, login, logout, updateProfile };
 }

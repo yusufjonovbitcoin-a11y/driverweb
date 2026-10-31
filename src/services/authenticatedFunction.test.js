@@ -50,3 +50,20 @@ test('same-account 401 refresh retries once and cannot override the bound Author
   assert.equal(state.calls[1].headers.Authorization, 'Bearer fresh-A');
   assert.equal(state.calls[1].headers.custom, 'kept');
 });
+
+test('timing distinguishes a refresh and 401 retry without exposing the observer to the SDK', async () => {
+  const state = fixture(session('A', 240));
+  const stages = [];
+  state.invoke = () => state.calls.length === 1 ? { error: { context: { status: 401 } } } : { data: 'ok' };
+  await invokeAuthenticatedFunction(state.client, 'parse-load-document', {}, { onTiming: entry => stages.push(entry) });
+  assert.deepEqual(stages.map(entry => entry.stage), ['session', 'refresh', 'request', 'retry_refresh', 'retry_request']);
+  assert.ok(stages.every(entry => entry.durationMs >= 0));
+  assert.ok(state.calls.every(call => !('onTiming' in call)));
+});
+
+test('a failed timing observer never changes or repeats the request', async () => {
+  const state = fixture();
+  const result = await invokeAuthenticatedFunction(state.client, 'parse-load-document', {}, { onTiming() { throw Error('diagnostics unavailable'); } });
+  assert.equal(result.data, 'ok');
+  assert.equal(state.calls.length, 1);
+});

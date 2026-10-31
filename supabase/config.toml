@@ -40,6 +40,12 @@ enabled = false
 [functions.create-member]
 verify_jwt = true
 
+[functions.update-driver-password]
+verify_jwt = true
+
+[functions.read-driver-password]
+verify_jwt = true
+
 [functions.create-company]
 verify_jwt = true
 

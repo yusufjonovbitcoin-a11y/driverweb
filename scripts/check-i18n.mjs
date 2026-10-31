@@ -33,12 +33,19 @@ for (const locale of localeNames.slice(1)) {
 }
 
 const componentDir = path.join(root, 'src/components');
+async function componentSources(directory) {
+  const entries = await readdir(directory, { withFileTypes: true });
+  const groups = await Promise.all(entries.map(entry => entry.isDirectory()
+    ? componentSources(path.join(directory, entry.name))
+    : entry.name.endsWith('.jsx') ? [path.join(directory, entry.name)] : []));
+  return groups.flat();
+}
 const sourcePaths = [
   path.join(root, 'src/App.jsx'),
   path.join(root, 'src/utils/globalSearch.js'),
-  ...(await readdir(componentDir)).filter((name) => name.endsWith('.jsx')).map((name) => path.join(componentDir, name)),
+  ...await componentSources(componentDir),
 ];
-const namespaces = 'common|nav|header|auth|profile|arrival|loads|loadStatus|drivers|driverStatus|documents|inbox|ingestionStatus|chat|map|search|roles|admin|errors|toasts|missingFields|warningCodes|accountStatus|driverInstructions';
+const namespaces = 'common|nav|header|auth|mfa|profile|arrival|loads|loadStatus|drivers|driverStatus|documents|inbox|ingestionStatus|chat|map|search|roles|admin|errors|toasts|missingFields|warningCodes|accountStatus|driverInstructions|financialCenter';
 const keyPattern = new RegExp(`["']((?:${namespaces})\\.[A-Za-z0-9_.-]+)["']`, 'g');
 const referenced = new Set();
 for (const sourcePath of sourcePaths) {

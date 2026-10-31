@@ -2,6 +2,13 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { buildGlobalSearchResults, normalizeSearchText } from './globalSearch.js';
 
+test('a shared broker reference finds distinct internal loads and each result keeps its UUID', () => {
+  const repeated = [100, 101].map(number => ({ id: `uuid-${number}`, loadNumber: `#${number}`, internalNumber: String(number), brokerLoadNumber: '#BROKER-SAME' }));
+  const results = buildGlobalSearchResults({ query: 'BROKER-SAME', loads: repeated }).filter(row => row.type === 'load');
+  assert.deepEqual(new Set(results.map(row => row.entityId)), new Set(['uuid-100', 'uuid-101']));
+  assert.equal(buildGlobalSearchResults({ query: '#101', loads: repeated }).find(row => row.type === 'load')?.entityId, 'uuid-101');
+});
+
 test('finds trip accounting through the analytics navigation entry', () => {
   const results = buildGlobalSearchResults({ query: 'xarajat' });
   assert.ok(results.some(result => result.tab === 'analytics'));

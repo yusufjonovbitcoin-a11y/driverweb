@@ -1,5 +1,10 @@
 import { requireSupabase } from "../../lib/supabase";
 import { normalizeSettings } from "./calculation";
+import { readDriverSettlements, readDriverSettlement, confirmDriverSettlement, readSettlementPdf } from '../../services/driverSettlements.js';
+export const readSettlementHistory = signal => readDriverSettlements(requireSupabase(), signal);
+export const readSettlementEntry = (id, signal) => readDriverSettlement(requireSupabase(), id, signal);
+export const saveConfirmedSettlement = (entry, pdf) => confirmDriverSettlement(requireSupabase(), entry, pdf);
+export const readConfirmedSettlementPdf = entry => readSettlementPdf(requireSupabase(), entry);
 export async function readCalculationSettings(signal) {
   let q = requireSupabase()
     .from("company_accounting_settings")

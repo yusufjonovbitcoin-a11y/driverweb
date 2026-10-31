@@ -19,12 +19,14 @@ test('download resolves fresh URL on every action and preserves original bytes/n
 
 test('expired URL automatically reauthorizes once before fetching again', async () => {
   let signed = 0;
+  const forceFlags = [];
   const result = await fetchTripDocument({ versionId: 'version' }, {
-    resolveSource: async () => ({ mediaUrl: `https://example.test/${++signed}` }),
+    resolveSource: async (_document, { forceRefresh }) => { forceFlags.push(forceRefresh); return { mediaUrl: `https://example.test/${++signed}` }; },
     fetchDocument: async () => signed === 1 ? new Response('InvalidJWT', { status: 400 }) : new Response('file'),
   });
   assert.equal(signed, 2);
   assert.equal(await result.blob.text(), 'file');
+  assert.deepEqual(forceFlags, [false, true]);
 });
 
 test('denied renewal never falls back to cached URL', async () => {

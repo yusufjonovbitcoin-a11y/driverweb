@@ -1,0 +1,34 @@
+import { readFile } from 'node:fs/promises';
+import { withIsolatedPostgres } from './isolated-postgres.mjs';
+import assert from 'node:assert/strict';
+await withIsolatedPostgres(async ({sql})=>{
+ sql(`create role anon;create role authenticated;create role authenticator;create role service_role bypassrls;create schema auth;create schema private;create schema storage;
+ create function auth.uid() returns uuid language sql stable as $$select nullif(current_setting('request.jwt.claim.sub',true),'')::uuid$$;
+ create function auth.jwt() returns jsonb language sql stable as $$select coalesce(nullif(current_setting('request.jwt.claims',true),''),'{}')::jsonb$$;
+ create table auth.mfa_factors(user_id uuid,status text);
+ create function public.ensure_vehicle_assignment_tenant() returns trigger language plpgsql as $$begin return new;end;$$;
+ create table public.records(id int);create table storage.objects(id int);
+ insert into records values(1);insert into storage.objects values(1);
+ alter table records enable row level security;alter table storage.objects enable row level security;
+ create policy baseline on records to authenticated using(true);create policy baseline on storage.objects to authenticated using(true);
+ grant usage on schema auth,storage to authenticated,service_role;grant select on records,storage.objects to authenticated;
+ grant select on records,storage.objects to service_role;`);
+ sql(await readFile('supabase/migrations/20261024132837_enrolled_mfa_session_guard.sql','utf8'));
+ sql(await readFile('supabase/migrations/20261024134146_mfa_hook_invoker_permissions.sql','utf8'));
+ // Simulate the hosted API grants and reproduce the missing private permission.
+ sql(`grant usage on schema private to service_role;grant execute on function public.require_mfa_session() to service_role;`);
+ assert.throws(()=>sql('set role service_role;select public.require_mfa_session();'),/permission denied for function mfa_session_satisfied/);
+ sql(await readFile('supabase/migrations/20261025040520_mfa_backend_service_access.sql','utf8'));
+ assert.equal(sql('set role service_role;select public.require_mfa_session();select count(*) from records;').trim(),'1');
+ const identity=`set role authenticated;set "request.jwt.claim.sub"='00000000-0000-0000-0000-000000000001';`;
+ assert.equal(sql(identity+`select count(*) from records;`).trim(),'1');
+ sql(`insert into auth.mfa_factors values('00000000-0000-0000-0000-000000000001','unverified');`);
+ assert.equal(sql(identity+`select count(*) from records;`).trim(),'1');
+ sql(`update auth.mfa_factors set status='verified';`);
+ assert.equal(sql(identity+`select count(*) from records;select count(*) from storage.objects;`).trim(),'0\n0');
+ assert.throws(()=>sql(identity+'select public.require_mfa_session();'),/MFA_REQUIRED/);
+ assert.equal(sql(`set role service_role;select public.require_mfa_session();select count(*) from storage.objects;`).trim(),'1');
+ assert.equal(sql(identity+`set "request.jwt.claims"='{"aal":"aal2"}';select public.require_mfa_session();select count(*) from records;`).trim(),'1');
+ assert.equal(sql(`select has_function_privilege('anon','ensure_vehicle_assignment_tenant()','execute');`).trim(),'f');
+ console.log('PASS: backend service API hook restored, enrolled AAL1 remains denied across records/Storage/RPC, AAL2 access and trigger grants');
+},{port:55451});

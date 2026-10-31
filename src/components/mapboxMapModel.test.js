@@ -112,6 +112,13 @@ test('import preview retains whole route, deadhead and driver framing', () => {
   assert.deepEqual(mapboxFocusPoints({ path, deadheadPath, stops, live }), [...path, ...deadheadPath, ...stops, live]);
 });
 
+test('a historical START remains in view even without live GPS or a completed road request', () => {
+  const stops = [{ lat: 43, lng: -77 }, { lat: 41, lng: -75 }];
+  const start = { lat: 40, lng: -74 };
+  assert.deepEqual(mapboxFocusPoints({ stops, start }), [...stops, start]);
+  assert.deepEqual(mapboxFocusPoints({ stops, start, fitToStops: true }), stops);
+});
+
 test('resetting the fit when the map is hidden re-centers the same route on re-entry', () => {
   const routeKey = 'driver-a:load-a';
   assert.equal(shouldFitMapbox({ routeKey, hasRoute: true }, routeKey, true), false);

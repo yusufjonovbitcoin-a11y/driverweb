@@ -1,0 +1,145 @@
+{
+  "reason": "Not reachable from the production entry; preserved for historical tests/reference. Not a production migration.",
+  "files": [
+    {
+      "from": "src/components/finance/FinanceWorkspace.jsx",
+      "to": "tests/legacy/src/components/finance/FinanceWorkspace.jsx",
+      "sha256Before": "5beac50bfc20c0dfb484e91a5c20b021e0962cf4b1f0d2950f347aefc8f8bed8"
+    },
+    {
+      "from": "src/components/finance/copy.js",
+      "to": "tests/legacy/src/components/finance/copy.js",
+      "sha256Before": "3ffce2ce7f2c82610cf09a063b3bf9c4a53dc950d4695a78cbaa77320a1930b0"
+    },
+    {
+      "from": "src/components/finance/DocumentDetail.jsx",
+      "to": "tests/legacy/src/components/finance/DocumentDetail.jsx",
+      "sha256Before": "f67f333b166d7b466ff7ab76d032b1c324a7435ec0b6563ecb3ec14f09edbaf5"
+    },
+    {
+      "from": "src/components/finance/DocumentForm.jsx",
+      "to": "tests/legacy/src/components/finance/DocumentForm.jsx",
+      "sha256Before": "1df3743cde25024ce91d724334a5def159cc9c8dc6110d099ee0bfda93b5cf48"
+    },
+    {
+      "from": "src/components/MockAnalyticsLoad.jsx",
+      "to": "tests/legacy/src/components/MockAnalyticsLoad.jsx",
+      "sha256Before": "a36b0d2cf3e5358564c1f49dc5c1ec5c81bd76f408198d1a83a2535c960795c7"
+    },
+    {
+      "from": "src/components/finance/PaySettings.jsx",
+      "to": "tests/legacy/src/components/finance/PaySettings.jsx",
+      "sha256Before": "7b985bcd9f42f0593280ab64444abee91bb5e3fad5b4c4aa0f644f9bb5489437"
+    },
+    {
+      "from": "src/data/mockData.js",
+      "to": "tests/legacy/src/data/mockData.js",
+      "sha256Before": "7e16ab53b6e6bf619a36cfaabcc3942f6f65dd872d9689b7839a182deaa98f27"
+    },
+    {
+      "from": "src/components/ImportDocumentDetails.jsx",
+      "to": "tests/legacy/src/components/ImportDocumentDetails.jsx",
+      "sha256Before": "131f257ee5e3a2aa97d11ac69dbef93a55e04c5c6a980fba4f8ee33751c22fb3"
+    },
+    {
+      "from": "src/services/finance/model.js",
+      "to": "tests/legacy/src/services/finance/model.js",
+      "sha256Before": "f7ed52d68da4f52a95f5b74a300b58a357f885cf34f2df0ffa8ba5adadc55a9f"
+    },
+    {
+      "from": "src/components/Navbar.jsx",
+      "to": "tests/legacy/src/components/Navbar.jsx",
+      "sha256Before": "5ac2fcf43d97bf0988b833aeefe46a465f1cb0f34ee8481fed037201479d62b0"
+    },
+    {
+      "from": "src/components/AnalyticsDashboardPanels.jsx",
+      "to": "tests/legacy/src/components/AnalyticsDashboardPanels.jsx",
+      "sha256Before": "abbf598d6aeec097cfb7c017c3ebac75f0716cbafa35c9fc64d17292744eae10"
+    },
+    {
+      "from": "src/components/MockAnalyticsLoadsList.jsx",
+      "to": "tests/legacy/src/components/MockAnalyticsLoadsList.jsx",
+      "sha256Before": "31100b2e71e809f6a16cab37550de59f021234ace3e5c2bde1ece1fcdc2e00df"
+    },
+    {
+      "from": "src/services/loadAnalytics.js",
+      "to": "tests/legacy/src/services/loadAnalytics.js",
+      "sha256Before": "53dd43e0ad096a0a0aef9139e96783878b3dd6e097a4e0fe061e3b90a868e5af"
+    },
+    {
+      "from": "src/services/mockAnalyticsLoad.js",
+      "to": "tests/legacy/src/services/mockAnalyticsLoad.js",
+      "sha256Before": "66139147693b3b75578c7498461b2178e56ca98d6e3517ed9bb3a97bf7f70685"
+    },
+    {
+      "from": "src/components/LoadTrashAction.jsx",
+      "to": "tests/legacy/src/components/LoadTrashAction.jsx",
+      "sha256Before": "4b17920a602d4af64a73fe53ac0306aba36dac18b9de862fd49d010d79b64de3"
+    },
+    {
+      "from": "src/services/finance/api.js",
+      "to": "tests/legacy/src/services/finance/api.js",
+      "sha256Before": "02c488735652800e5a66bcb38621c622c605f53582b20f1a13dfb4b12b931937"
+    },
+    {
+      "from": "src/services/analyticsDashboard.js",
+      "to": "tests/legacy/src/services/analyticsDashboard.js",
+      "sha256Before": "5221690b79278bbc6dd4877727354a800d171a1568944d3f4220f5ff4c64ea8a"
+    },
+    {
+      "from": "src/components/SavedLoadRecovery.jsx",
+      "to": "tests/legacy/src/components/SavedLoadRecovery.jsx",
+      "sha256Before": "15404e4488641b3ea5267e823f8472e7c2de9a0fd9fd0fd6957a36a7eb31afb1"
+    },
+    {
+      "from": "src/components/settlementModel.js",
+      "to": "tests/legacy/src/components/settlementModel.js",
+      "sha256Before": "5739c2254829bdba59aba1d7c93efe7fd6ce74a64234ddf0313aea3b660a2920"
+    },
+    {
+      "from": "src/components/finance/common.jsx",
+      "to": "tests/legacy/src/components/finance/common.jsx",
+      "sha256Before": "2a27f99cd631a01334df6c95cbf2fb2449500fc3992b3f8a7233e6ce5c01c05d"
+    },
+    {
+      "from": "src/services/accountingSettings.js",
+      "to": "tests/legacy/src/services/accountingSettings.js",
+      "sha256Before": "9aeafd9fc935574fa6aeb2ccf6c361bac14b5f73d3ee1d8d8c93f4c8f6221bf3"
+    },
+    {
+      "from": "src/services/finance/errors.js",
+      "to": "tests/legacy/src/services/finance/errors.js",
+      "sha256Before": "46c0c281704dc8c026b860bcee4ae640855c6c5c39e7b26e385c27b912eda83a"
+    },
+    {
+      "from": "src/services/loadImportResult.js",
+      "to": "tests/legacy/src/services/loadImportResult.js",
+      "sha256Before": "326c612c189022c34f3570fad86bbc8b46b576f91f40bce1279c52de2cbec156"
+    },
+    {
+      "from": "src/hooks/useImportEnrichment.js",
+      "to": "tests/legacy/src/hooks/useImportEnrichment.js",
+      "sha256Before": "a939c520e6aa6e2cb04b615418354892364a7b2ef67137db1fe90418f2ed0926"
+    },
+    {
+      "from": "src/services/tripAnalyticsDemo.js",
+      "to": "tests/legacy/src/services/tripAnalyticsDemo.js",
+      "sha256Before": "fc94d18bb171e6aabf063dce327a1260af164bc1e5717925ee6a24b6e4fc840b"
+    },
+    {
+      "from": "src/services/chatUnread.js",
+      "to": "tests/legacy/src/services/chatUnread.js",
+      "sha256Before": "3729949235280c599346c8a71860826987a726404172235ac4081792811ef80d"
+    },
+    {
+      "from": "src/components/finance/finance.css",
+      "to": "tests/legacy/src/components/finance/finance.css",
+      "sha256Before": "223d8c2ed26046f7c3a39f49da8e45a653cd5f7444bccace1a4c2344aa56e8b2"
+    },
+    {
+      "from": "supabase/migrations/20261016143657_tms_finance_core.sql",
+      "to": "tests/legacy/supabase/migrations/20261016143657_tms_finance_core.sql",
+      "sha256Before": "23c6b8bc461670b0f084908e8d66d5049478f613910951006e082b030474f6d8"
+    }
+  ]
+}

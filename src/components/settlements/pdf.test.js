@@ -47,6 +47,30 @@ test("PDF preserves Unicode driver name, exact net and repeated headers across p
   assert.match(text, /LOAD-49/);
   assert.ok((text.match(/Load number/g) || []).length >= 2);
 });
+test('inline editing targets follow the rendered PDF rows across page breaks', async () => {
+  const source = snapshot(50);
+  let fields;
+  const bytes = await createSettlementPdf(source, { ...options, onFields: value => { fields = value; } });
+  const pdf = await PDFDocument.load(bytes);
+  assert.ok(pdf.getPageCount() > 1);
+  const loadFields = fields.filter(field => field.loadIndex != null);
+  assert.equal(loadFields.length, 50 * 6);
+  assert.equal(new Set(loadFields.map(field => field.key)).size, loadFields.length);
+  assert.ok(loadFields.find(field => field.loadIndex === 49).page > 1);
+  for (const field of fields) {
+    assert.ok(field.page > 0 && field.page <= pdf.getPageCount());
+    assert.ok(field.x >= 0 && field.x + field.width <= 792);
+    assert.ok(field.y >= 0 && field.y + field.height <= 560);
+  }
+  assert.equal(fields.filter(field => field.key === 'driverName').length, pdf.getPageCount());
+  assert.equal(fields.filter(field => field.key === 'netOverride').length, 1);
+});
+
+test('reopening an approved statement generates identical bytes for safe delivery retries', async () => {
+  const source = { ...snapshot(), approvedAt: '2026-10-24T01:00:00Z' };
+  assert.deepEqual(await createSettlementPdf(source, options), await createSettlementPdf(source, options));
+});
+
 test("PDF output flags omit optional financial sections", async () => {
   const s = snapshot();
   s.calculation.settings.pdf = {

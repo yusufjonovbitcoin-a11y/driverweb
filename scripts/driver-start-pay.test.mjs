@@ -84,7 +84,7 @@ test('saved origin routing accepts old immutable fix and covers every ordered ro
       const n=Number(url.searchParams.get('q').split(' ')[0]);
       return Response.json({features:[{geometry:{type:'Point',coordinates:[-74+n/100,40]},properties:{
         feature_type:'address',match_code:{confidence:'exact',street:'matched'},context:{
-          address:{address_number:String(n)},region:{region_code:'NJ'},country:{country_code:'US'},postcode:{name:'12345'},
+          address:{address_number:String(n),street_name:'Road'},region:{region_code:'NJ'},country:{country_code:'US'},postcode:{name:'12345'},
         }}}]});
     }
     assert.ok(url.pathname.includes('/directions/'));
@@ -96,4 +96,59 @@ test('saved origin routing accepts old immutable fix and covers every ordered ro
   assert.equal(roads.length,4); assert.equal(roads.at(-1),'-74,40;-73.99,40');
   assert.equal(lease.origin.capturedAt,'2026-01-01T00:00:00Z');
   await assert.rejects(calculateStartDriverPayRoute(stops,{...lease.origin,latitude:NaN},'',fetcher,'token'),/Invalid saved START/);
+});
+
+const payStops = [
+  { type: 'pickup', address_line: '10 BURTON DRIVE', city: 'LONDONDERRY', region: 'NH', postal_code: '03053' },
+  { type: 'delivery', address_line: '2823 ANVIL BLOCK ROAD', city: 'ELLENWOOD', region: 'GA', postal_code: '30294' },
+];
+function addressFeature(number, street, region, postcode, point) {
+  return { geometry: { type: 'Point', coordinates: point }, properties: {
+    feature_type: 'address', match_code: { confidence: 'exact', street: 'matched' },
+    context: { address: { address_number: number, street_name: street },
+      region: { region_code: region }, country: { country_code: 'US' }, postcode: { name: postcode } },
+  } };
+}
+const burton = () => addressFeature('10', 'Burton Drive', 'NH', '03053', [-71.423448, 42.907044]);
+const button = () => addressFeature('10', 'Button Drive', 'NH', '03053', [-71.35371, 42.84968]);
+function addressFetcher(pickupFeatures) {
+  const roads = [];
+  return { roads, fetcher: async input => {
+    const url = new URL(input);
+    if (url.pathname.includes('/forward')) return Response.json({ features: url.searchParams.get('q').startsWith('10 ')
+      ? pickupFeatures : [addressFeature('2823', 'Anvil Block Rd', 'GA', '30294', [-84.3, 33.6])] });
+    roads.push(url.pathname.split('/').at(-1));
+    return Response.json({ code: 'Ok', routes: [{ geometry: '_p~iF~ps|U_ulLnnqC_mqNvxq`@', distance: 16093.44, duration: 600 }] });
+  } };
+}
+test('provider-labelled exact Burton/Button results use the independently matching street, not result order', async () => {
+  const f = addressFetcher([button(), burton()]);
+  const before = structuredClone(lease.origin);
+  const result = await calculateStartDriverPayRoute(payStops, lease.origin, '', f.fetcher, 'token');
+  assert.equal(result.provider, 'mapbox'); assert.equal(result.loadedMiles, 10); assert.equal(result.deadheadMiles, 10);
+  assert.equal(f.roads[0], '-71.423448,42.907044;-84.3,33.6');
+  assert.equal(f.roads[1], '-74,40;-71.423448,42.907044'); assert.deepEqual(lease.origin, before);
+});
+test('a wrong street labelled exact cannot silently substitute for the printed address', async () => {
+  const f = addressFetcher([button()]);
+  await assert.rejects(calculateStartDriverPayRoute(payStops, lease.origin, '', f.fetcher, 'token'), /exact stop address/);
+  assert.deepEqual(f.roads, []);
+});
+test('street matching keeps number/state/postcode guards and rejects missing structured street data', async () => {
+  for (const changed of [
+    addressFeature('11', 'Burton Drive', 'NH', '03053', [-71, 42]),
+    addressFeature('10', 'Burton Drive', 'MA', '03053', [-71, 42]),
+    addressFeature('10', 'Burton Drive', 'NH', '03051', [-71, 42]),
+    addressFeature('10', undefined, 'NH', '03053', [-71, 42]),
+  ]) {
+    const f = addressFetcher([changed]);
+    await assert.rejects(calculateStartDriverPayRoute(payStops, lease.origin, '', f.fetcher, 'token'), /exact stop address/);
+    assert.deepEqual(f.roads, []);
+  }
+});
+test('two genuinely matching candidates remain ambiguous instead of choosing arbitrary payable mileage', async () => {
+  const other = burton(); other.geometry.coordinates = [-71.5, 42.8];
+  const f = addressFetcher([burton(), other]);
+  await assert.rejects(calculateStartDriverPayRoute(payStops, lease.origin, '', f.fetcher, 'token'), /exact stop address/);
+  assert.deepEqual(f.roads, []);
 });

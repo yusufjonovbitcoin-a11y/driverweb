@@ -8,6 +8,25 @@ const stopsInLink = url => {
   return [params.get('origin'), ...(params.get('waypoints')?.split('|') || []), params.get('destination')];
 };
 
+test('START is prepended before every pickup and delivery without changing the stored stops', () => {
+  const stops = [stop(1), stop(2), stop(3, { markerLabel: 'D' })];
+  const before = structuredClone(stops);
+  const routes = loadGoogleMapsRoutes(stops, { lat: 40.5, lng: -74.2 });
+  assert.deepEqual(stopsInLink(routes[0].url), ['40.5,-74.2', ...stops.map(item => `${item.address}, Hilton, NY, 14468`)]);
+  assert.deepEqual(stops, before);
+  for (const position of [{ lat: null, lng: 10 }, { lat: ' ', lng: 10 }, { lat: 91, lng: 10 }]) {
+    assert.deepEqual(loadGoogleMapsRoutes(stops, position), []);
+  }
+});
+
+test('splitting a long START route preserves the start and every intermediate stop exactly once', () => {
+  const stops = Array.from({ length: 14 }, (_, index) => stop(index + 1));
+  const routes = loadGoogleMapsRoutes(stops, { lat: 0, lng: 0 });
+  const chain = routes.flatMap((part, index) => index ? stopsInLink(part.url).slice(1) : stopsInLink(part.url));
+  assert.deepEqual(chain, ['0,0', ...stops.map(item => `${item.address}, Hilton, NY, 14468`)]);
+  assert.equal(routes[0].from, 'S');
+});
+
 test('one Google Maps link retains every pickup/delivery in the supplied order', () => {
   const stops = [stop(1), stop(2), stop(3, { markerLabel: 'D1' }), stop(4, { markerLabel: 'D2' })];
   const before = structuredClone(stops);

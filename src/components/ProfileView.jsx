@@ -1,4 +1,4 @@
-import React, { useCallback, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   connectGmailIntegration,
@@ -6,7 +6,6 @@ import {
   fetchGmailIntegration,
 } from '../services/operationsService';
 import { 
-  Building2, 
   Mail, 
   MapPin, 
   Plus, 
@@ -15,7 +14,6 @@ import {
   X,
   Search,
   Truck,
-  UserPlus,
   Users,
   ChevronRight,
   UserCog,
@@ -35,12 +33,14 @@ import { roleLabel } from '../i18n/labels';
 import { localizedError } from '../i18n/errors';
 import FleetVehiclesPanel from './FleetVehiclesPanel';
 import DriverVehicleAssignmentModal from './DriverVehicleAssignmentModal';
-import DriverContactEditModal from './DriverContactEditModal';
+import DriverEditPage from './DriverEditPage';
+import CreateCompanyMemberModal from './CreateCompanyMemberModal';
 import DriverProfilePanel from './DriverProfilePanel';
-import ProfileSettingsHub from './ProfileSettingsHub';
-import { ProfileContactPanel, ProfileNotificationsPanel, ProfilePersonalPanel, ProfileSectionHeading, ProfileSecurityPanel } from './ProfileAccountPanels';
-import { summarizeWorkspaceLoads } from './loadWorkspaceModel.js';
+import { ProfileNotificationsPanel, ProfilePersonalPanel, ProfileSectionHeading, ProfileSecurityPanel } from './ProfileAccountPanels';
 import './profileCenter.css';
+import useProfileRoute from '../hooks/useProfileRoute';
+import { useSettingsDraft } from '../hooks/useSettingsDraft';
+import { activeLoadsForDriver, driverRosterState } from './driverRosterModel';
 
 function GmailIcon({ className = '' }) {
   return (
@@ -64,7 +64,6 @@ export default function ProfileView({
   browserPush,
   onSaveProfile,
   onNavigate,
-  onOpenDriver,
   selectedDriverId = null,
   initialSection,
   onAssignDriverLoad,
@@ -83,17 +82,15 @@ export default function ProfileView({
   onEditDriverClosed,
 }) {
   const { t } = useTranslation();
-  // Inline Form State (NO POPUP MODAL - 100% INLINE FULL-WIDTH FORM)
   const [isAddFormOpen, setIsAddFormOpen] = useState(false);
   const [successToast, setSuccessToast] = useState('');
-  const [formError, setFormError] = useState('');
-  const [isSubmitting, setIsSubmitting] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('ALL');
-  const [companyMemberView, setCompanyMemberView] = useState('drivers');
-  const [activeSection, setActiveSection] = useState(
-    initialSection || (initialDriverToEditId || selectedDriverId ? 'company' : 'settings'),
-  );
+  const [route, navigateProfile] = useProfileRoute({ section: initialSection, driver: selectedDriverId, edit: initialDriverToEditId });
+  const companyMemberView = route.team;
+  const setCompanyMemberView = team => navigateProfile({ team, driver: null, edit: null });
+  const [fleetActionsTarget, setFleetActionsTarget] = useState(null);
+  const activeSection = route.section === 'integrations' && currentUser?.roleCode !== 'company_admin' ? 'company' : route.section;
   const [gmailConnection, setGmailConnection] = useState(null);
   const [gmailEmail, setGmailEmail] = useState('');
   const [gmailAppPassword, setGmailAppPassword] = useState('');
@@ -104,45 +101,21 @@ export default function ProfileView({
   const [localeSaving, setLocaleSaving] = useState(false);
   const [deletingMemberId, setDeletingMemberId] = useState(null);
   const [vehicleAssignmentDriver, setVehicleAssignmentDriver] = useState(null);
-  const [editingDriverId, setEditingDriverId] = useState(initialDriverToEditId);
-  const editingDriver = drivers.find((driver) => driver.id === editingDriverId);
-  const selectedProfileDriver = drivers.find((driver) => driver.id === selectedDriverId) || null;
+  const setEditingDriverId = id => navigateProfile({ section: 'company', edit: id });
+  const editingDriver = drivers.find(driver => driver.id === route.edit);
+  const selectedProfileDriver = drivers.find(driver => driver.id === route.driver) || null;
+  const openDriver = driver => navigateProfile({ section: 'company', team: 'drivers', driver: driver?.id || null, edit: null });
   const closeDriverEditor = () => {
-    setEditingDriverId(null);
-    onEditDriverClosed?.();
+    if (navigateProfile({ edit: null })) onEditDriverClosed?.();
   };
-  const addFormToggleRef = useRef(null);
-
-  // Form State for Adding Driver
-  const [name, setName] = useState('');
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [role, setRole] = useState('driver');
-  const [phone, setPhone] = useState('');
-  const [gmailLabel, setGmailLabel] = useState('');
-  const handlePrepareForm = () => {
-    setName('');
-    setEmail('');
-    setPassword('');
-    setRole('driver');
-    setFormError('');
-    setPhone('');
-    setGmailLabel('');
-  };
-
-  const closeAddForm = () => {
-    setIsAddFormOpen(false);
-    setFormError('');
-    requestAnimationFrame(() => addFormToggleRef.current?.focus());
-  };
-
+  useSettingsDraft(Boolean(gmailAppPassword), gmailSaving, t('driverSettings.discardChanges'));
   const changeSection = (sectionId, { focusPanel = false, scrollPanel = false } = {}) => {
+    if (!navigateProfile({ section: sectionId, edit: null, driver: null })) return;
     if (activeSection === 'integrations' && sectionId !== 'integrations') {
       setGmailAppPassword('');
       setGmailPasswordVisible(false);
       setGmailError('');
     }
-    setActiveSection(sectionId);
     if (focusPanel || scrollPanel) {
       requestAnimationFrame(() => {
         const panel = document.getElementById('profile-section-panel');
@@ -167,6 +140,11 @@ export default function ProfileView({
       setGmailLoading(false);
     }
   }, [canManageIntegrations, t]);
+
+  useEffect(() => {
+    // oxlint-disable-next-line react/set-state-in-effect -- Restore remote connection status when the integration route opens.
+    if (activeSection === 'integrations') void refreshGmailConnection();
+  }, [activeSection, refreshGmailConnection]);
 
   const handleGmailConnect = async (event) => {
     event.preventDefault();
@@ -220,43 +198,6 @@ export default function ProfileView({
     }
   };
 
-  const handleToggleAddForm = () => {
-    if (!isAddFormOpen) {
-      handlePrepareForm();
-      setIsAddFormOpen(true);
-    } else {
-      closeAddForm();
-    }
-  };
-
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    if (!name.trim() || !email.trim() || !phone.trim() || password.length < 12 || isSubmitting) return;
-
-    const newDriver = {
-      name: name.trim(),
-      email: email.trim().toLowerCase(),
-      password,
-      role,
-      phone: phone.trim(),
-      gmailLabel: role === 'driver' ? (gmailLabel.trim() || name.trim()) : null,
-    };
-
-    setIsSubmitting(true);
-    setFormError('');
-    try {
-      await onAddDriver(newDriver);
-      closeAddForm();
-      const roleName = roleLabel(t, role);
-      setSuccessToast(t('profile.accountCreated', { role: roleName, name: newDriver.name }));
-      setTimeout(() => setSuccessToast(''), 4000);
-    } catch (error) {
-      setFormError(localizedError(t, error, 'errors.accountCreate'));
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
   const handleDeleteMember = async (member) => {
     if (!onDeleteMember || deletingMemberId) return false;
     const confirmationKey = member.role === 'dispatcher'
@@ -265,8 +206,9 @@ export default function ProfileView({
     if (!window.confirm(t(confirmationKey, { name: member.name }))) return false;
     setDeletingMemberId(member.id);
     try {
-      await onDeleteMember(member);
-      if (member.id === selectedDriverId) onOpenDriver?.(null);
+      const deleted = await onDeleteMember(member);
+      if (deleted === false) return false;
+      if (member.id === route.driver) openDriver(null);
       return true;
     } finally {
       setDeletingMemberId(null);
@@ -274,12 +216,9 @@ export default function ProfileView({
   };
 
   const totalDrivers = drivers.length;
-  const availableDrivers = drivers.filter(d => !loads.some(l => l.driverId === d.id && l.status !== 'COMPLETED')).length;
-  const onDutyDrivers = totalDrivers - availableDrivers;
-  const { active: activeLoads } = summarizeWorkspaceLoads(loads);
-  const completedLoads = loads.filter((load) => (
-    load.databaseStatus ? load.databaseStatus === 'completed' : load.status === 'COMPLETED'
-  )).length;
+  const stateFor = driver => driverRosterState(driver, activeLoadsForDriver(loads, driver.id));
+  const stateLabels = { AVAILABLE: t('drivers.available'), ON_LOAD: t('drivers.onLoad'), OFF_DUTY: t('driverStatus.off_duty'), SUSPENDED: t('driverSettings.suspended') };
+  const stateCount = state => drivers.filter(driver => stateFor(driver) === state).length;
   const notificationCount = unreadChatCount + unreadInboxCount;
   const handleLocaleChange = async (value) => {
     setLocaleSaving(true);
@@ -290,9 +229,8 @@ export default function ProfileView({
 
   // Filter drivers for table
   const filteredDrivers = drivers.filter(driver => {
-    const activeLoad = loads.find(l => l.driverId === driver.id && l.status !== 'COMPLETED');
-    if (statusFilter === 'AVAILABLE' && activeLoad) return false;
-    if (statusFilter === 'ON_DUTY' && !activeLoad) return false;
+    const activeLoad = activeLoadsForDriver(loads, driver.id)[0];
+    if (statusFilter !== 'ALL' && stateFor(driver) !== statusFilter) return false;
 
     if (!searchQuery.trim()) return true;
     const q = searchQuery.toLowerCase();
@@ -315,11 +253,9 @@ export default function ProfileView({
   });
 
   const sections = [
-    { id: 'settings', label: t('profile.generalTab') },
     { id: 'company', label: t('profile.teamTab') },
     { id: 'overview', label: t('profile.personal') },
     ...(canManageIntegrations ? [{ id: 'integrations', label: t('profile.integrations') }] : []),
-    { id: 'contact', label: t('profile.contact') },
     { id: 'security', label: t('profile.security') },
     { id: 'notifications', label: t('profile.notifications') },
   ];
@@ -342,7 +278,7 @@ export default function ProfileView({
       }}>
         {sections.map(section => <button key={section.id} id={`profile-tab-${section.id}`} type="button" role="tab"
           aria-selected={activeSection === section.id} tabIndex={activeSection === section.id ? 0 : -1} aria-controls="profile-section-panel"
-          onClick={() => { changeSection(section.id, { scrollPanel: true }); if (section.id === 'integrations') refreshGmailConnection(); }}>
+          onClick={() => { changeSection(section.id, { scrollPanel: true }); }}>
           {section.label}{section.id === 'notifications' && notificationCount > 0 && <span className="profile-tab-count">{notificationCount}</span>}
         </button>)}
       </div>
@@ -369,35 +305,10 @@ export default function ProfileView({
         tabIndex={0}
         className={`profile-section-content profile-section-${activeSection} space-y-6 focus:outline-none`}
       >
-        {activeSection === 'settings' && <>
-          <section className="profile-company-summary" aria-label={t('common.company')}>
-            <span className="profile-company-symbol"><Building2 size={28} aria-hidden="true" /></span>
-            <div className="profile-company-summary-copy"><h2>{currentUser?.company || t('common.notProvided')}</h2>
-              <dl><div><dt>{t('common.email')}</dt><dd>{currentUser?.email || '—'}</dd></div><div><dt>{t('common.phone')}</dt><dd>{currentUser?.phone || '—'}</dd></div></dl>
-            </div>
-            <div className="profile-identity-stats">
-              <span><strong>{totalDrivers}</strong>{t('nav.drivers')}</span>
-              <span><strong>{activeLoads}</strong>{t('profile.activeLoads')}</span>
-              <span><strong>{completedLoads}</strong>{t('profile.completed')}</span>
-            </div>
-            <button type="button" className="profile-summary-edit" onClick={() => changeSection('overview', { focusPanel: true })}><Pencil size={14} aria-hidden="true" />{t('common.edit')}</button>
-          </section>
-          <ProfileSettingsHub currentUser={currentUser}
-          locale={locale} localeSaving={localeSaving} timeZone={timeZone} theme={theme} toggleTheme={toggleTheme}
-          notificationCount={notificationCount} canManageIntegrations={canManageIntegrations} gmailConnection={gmailConnection}
-          onSection={section => { changeSection(section, { focusPanel: true }); if (section === 'integrations') refreshGmailConnection(); }}
-          onLocaleChange={handleLocaleChange}
-          onTimeZoneChange={onTimeZoneChange} />
-        </>}
-
         {activeSection === 'overview' && (
           <ProfilePersonalPanel currentUser={currentUser} locale={locale} localeSaving={localeSaving} timeZone={timeZone}
-            onLocaleChange={handleLocaleChange} onTimeZoneChange={onTimeZoneChange} onSaveProfile={onSaveProfile} />
+            theme={theme} toggleTheme={toggleTheme} onLocaleChange={handleLocaleChange} onTimeZoneChange={onTimeZoneChange} onSaveProfile={onSaveProfile} />
         )}
-
-      {activeSection === 'contact' && (
-          <ProfileContactPanel currentUser={currentUser} timeZone={timeZone} />
-      )}
 
       {activeSection === 'integrations' && canManageIntegrations && (
         <div className="profile-gmail-layout">
@@ -427,7 +338,7 @@ export default function ProfileView({
             </div>
 
             {gmailError && (
-              <div role="alert" className="mt-4 flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-xs font-semibold text-red-700 dark:border-red-900 dark:bg-red-950/30 dark:text-red-300">
+              <div id="gmail-form-error" role="alert" className="mt-4 flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-xs font-semibold text-red-700 dark:border-red-900 dark:bg-red-950/30 dark:text-red-300">
                 <CircleAlert className="mt-0.5 h-4 w-4 flex-none" aria-hidden="true" />
                 <span>{gmailError}</span>
               </div>
@@ -444,7 +355,7 @@ export default function ProfileView({
               <fieldset disabled={gmailSaving || gmailLoading} className="space-y-4 disabled:opacity-70">
               <div>
                 <label htmlFor="gmail-mailbox-email" className="mb-1.5 block text-xs font-bold text-zinc-600 dark:text-zinc-300">{t('profile.gmailAddress')}</label>
-                <input id="gmail-mailbox-email" type="email" inputMode="email" autoComplete="email" required value={gmailEmail} onChange={(event) => setGmailEmail(event.target.value)} placeholder="company@gmail.com" className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3.5 py-3 text-sm text-zinc-900 outline-none transition placeholder:text-zinc-400 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100" />
+                <input id="gmail-mailbox-email" aria-invalid={gmailError ? true : undefined} aria-describedby={gmailError ? 'gmail-form-error' : undefined} type="email" inputMode="email" autoComplete="email" required value={gmailEmail} onChange={(event) => setGmailEmail(event.target.value)} placeholder="company@gmail.com" className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3.5 py-3 text-sm text-zinc-900 outline-none transition placeholder:text-zinc-400 focus:border-blue-600 focus:ring-2 focus:ring-blue-600/20 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100" />
               </div>
               <div>
                 <div className="mb-1.5 flex items-center justify-between gap-3">
@@ -452,7 +363,7 @@ export default function ProfileView({
                   <a href="https://myaccount.google.com/apppasswords" target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-[11px] font-semibold workspace-link hover:underline">{t('profile.getAppPassword')} <ExternalLink className="h-3 w-3" aria-hidden="true" /></a>
                 </div>
                 <div className="relative">
-                  <input id="gmail-app-password" type={gmailPasswordVisible ? 'text' : 'password'} autoComplete="new-password" required aria-describedby="gmail-app-password-help gmail-vault-help" value={gmailAppPassword} onChange={(event) => setGmailAppPassword(event.target.value)} placeholder="xxxx xxxx xxxx xxxx" className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3.5 py-3 pr-11 font-mono text-sm tracking-wider text-zinc-900 outline-none transition placeholder:tracking-normal placeholder:text-zinc-400 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 disabled:cursor-not-allowed dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100" />
+                  <input id="gmail-app-password" type={gmailPasswordVisible ? 'text' : 'password'} autoComplete="new-password" required aria-invalid={gmailError ? true : undefined} aria-describedby={`gmail-app-password-help gmail-vault-help${gmailError ? ' gmail-form-error' : ''}`} value={gmailAppPassword} onChange={(event) => setGmailAppPassword(event.target.value)} placeholder="xxxx xxxx xxxx xxxx" className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3.5 py-3 pr-11 font-mono text-sm tracking-wider text-zinc-900 outline-none transition placeholder:tracking-normal placeholder:text-zinc-400 focus:border-blue-600 focus:ring-2 focus:ring-blue-600/20 disabled:cursor-not-allowed dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100" />
                   <button type="button" onClick={() => setGmailPasswordVisible((visible) => !visible)} aria-label={gmailPasswordVisible ? t('common.hidePassword') : t('common.showPassword')} className="absolute inset-y-0 right-0 grid w-11 place-items-center text-zinc-400 transition hover:text-zinc-700 dark:hover:text-zinc-200">
                     {gmailPasswordVisible ? <EyeOff className="h-4 w-4" aria-hidden="true" /> : <Eye className="h-4 w-4" aria-hidden="true" />}
                   </button>
@@ -516,13 +427,16 @@ export default function ProfileView({
       )}
 
       {activeSection === 'company' && (
-        selectedProfileDriver && companyMemberView === 'drivers' ? (
+        currentUser?.roleCode === 'company_admin' && editingDriver ? (
+          <DriverEditPage key={editingDriver.id} driver={editingDriver} onBack={closeDriverEditor}
+            backToList={!selectedProfileDriver} onWorkspaceRefresh={onWorkspaceRefresh} />
+        ) : selectedProfileDriver && companyMemberView === 'drivers' ? (
           <DriverProfilePanel
             driver={selectedProfileDriver}
             loads={loads}
             canManage={currentUser?.roleCode === 'company_admin'}
             deleting={deletingMemberId === selectedProfileDriver.id}
-            onBack={() => onOpenDriver?.(null)}
+            onBack={() => openDriver(null)}
             onEdit={(driver) => setEditingDriverId(driver.id)}
             onAssignVehicle={setVehicleAssignmentDriver}
             onAssignLoad={onAssignDriverLoad}
@@ -532,9 +446,6 @@ export default function ProfileView({
           />
         ) : (
         <section className="profile-panel profile-company-panel">
-          <ProfileSectionHeading title={t('common.company')} description={t('profile.companyTeamHint')} />
-          {formError && <p id="member-form-error" role="alert" className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-600 dark:border-red-900 dark:bg-red-950/30 dark:text-red-400">{formError}</p>}
-
       {/* 2. HAYDOVCHILARNI BOSHQARISH & AMALLAR PANELI */}
       <div className="profile-company-toolbar flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
@@ -543,30 +454,12 @@ export default function ProfileView({
           </h3>
         </div>
 
-        {/* Toggle Form Button (Modal emas, sahifadagi formani ochish/yopish) */}
-        {companyMemberView !== 'vehicles' && <button
-          ref={addFormToggleRef}
-          onClick={handleToggleAddForm}
-          aria-expanded={isAddFormOpen}
-          aria-controls="new-member-form"
-          className={`inline-flex items-center space-x-2 px-4 py-2.5 rounded-xl font-bold text-sm shadow-xs transition-colors cursor-pointer self-start sm:self-auto focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-600 focus-visible:ring-offset-2 ${
-            isAddFormOpen
-              ? 'bg-zinc-200 hover:bg-zinc-300 text-zinc-800 dark:bg-zinc-800 dark:hover:bg-zinc-700 dark:text-zinc-100'
-              : 'bg-zinc-900 hover:bg-zinc-800 text-white dark:bg-zinc-100 dark:hover:bg-white dark:text-zinc-950'
-          }`}
-        >
-          {isAddFormOpen ? (
-            <>
-              <X className="w-4 h-4" />
-              <span>{t('profile.closeForm')}</span>
-            </>
-          ) : (
-            <>
-              <Plus className="w-4 h-4" />
-              <span>{t('profile.addUser')}</span>
-            </>
-          )}
+        {['drivers', 'dispatchers'].includes(companyMemberView) && <button type="button"
+          onClick={() => setIsAddFormOpen(true)} aria-haspopup="dialog" aria-controls={isAddFormOpen ? 'new-member-form' : undefined}
+          className="profile-team-add">
+          <Plus className="h-4 w-4" aria-hidden="true" />{t('profile.addUser')}
         </button>}
+        {companyMemberView === 'vehicles' && <div ref={setFleetActionsTarget} className="profile-company-actions" />}
       </div>
 
           <div role="group" aria-label={t('profile.members')} className="profile-company-tabs">
@@ -608,6 +501,7 @@ export default function ProfileView({
         >
           <Truck className="h-4 w-4" aria-hidden="true" /> {t('fleet.title')}
         </button>
+
       </div>
       <p className="sr-only" role="status" aria-live="polite">
         {companyMemberView === 'drivers'
@@ -617,174 +511,11 @@ export default function ProfileView({
             : t('fleet.title')}
       </p>
 
-      {/* 3. YANGI HAYDOVCHI QO'SHISH FORMASI — TO'LIQ SAHIFADA (MODAL EMAS, INLINE FULL-WIDTH FORM) */}
-      {isAddFormOpen && companyMemberView !== 'vehicles' && (
-        <div id="new-member-form" className="w-full bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl p-5 lg:p-6 space-y-5 animate-in fade-in slide-in-from-top-3 duration-200 shadow-xs">
-          <div className="flex items-center justify-between pb-3 border-b border-zinc-200 dark:border-zinc-800">
-            <div className="flex items-center space-x-2.5">
-              <div className="w-8 h-8 rounded-xl bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-950 flex items-center justify-center font-bold">
-                <UserPlus className="w-4 h-4" />
-              </div>
-              <div>
-                <h4 className="font-bold text-base text-zinc-900 dark:text-zinc-100">
-                  {t('profile.createNewUser')}
-                </h4>
-                <p className="text-xs text-zinc-500 dark:text-zinc-400">
-                  {t('profile.accountImmediateHint')}
-                </p>
-              </div>
-            </div>
-
-            <button
-              type="button"
-              aria-label={t('profile.closeUserForm')}
-              onClick={closeAddForm}
-              className="p-1.5 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-600 focus-visible:ring-offset-2"
-              title={t('profile.closeForm')}
-            >
-              <X className="w-5 h-5" />
-            </button>
-          </div>
-
-          <form
-            onSubmit={handleSubmit}
-            className="space-y-4"
-            aria-describedby={formError ? 'member-form-error' : undefined}
-          >
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              {/* F.I.Sh */}
-              <div>
-                <label htmlFor="member-name" className="block text-xs font-mono font-bold text-zinc-500 dark:text-zinc-400 uppercase mb-1.5">
-                  {t('profile.fullName')} *
-                </label>
-                <input
-                  type="text"
-                  id="member-name"
-                  required
-                  autoFocus
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  placeholder={t('profile.nameExample')}
-                  className="w-full bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl px-3.5 py-2.5 text-sm text-zinc-900 dark:text-zinc-100 placeholder-zinc-400 focus:outline-none focus:border-zinc-400 focus-visible:ring-2 focus-visible:ring-teal-600 focus-visible:ring-offset-2 transition-colors"
-                />
-              </div>
-
-              {currentUser?.roleCode === 'company_admin' && (
-                <div>
-                  <label htmlFor="member-role" className="block text-xs font-mono font-bold text-zinc-500 dark:text-zinc-400 uppercase mb-1.5">
-                    {t('profile.position')} *
-                  </label>
-                  <select
-                    id="member-role"
-                    value={role}
-                    onChange={(e) => setRole(e.target.value)}
-                    className="w-full bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl px-3.5 py-2.5 text-sm text-zinc-900 dark:text-zinc-100 focus:outline-none focus:border-zinc-400 focus-visible:ring-2 focus-visible:ring-teal-600 focus-visible:ring-offset-2 transition-colors cursor-pointer"
-                  >
-                <option value="driver">{t('roles.driver')}</option>
-                <option value="dispatcher">{t('roles.dispatcher')}</option>
-                  </select>
-                </div>
-              )}
-
-              <div>
-                <label htmlFor="member-email" className="block text-xs font-mono font-bold text-zinc-500 dark:text-zinc-400 uppercase mb-1.5">
-                  {t('common.email')} *
-                </label>
-                <input
-                  type="email"
-                  id="member-email"
-                  required
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder={role === 'dispatcher' ? 'dispatcher@company.com' : 'driver@company.com'}
-                  className="w-full bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl px-3.5 py-2.5 text-sm text-zinc-900 dark:text-zinc-100 placeholder-zinc-400 focus:outline-none focus:border-zinc-400 focus-visible:ring-2 focus-visible:ring-teal-600 focus-visible:ring-offset-2 transition-colors"
-                />
-              </div>
-
-              {role === 'driver' && (
-                <div>
-                  <label htmlFor="member-gmail-label" className="block text-xs font-mono font-bold text-zinc-500 dark:text-zinc-400 uppercase mb-1.5">
-                    {t('profile.gmailDriverLabel')}
-                  </label>
-                  <input
-                    type="text"
-                    id="member-gmail-label"
-                    maxLength={100}
-                    value={gmailLabel}
-                    onChange={(e) => setGmailLabel(e.target.value)}
-                    placeholder={name.trim() || t('profile.nameExample')}
-                    className="w-full bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl px-3.5 py-2.5 text-sm text-zinc-900 dark:text-zinc-100 placeholder-zinc-400 focus:outline-none focus:border-zinc-400 focus-visible:ring-2 focus-visible:ring-teal-600 focus-visible:ring-offset-2 transition-colors"
-                  />
-                  <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">{t('profile.gmailDriverLabelHint')}</p>
-                </div>
-              )}
-
-              <div>
-                <label htmlFor="member-password" className="block text-xs font-mono font-bold text-zinc-500 dark:text-zinc-400 uppercase mb-1.5">
-                  {t('profile.initialPassword')} *
-                </label>
-                <input
-                  type="password"
-                  id="member-password"
-                  required
-                  minLength={12}
-                  autoComplete="new-password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder={t('profile.passwordMinimum')}
-                  className="w-full bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl px-3.5 py-2.5 text-sm text-zinc-900 dark:text-zinc-100 placeholder-zinc-400 focus:outline-none focus:border-zinc-400 focus-visible:ring-2 focus-visible:ring-teal-600 focus-visible:ring-offset-2 transition-colors"
-                />
-              </div>
-
-              {/* Telefon */}
-              <div>
-                <label htmlFor="member-phone" className="block text-xs font-mono font-bold text-zinc-500 dark:text-zinc-400 uppercase mb-1.5">
-                  {t('common.phone')} *
-                </label>
-                <input
-                  type="text"
-                  id="member-phone"
-                  required
-                  value={phone}
-                  onChange={(e) => setPhone(e.target.value)}
-                  placeholder="+1 (773) 555-0199"
-                  className="w-full bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl px-3.5 py-2.5 text-sm text-zinc-900 dark:text-zinc-100 placeholder-zinc-400 focus:outline-none focus:border-zinc-400 focus-visible:ring-2 focus-visible:ring-teal-600 focus-visible:ring-offset-2 transition-colors"
-                />
-              </div>
-
-
-            </div>
-
-            {/* Actions */}
-            <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-3 border-t border-zinc-100 dark:border-zinc-800">
-              <p className="text-xs text-zinc-500 dark:text-zinc-400">
-                {t('profile.accountImmediateNote')}
-              </p>
-              <div className="flex items-center space-x-3 self-end sm:self-auto">
-                <button
-                  type="button"
-                  onClick={closeAddForm}
-                  className="px-4 py-2 rounded-xl border border-zinc-200 dark:border-zinc-800 text-sm font-bold text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-600 focus-visible:ring-offset-2"
-                >
-                  {t('common.cancel')}
-                </button>
-                <button
-                  type="submit"
-                  disabled={isSubmitting}
-                  className="px-5 py-2 rounded-xl bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-950 text-sm font-bold shadow-xs hover:bg-zinc-800 dark:hover:bg-white transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-600 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  {isSubmitting ? t('profile.creatingAccount') : t('profile.createAccount')}
-                </button>
-              </div>
-            </div>
-          </form>
-        </div>
-      )}
-
       {companyMemberView === 'vehicles' ? (
         <FleetVehiclesPanel
           canManage={currentUser?.roleCode === 'company_admin'}
           onWorkspaceRefresh={onWorkspaceRefresh}
+          actionsTarget={fleetActionsTarget}
         />
       ) : companyMemberView === 'drivers' ? (
       <div id="company-members-panel" role="region" aria-label={t('nav.drivers')} className="space-y-4">
@@ -798,72 +529,40 @@ export default function ProfileView({
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder={t('drivers.searchPlaceholder')}
-            className="w-full bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl pl-9 pr-3.5 py-2 text-sm text-zinc-900 dark:text-zinc-100 placeholder-zinc-400 focus:outline-none focus:border-zinc-400 focus-visible:ring-2 focus-visible:ring-teal-600 focus-visible:ring-offset-2 transition-colors"
+            className="w-full bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl pl-9 pr-3.5 py-2 text-sm text-zinc-900 dark:text-zinc-100 placeholder-zinc-400 focus:outline-none focus:border-zinc-400 focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-offset-2 transition-colors"
           />
         </div>
 
-        <div role="group" aria-label={t('profile.driverStatusFilter')} className="grid w-full grid-cols-3 rounded-xl bg-zinc-100 p-1 text-xs font-bold dark:bg-zinc-900 sm:w-auto">
-          <button
-            onClick={() => setStatusFilter('ALL')}
-            aria-pressed={statusFilter === 'ALL'}
-            className={`px-3 py-1.5 rounded-lg transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-600 ${
-              statusFilter === 'ALL'
-                ? 'bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 shadow-xs'
-                : 'text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-200'
-            }`}
-          >
-            {t('common.all')} ({drivers.length})
-          </button>
-          <button
-            onClick={() => setStatusFilter('AVAILABLE')}
-            aria-pressed={statusFilter === 'AVAILABLE'}
-            className={`px-3 py-1.5 rounded-lg transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-600 ${
-              statusFilter === 'AVAILABLE'
-                ? 'bg-white dark:bg-zinc-800 text-emerald-600 dark:text-emerald-400 shadow-xs'
-                : 'text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-200'
-            }`}
-          >
-            {t('drivers.available')} ({availableDrivers})
-          </button>
-          <button
-            onClick={() => setStatusFilter('ON_DUTY')}
-            aria-pressed={statusFilter === 'ON_DUTY'}
-            className={`px-3 py-1.5 rounded-lg transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-600 ${
-              statusFilter === 'ON_DUTY'
-                ? 'bg-white dark:bg-zinc-800 text-blue-600 dark:text-blue-400 shadow-xs'
-                : 'text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-200'
-            }`}
-          >
-            {t('drivers.onLoad')} ({onDutyDrivers})
-          </button>
+        <div role="group" aria-label={t('profile.driverStatusFilter')} className="profile-status-filters">
+          {['ALL', 'AVAILABLE', 'ON_LOAD', 'SUSPENDED'].map(state => <button key={state} type="button" aria-pressed={statusFilter === state} onClick={() => setStatusFilter(state)}>{state === 'ALL' ? t('common.all') : stateLabels[state]} <span>{state === 'ALL' ? totalDrivers : stateCount(state)}</span></button>)}
         </div>
       </div>
       {/* 4. MOBILDA LABEL/VALUE QATORLI IXCHAM JADVAL */}
-      <ul className="grid gap-3 lg:hidden">
+      <ul className="profile-mobile-list grid gap-3 lg:hidden">
         {filteredDrivers.length === 0 ? (
           <li className="rounded-2xl border border-zinc-200 bg-white px-4 py-10 text-center text-sm font-medium text-zinc-400 dark:border-zinc-800 dark:bg-zinc-900">
             {t('drivers.noDrivers')}
           </li>
         ) : filteredDrivers.map((driver) => {
-          const activeLoad = loads.find(l => l.driverId === driver.id && l.status !== 'COMPLETED');
+          const activeLoad = activeLoadsForDriver(loads, driver.id)[0];
           const details = [
             [t('drivers.truck'), driver.truck || t('common.notProvided'), false],
             [t('drivers.trailer'), driver.trailer || t('common.notProvided'), false],
             [t('drivers.location'), driver.currentLocation || t('common.offline'), false],
-            [t('common.status'), activeLoad ? `${t('drivers.onLoad')} (${activeLoad.loadNumber})` : t('drivers.available'), true],
+            [t('common.status'), stateLabels[stateFor(driver)], true],
           ];
           const cardTitleId = `driver-card-${driver.id}`;
 
           return (
-            <li key={driver.id} aria-labelledby={cardTitleId} onClick={() => onOpenDriver?.(driver)} className="cursor-pointer overflow-hidden rounded-2xl border border-zinc-200 bg-white transition hover:border-teal-300 dark:border-zinc-800 dark:bg-zinc-900">
+            <li key={driver.id} aria-labelledby={cardTitleId} onClick={() => openDriver(driver)} className="cursor-pointer overflow-hidden rounded-2xl border border-zinc-200 bg-white transition hover:border-blue-300 dark:border-zinc-800 dark:bg-zinc-900">
               <div className="flex items-center gap-3 px-4 py-3.5">
-                <button type="button" onClick={(event) => { event.stopPropagation(); setVehicleAssignmentDriver(driver); }} disabled={currentUser?.roleCode !== 'company_admin'} aria-label={t('fleet.assignToDriver', { name: driver.name })} title={t('fleet.assignToDriver', { name: driver.name })} className="grid h-11 w-11 flex-none place-items-center overflow-hidden rounded-full bg-zinc-100 text-xs font-bold text-zinc-800 transition hover:ring-2 hover:ring-teal-500 disabled:cursor-default disabled:hover:ring-0 dark:bg-zinc-800 dark:text-zinc-200">
+                <span className="grid h-11 w-11 flex-none place-items-center overflow-hidden rounded-full bg-zinc-100 text-xs font-bold text-zinc-800 dark:bg-zinc-800 dark:text-zinc-200">
                   {driver.avatar
                     ? <img src={driver.avatar} alt="" className="h-full w-full object-cover" />
                     : <span aria-hidden="true">{driver.name.charAt(0)}{driver.name.split(' ')[1]?.charAt(0) || ''}</span>}
-                </button>
+                </span>
                 <div className="min-w-0 flex-1">
-                  <h4 id={cardTitleId} className="truncate font-bold text-zinc-900 dark:text-zinc-100"><button type="button" onClick={(event) => { event.stopPropagation(); onOpenDriver?.(driver); }} className="text-left hover:text-teal-700 focus-visible:rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-teal-600 dark:hover:text-teal-300">{driver.name}</button></h4>
+                  <h4 id={cardTitleId} className="truncate font-bold text-zinc-900 dark:text-zinc-100"><button type="button" onClick={(event) => { event.stopPropagation(); openDriver(driver); }} className="text-left hover:text-blue-700 focus-visible:rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-600 dark:hover:text-blue-300">{driver.name}</button></h4>
                   <p className="mt-0.5 break-words text-xs text-zinc-500">
                     {driver.driverNumber || t('common.notProvided')} · {driver.phone || t('common.notProvided')}
                   </p>
@@ -882,15 +581,13 @@ export default function ProfileView({
 
               {(onDeleteMember || currentUser?.roleCode === 'company_admin') && (
                 <div className="flex flex-wrap justify-end border-t border-zinc-200 px-3 py-2 dark:border-zinc-800">
-                  {currentUser?.roleCode === 'company_admin' && <button type="button" onClick={(event) => { event.stopPropagation(); setEditingDriverId(driver.id); }} aria-label={`${t('driverPrivacy.title')}: ${driver.name}`} title={t('driverPrivacy.title')} className="rounded-lg p-2 text-teal-700 transition hover:bg-teal-50 dark:text-teal-300 dark:hover:bg-teal-950/30"><EyeOff className="h-4 w-4" /></button>}
-                  {currentUser?.roleCode === 'company_admin' && <button type="button" onClick={(event) => { event.stopPropagation(); setVehicleAssignmentDriver(driver); }} className="mr-auto inline-flex items-center gap-1.5 rounded-lg px-2.5 py-2 text-xs font-bold text-teal-700 transition hover:bg-teal-50 dark:text-teal-300 dark:hover:bg-teal-950/30"><Truck className="h-4 w-4" />{t('fleet.openAssignment')}</button>}
-                  {currentUser?.roleCode === 'company_admin' && <button type="button" onClick={(event) => { event.stopPropagation(); setEditingDriverId(driver.id); }} className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-2 text-xs font-bold text-teal-700 transition hover:bg-teal-50 dark:text-teal-300 dark:hover:bg-teal-950/30"><Pencil className="h-4 w-4" />{t('common.edit')}</button>}
+                  {currentUser?.roleCode === 'company_admin' && <button type="button" onClick={(event) => { event.stopPropagation(); setEditingDriverId(driver.id); }} className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-2 text-xs font-bold text-blue-700 transition hover:bg-blue-50 dark:text-blue-300 dark:hover:bg-blue-950/30"><Pencil className="h-4 w-4" />{t('common.edit')}</button>}
                   {onDeleteMember && (
                   <button
                     aria-label={t('profile.removeDriver', { name: driver.name })}
                     onClick={(event) => { event.stopPropagation(); handleDeleteMember({ ...driver, role: 'driver' }); }}
                     disabled={deletingMemberId === driver.id}
-                    className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-2 text-xs font-bold text-zinc-500 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-950/30 dark:hover:text-red-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-600 focus-visible:ring-offset-2"
+                    className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-2 text-xs font-bold text-zinc-500 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-950/30 dark:hover:text-red-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-offset-2"
                   >
                     {deletingMemberId === driver.id
                       ? <LoaderCircle className="h-4 w-4 animate-spin" />
@@ -906,7 +603,7 @@ export default function ProfileView({
       </ul>
 
       {/* 5. DESKTOPDA TO'LIQ KENGLIKDAGI JADVAL */}
-      <div className="hidden w-full overflow-x-auto border-t border-b border-zinc-200 dark:border-zinc-800 lg:block">
+      <div className="profile-desktop-table hidden w-full overflow-x-auto border-t border-b border-zinc-200 dark:border-zinc-800 lg:block">
         <table className="w-full text-left border-collapse min-w-[700px]">
           <caption className="sr-only">{t('profile.driverTableCaption')}</caption>
           <thead className="bg-zinc-50/80 dark:bg-zinc-900/80 text-zinc-500 dark:text-zinc-400 font-mono text-xs font-bold uppercase tracking-wider border-b border-zinc-200 dark:border-zinc-800">
@@ -927,20 +624,20 @@ export default function ProfileView({
               </tr>
             ) : (
               filteredDrivers.map((driver) => {
-                const activeLoad = loads.find(l => l.driverId === driver.id && l.status !== 'COMPLETED');
+                const activeLoad = activeLoadsForDriver(loads, driver.id)[0];
 
                 return (
-                  <tr key={driver.id} onClick={() => onOpenDriver?.(driver)} className="cursor-pointer transition-colors hover:bg-zinc-50/80 dark:hover:bg-zinc-800/40">
+                  <tr key={driver.id} onClick={() => openDriver(driver)} className="cursor-pointer transition-colors hover:bg-zinc-50/80 dark:hover:bg-zinc-800/40">
                     <td className="py-3.5 px-4 whitespace-nowrap">
                       <div className="flex items-center space-x-3">
-                        <button type="button" onClick={(event) => { event.stopPropagation(); setVehicleAssignmentDriver(driver); }} disabled={currentUser?.roleCode !== 'company_admin'} aria-label={t('fleet.assignToDriver', { name: driver.name })} title={t('fleet.assignToDriver', { name: driver.name })} className="flex h-9 w-9 flex-shrink-0 items-center justify-center overflow-hidden rounded-xl border border-zinc-200 bg-zinc-100 font-mono text-xs font-bold text-zinc-800 transition hover:border-teal-500 hover:ring-2 hover:ring-teal-500/30 disabled:cursor-default disabled:hover:border-zinc-200 disabled:hover:ring-0 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200">
+                        <span className="flex h-9 w-9 flex-shrink-0 items-center justify-center overflow-hidden rounded-xl border border-zinc-200 bg-zinc-100 font-mono text-xs font-bold text-zinc-800 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200">
                           {driver.avatar
                             ? <img src={driver.avatar} alt="" className="h-full w-full object-cover" />
                             : <span aria-hidden="true">{driver.name.charAt(0)}{driver.name.split(' ')[1]?.charAt(0) || ''}</span>}
-                        </button>
+                        </span>
                         <div>
                           <div className="flex items-center space-x-2 whitespace-nowrap">
-                            <button type="button" onClick={(event) => { event.stopPropagation(); onOpenDriver?.(driver); }} className="text-left text-sm font-bold text-zinc-900 hover:text-teal-700 focus-visible:rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-teal-600 dark:text-zinc-100 dark:hover:text-teal-300">{driver.name}</button>
+                            <button type="button" onClick={(event) => { event.stopPropagation(); openDriver(driver); }} className="text-left text-sm font-bold text-zinc-900 hover:text-blue-700 focus-visible:rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-600 dark:text-zinc-100 dark:hover:text-blue-300">{driver.name}</button>
                           </div>
                           <div className="text-xs text-zinc-400 font-mono whitespace-nowrap mt-0.5">
                             <span className="font-bold text-zinc-600 dark:text-zinc-300">{driver.driverNumber || t('common.notProvided')}</span> • <span>{driver.phone || t('common.notProvided')}</span>
@@ -950,13 +647,7 @@ export default function ProfileView({
                     </td>
 
                     <td className="py-3.5 px-4 whitespace-nowrap">
-                      <div className="flex items-center space-x-2 text-sm font-bold text-zinc-800 dark:text-zinc-200">
-                        <Truck className="w-4 h-4 text-zinc-400 flex-shrink-0" />
-                        <span>{driver.truck || t('common.notProvided')}</span>
-                      </div>
-                      <div className="text-xs text-zinc-400 font-mono mt-0.5 pl-6">
-                        {driver.trailer || t('common.notProvided')}
-                      </div>
+                      <div className="profile-equipment-value"><Truck size={16} aria-hidden="true" /><span><strong>{driver.truck || t('common.notProvided')}</strong><small>{driver.trailer || t('common.notProvided')}</small></span></div>
                     </td>
 
                     <td className="py-3.5 px-4 font-medium text-zinc-800 dark:text-zinc-200 whitespace-nowrap">
@@ -967,27 +658,19 @@ export default function ProfileView({
                     </td>
 
                     <td className="py-3.5 px-4 whitespace-nowrap">
-                      {activeLoad ? (
-                        <span className="inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-mono font-bold bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400 border border-blue-200 dark:border-blue-800/40">
-                          {t('profile.onTrip', { number: activeLoad.loadNumber })}
-                        </span>
-                      ) : (
-                        <span className="inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-mono font-bold bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800/40">
-                          ✓ {t('profile.availableReady')}
-                        </span>
-                      )}
+                      <span className={`profile-driver-status is-${stateFor(driver).toLowerCase()}`}>
+                        {stateLabels[stateFor(driver)]}{stateFor(driver) === 'ON_LOAD' && activeLoad ? ` · ${activeLoad.loadNumber}` : ''}
+                      </span>
                     </td>
 
                     <td className="py-3.5 px-4 text-right whitespace-nowrap">
-                      {currentUser?.roleCode === 'company_admin' && <button type="button" onClick={(event) => { event.stopPropagation(); setEditingDriverId(driver.id); }} aria-label={`${t('driverPrivacy.title')}: ${driver.name}`} title={t('driverPrivacy.title')} className="rounded-lg p-2 text-teal-700 transition hover:bg-teal-50 dark:text-teal-300 dark:hover:bg-teal-950/30"><EyeOff className="h-4 w-4" /></button>}
-                      {currentUser?.roleCode === 'company_admin' && <button type="button" onClick={(event) => { event.stopPropagation(); setEditingDriverId(driver.id); }} aria-label={t('profile.editDriverFor', { name: driver.name })} title={t('common.edit')} className="rounded-lg p-2 text-teal-700 transition hover:bg-teal-50 dark:text-teal-300 dark:hover:bg-teal-950/30"><Pencil className="h-4 w-4" /></button>}
-                      {currentUser?.roleCode === 'company_admin' && <button type="button" onClick={(event) => { event.stopPropagation(); setVehicleAssignmentDriver(driver); }} aria-label={t('fleet.assignToDriver', { name: driver.name })} title={t('fleet.assignToDriver', { name: driver.name })} className="rounded-lg p-2 text-teal-700 transition hover:bg-teal-50 dark:text-teal-300 dark:hover:bg-teal-950/30"><Truck className="h-4 w-4" /></button>}
+                      {currentUser?.roleCode === 'company_admin' && <button type="button" onClick={(event) => { event.stopPropagation(); setEditingDriverId(driver.id); }} aria-label={t('profile.editDriverFor', { name: driver.name })} title={t('common.edit')} className="rounded-lg p-2 text-blue-700 transition hover:bg-blue-50 dark:text-blue-300 dark:hover:bg-blue-950/30"><Pencil className="h-4 w-4" /></button>}
                       {onDeleteMember && (
                         <button
                           onClick={(event) => { event.stopPropagation(); handleDeleteMember({ ...driver, role: 'driver' }); }}
                           disabled={deletingMemberId === driver.id}
                           aria-label={t('profile.removeDriver', { name: driver.name })}
-                          className="p-2 rounded-lg text-zinc-400 hover:text-red-600 dark:hover:text-red-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-600 focus-visible:ring-offset-2"
+                          className="p-2 rounded-lg text-zinc-400 hover:text-red-600 dark:hover:text-red-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-offset-2"
                           title={t('profile.deleteDriver')}
                         >
                           {deletingMemberId === driver.id
@@ -1014,10 +697,10 @@ export default function ProfileView({
               value={searchQuery}
               onChange={(event) => setSearchQuery(event.target.value)}
               placeholder={t('profile.searchDispatchersPlaceholder')}
-              className="w-full rounded-xl border border-zinc-200 bg-white py-2.5 pl-9 pr-3.5 text-sm text-zinc-900 outline-none transition placeholder:text-zinc-400 focus:border-zinc-400 focus-visible:ring-2 focus-visible:ring-teal-600 focus-visible:ring-offset-2 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-100"
+              className="w-full rounded-xl border border-zinc-200 bg-white py-2.5 pl-9 pr-3.5 text-sm text-zinc-900 outline-none transition placeholder:text-zinc-400 focus:border-zinc-400 focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-offset-2 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-100"
             />
           </div>
-          <ul className="grid gap-3 lg:hidden">
+          <ul className="profile-mobile-list grid gap-3 lg:hidden">
             {filteredDispatchers.length === 0 ? (
               <li className="rounded-2xl border border-zinc-200 bg-white px-4 py-10 text-center dark:border-zinc-800 dark:bg-zinc-900">
                 <UserCog className="mx-auto h-8 w-8 text-zinc-300 dark:text-zinc-600" aria-hidden="true" />
@@ -1047,7 +730,7 @@ export default function ProfileView({
                       onClick={() => handleDeleteMember(dispatcher)}
                       disabled={deletingMemberId === dispatcher.id}
                       aria-label={t('profile.removeDispatcher', { name: dispatcher.name })}
-                      className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-2 text-xs font-bold text-zinc-500 transition hover:bg-red-50 hover:text-red-600 disabled:cursor-not-allowed disabled:opacity-50 dark:hover:bg-red-950/30 dark:hover:text-red-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-600 focus-visible:ring-offset-2"
+                      className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-2 text-xs font-bold text-zinc-500 transition hover:bg-red-50 hover:text-red-600 disabled:cursor-not-allowed disabled:opacity-50 dark:hover:bg-red-950/30 dark:hover:text-red-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-offset-2"
                     >
                       {deletingMemberId === dispatcher.id
                         ? <LoaderCircle className="h-4 w-4 animate-spin" />
@@ -1060,7 +743,7 @@ export default function ProfileView({
             ))}
           </ul>
 
-          <div className="hidden overflow-x-auto rounded-2xl border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900 lg:block">
+          <div className="profile-desktop-table hidden overflow-x-auto rounded-2xl border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900 lg:block">
             <table className="w-full min-w-[680px] text-left">
               <caption className="sr-only">{t('profile.dispatcherTableCaption')}</caption>
               <thead className="border-b border-zinc-200 bg-zinc-50/80 text-xs font-bold uppercase tracking-wider text-zinc-500 dark:border-zinc-800 dark:bg-zinc-950/50 dark:text-zinc-400">
@@ -1090,7 +773,7 @@ export default function ProfileView({
                           disabled={deletingMemberId === dispatcher.id}
                           aria-label={t('profile.removeDispatcher', { name: dispatcher.name })}
                           title={t('profile.deleteDispatcher')}
-                          className="rounded-lg p-2 text-zinc-400 transition hover:bg-zinc-100 hover:text-red-600 disabled:cursor-not-allowed disabled:opacity-50 dark:hover:bg-zinc-800 dark:hover:text-red-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-600 focus-visible:ring-offset-2"
+                          className="rounded-lg p-2 text-zinc-400 transition hover:bg-zinc-100 hover:text-red-600 disabled:cursor-not-allowed disabled:opacity-50 dark:hover:bg-zinc-800 dark:hover:text-red-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-offset-2"
                         >
                           {deletingMemberId === dispatcher.id
                             ? <LoaderCircle className="h-4 w-4 animate-spin" />
@@ -1108,8 +791,13 @@ export default function ProfileView({
         </section>
         )
       )}
+      {isAddFormOpen && <CreateCompanyMemberModal canAddDispatcher={currentUser?.roleCode === 'company_admin'}
+        initialRole={companyMemberView === 'dispatchers' ? 'dispatcher' : 'driver'} onCreate={onAddDriver}
+        onClose={() => setIsAddFormOpen(false)} onCreated={member => {
+          setSuccessToast(t('profile.accountCreated', { role: roleLabel(t, member.role), name: member.name }));
+          setTimeout(() => setSuccessToast(''), 4000);
+        }} />}
       {vehicleAssignmentDriver && <DriverVehicleAssignmentModal driver={vehicleAssignmentDriver} onClose={() => setVehicleAssignmentDriver(null)} onWorkspaceRefresh={onWorkspaceRefresh} />}
-      {currentUser?.roleCode === 'company_admin' && editingDriver && <DriverContactEditModal key={editingDriver.id} driver={editingDriver} onClose={closeDriverEditor} onWorkspaceRefresh={onWorkspaceRefresh} />}
       </div>
       </div>
 

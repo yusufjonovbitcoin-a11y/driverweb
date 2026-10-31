@@ -45,6 +45,17 @@ async function locateWithMapbox(stop: any, token: string, fetcher: typeof fetch)
       && ['exact', 'high'].includes(properties.match_code?.confidence)
       && properties.match_code?.street === 'matched'
       && expectedNumber && String(context.address?.address_number).toLowerCase() === expectedNumber
+      // Smart Address Match can mark a different, similarly spelled street
+      // (e.g. Burton / Button Drive) as exact. Independently compare the
+      // returned structured address, using the same rules as Google Places.
+      && matchesPlaceAddress(stop, { addressComponents: [
+        { types: ['street_number'], longText: String(context.address?.address_number ?? '') },
+        { types: ['route'], longText: context.address?.street_name ?? context.street?.name },
+        { types: ['administrative_area_level_1'], shortText: context.region?.region_code },
+        { types: ['country'], shortText: context.country?.country_code },
+        { types: ['postal_code'], longText: context.postcode?.name },
+        { types: ['locality'], longText: context.place?.name },
+      ] })
       && context.region?.region_code === String(stop.region).toUpperCase()
       && context.country?.country_code === 'US'
       && (stop.postal_code ? context.postcode?.name === String(stop.postal_code).slice(0, 5) : properties.match_code?.place === 'matched')

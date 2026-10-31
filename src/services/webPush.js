@@ -1,5 +1,5 @@
 import { supabase } from '../lib/supabase.js';
-import { firebaseVapidKey, getFirebaseApp } from './firebaseConfig.js';
+import { firebaseConfig, firebaseVapidKey, getFirebaseApp } from './firebaseConfig.js';
 import { createWebPushController } from './webPushController.js';
 import { emptyPushPreferences, hasPushCategory, legacyPushPreferenceKey, normalizePushPreferences, pushPreferencesEvent, pushPreferencesKey, readPushPreferences, withPushDeadline } from './webPushPreferences.js';
 
@@ -12,6 +12,11 @@ function write(key, value) { if (value === null) localStorage.removeItem(key); e
 export const getPushPreferences = (id) => readPushPreferences(id, read);
 export const pushOptedIn = (id) => hasPushCategory(getPushPreferences(id));
 export const pushPermission = () => globalThis.Notification?.permission || 'unsupported';
+export function pushConfigurationError() {
+  if (!firebaseConfig.apiKey) return 'firebaseConfigMissing';
+  if (!firebaseVapidKey) return 'vapidKeyMissing';
+  return null;
+}
 export function pushSupported() {
   return !!(globalThis.isSecureContext && globalThis.Notification && navigator.serviceWorker && globalThis.PushManager);
 }
@@ -91,7 +96,8 @@ const controller = createWebPushController({
   sessionUserId: async () => (await supabase?.auth.getSession())?.data.session?.user.id,
   setWorkerPreferences,
   getToken: async () => {
-    if (!firebaseVapidKey) throw new Error('registrationFailed');
+    const configurationError = pushConfigurationError();
+    if (configurationError) throw new Error(configurationError);
     const { sdk, instance } = await messaging();
     // Existing server worker uses FCM token addressing, not installation IDs.
     const token = await sdk.getToken(instance, { vapidKey: firebaseVapidKey, serviceWorkerRegistration: await registration(true) });

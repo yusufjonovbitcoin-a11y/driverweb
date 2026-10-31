@@ -17,6 +17,7 @@ test('Edge PDF parser binds visible facts to real native text and positions', as
   const bytes = await pdf.save();
   const digest = await checksum(bytes);
   const result = await extractCloudPdfSource(bytes, digest, loadPdf);
+  assert.equal(await checksum(bytes), digest, 'PDF parsing must not detach or change the uploaded bytes');
   assert.deepEqual(result.scanPages, []);
   assert.equal(result.source.checksum, digest);
   const loadLine = result.source.pages[0].blocks.find(block => block.text.includes('TEST-42'));

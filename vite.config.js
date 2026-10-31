@@ -47,9 +47,11 @@ export default defineConfig({
     pdfAssets(),
   ],
   server: {
-    host: true,
+    host: '127.0.0.1',
     port: 5173,
-    allowedHosts: true,
+    allowedHosts: ['localhost', '127.0.0.1'],
+    // QA reports and fixture builds must not reload an open dispatcher session.
+    watch: { ignored: ['**/output/**', '**/test-results/**'] },
     proxy: {
       '/api/vin-decode/': {
         target: 'https://vpic.nhtsa.dot.gov',

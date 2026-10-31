@@ -1,0 +1,64 @@
+/* One type scale for workspace routes and their dialogs, in both themes.
+   Explicit type contracts take precedence over legacy component/utility sizes. */
+html body .workspace-shell,
+html body :is(dialog, [role="dialog"], .ds-modal) {
+  font-family: var(--font-sans, 'IBM Plex Sans', sans-serif);
+  font-size: var(--dispatch-body);
+  line-height: var(--dispatch-body-leading);
+}
+html body .workspace-shell :is(button, input, select, textarea, summary),
+html body :is(dialog, [role="dialog"], .ds-modal) :is(button, input, select, textarea, summary) {
+  font-family: inherit;
+  font-size: var(--dispatch-control-text) !important;
+  line-height: var(--dispatch-body-leading);
+}
+html body .workspace-shell .workspace-main :is(h1) { font-size: var(--dispatch-title) !important; line-height: 1.25; }
+html body .workspace-shell .workspace-main :is(h2),
+html body :is(dialog, [role="dialog"], .ds-modal) h2 { font-size: var(--dispatch-section) !important; line-height: 1.35; }
+html body .workspace-shell .workspace-main :is(h3),
+html body :is(dialog, [role="dialog"], .ds-modal) h3 { font-size: var(--dispatch-subheading) !important; line-height: 1.4; }
+html body .workspace-shell .workspace-main :is(p, label),
+html body :is(dialog, [role="dialog"], .ds-modal) :is(p, label) {
+  font-size: var(--dispatch-body);
+  line-height: var(--dispatch-body-leading);
+}
+html body .workspace-shell .workspace-main table,
+html body :is(dialog, [role="dialog"], .ds-modal) table {
+  font-size: var(--dispatch-table-text) !important;
+  line-height: var(--dispatch-body-leading);
+}
+html body .workspace-shell .workspace-main table :is(th),
+html body :is(dialog, [role="dialog"], .ds-modal) table th {
+  font-size: var(--dispatch-table-heading) !important;
+  line-height: var(--dispatch-body-leading);
+}
+html body .workspace-shell .workspace-main table :is(td),
+html body :is(dialog, [role="dialog"], .ds-modal) table td {
+  font-size: var(--dispatch-table-text) !important;
+  line-height: var(--dispatch-body-leading);
+}
+html body .workspace-shell .workspace-main table :is(td, th) :is(button, a, strong, span, p),
+html body :is(dialog, [role="dialog"], .ds-modal) table :is(td, th) :is(button, a, strong, span, p) {
+  font-size: inherit !important;
+}
+html body .workspace-shell :is(small, caption),
+html body :is(dialog, [role="dialog"], .ds-modal) :is(small, caption) {
+  font-size: var(--dispatch-caption) !important;
+  line-height: var(--dispatch-body-leading);
+}
+html body .workspace-shell .workspace-main :is(.trip-help, .fc-help, .fc-notice, .fc-subtitle, .fc-small) {
+  font-size: var(--dispatch-caption);
+}
+html body .workspace-shell :is(.text-xs, [class~="text-[8px]"], [class~="text-[9px]"], [class~="text-[10px]"], [class~="text-[11px]"], [class~="text-[12px]"]) {
+  font-size: var(--dispatch-caption) !important;
+}
+html body .workspace-shell :is(.text-sm, [class~="text-[13px]"], [class~="text-[14px]"]) {
+  font-size: var(--dispatch-body) !important;
+}
+html body .workspace-shell .sidebar-account-card.is-active .text-\[11px\] { color: var(--dispatch-label); }
+@media (max-width: 640px) {
+  html body .workspace-shell :is(input:not([type="checkbox"]):not([type="radio"]), select, textarea),
+  html body :is(dialog, [role="dialog"], .ds-modal) :is(input:not([type="checkbox"]):not([type="radio"]), select, textarea) {
+    font-size: var(--dispatch-subheading) !important;
+  }
+}

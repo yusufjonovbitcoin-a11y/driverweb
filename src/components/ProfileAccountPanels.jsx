@@ -1,10 +1,12 @@
-import { Bell, Building2, ChevronRight, Clock3, Globe2, KeyRound, Mail, MessageSquare, ShieldCheck, Smartphone } from 'lucide-react';
+import { Bell, ChevronRight, Clock3, Globe2, Mail, MessageSquare, ShieldCheck, Monitor } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { LOCALE_META, SUPPORTED_LOCALES } from '../i18n/locales';
 import ProfileTimeZoneSelect from './ProfileTimeZoneSelect';
 import PersonalProfileForm from './PersonalProfileForm';
 import { roleLabel } from '../i18n/labels';
-import FirebasePreferences from './FirebasePreferences';
+import FirebasePreferences, { AnalyticsPreferences } from './FirebasePreferences';
+import MfaPanel from './MfaPanel';
+import ProfilePasswordForm from './ProfilePasswordForm';
 
 export function ProfileSectionHeading({ title, description }) {
   return <header className="profile-section-heading"><h2>{title}</h2>{description && <p>{description}</p>}</header>;
@@ -16,10 +18,10 @@ function DetailFields({ fields }) {
   </div>)}</dl>;
 }
 
-export function ProfilePersonalPanel({ currentUser, locale, localeSaving, timeZone, onLocaleChange, onTimeZoneChange, onSaveProfile }) {
+export function ProfilePersonalPanel({ currentUser, locale, localeSaving, timeZone, theme = 'light', toggleTheme, onLocaleChange, onTimeZoneChange, onSaveProfile }) {
   const { t } = useTranslation();
   const missing = t('common.notProvided');
-  return <div className="profile-section-stack">
+  return <div className="profile-personal-layout">
     <section className="profile-panel">
       <ProfileSectionHeading title={t('profile.personal')} description={t('profile.personalDescription')} />
       <div className="profile-personal-banner">
@@ -28,16 +30,20 @@ export function ProfilePersonalPanel({ currentUser, locale, localeSaving, timeZo
       </div>
       <PersonalProfileForm key={currentUser?.id} currentUser={currentUser} onSave={onSaveProfile} />
     </section>
-    <section className="profile-panel">
-      <div className="profile-panel-title"><Globe2 size={21} aria-hidden="true" /><div><h3>{t('profile.regionalSettings')}</h3><p>{t('profile.languageHint')}</p></div></div>
-      <div className="profile-form-grid">
-        <label><span>{t('profile.language')}</span><select value={locale} disabled={localeSaving} onChange={event => onLocaleChange?.(event.target.value)}>
+    <aside className="profile-panel profile-preferences-panel">
+      <div className="profile-panel-title"><Globe2 size={21} aria-hidden="true" /><div><h3>{t('profile.regionalSettings')}</h3><p>{t('profile.autoSaved')}</p></div></div>
+      <div className="profile-form-grid profile-personal-preferences">
+        <label><span>{t('profile.language')}</span><select aria-label={t('profile.language')} value={locale} disabled={localeSaving} onChange={event => onLocaleChange?.(event.target.value)}>
           {SUPPORTED_LOCALES.map(code => <option key={code} value={code}>{LOCALE_META[code].label}</option>)}
         </select></label>
-        <label><span>{t('profile.timeZone')}</span><ProfileTimeZoneSelect value={timeZone} onChange={onTimeZoneChange} /></label>
+        <label><span>{t('profile.timeZone')}</span><ProfileTimeZoneSelect aria-label={t('profile.timeZone')} value={timeZone} onChange={onTimeZoneChange} /></label>
+        <label><span>{t('profile.interface')}</span><select aria-label={t('profile.interface')} value={theme} disabled={!toggleTheme} onChange={event => { if (event.target.value !== theme) toggleTheme?.(); }}>
+          <option value="light">{t('profile.light')}</option><option value="dark">{t('profile.dark')}</option>
+        </select></label>
       </div>
       <p className="profile-panel-note"><Clock3 size={16} aria-hidden="true" />{t('profile.timeZoneHint')}</p>
-    </section>
+      <AnalyticsPreferences />
+    </aside>
   </div>;
 }
 
@@ -45,16 +51,17 @@ export function ProfileSecurityPanel({ currentUser }) {
   const { t } = useTranslation();
   return <div className="profile-section-stack">
     <ProfileSectionHeading title={t('profile.security')} description={t('profile.securityDescription')} />
-    <section className="profile-panel">
-      <div className="profile-panel-title"><KeyRound size={22} aria-hidden="true" /><div><h3>{t('profile.signInMethod')}</h3><p>{t('profile.emailAndPassword')}</p></div></div>
-      <DetailFields fields={[[t('common.email'), currentUser?.email || t('common.notProvided')], [t('profile.position'), roleLabel(t, currentUser?.roleCode || currentUser?.role)]]} />
-      <p className="profile-panel-note">{t('profile.passwordReadOnly')}</p>
-    </section>
-    <section className="profile-panel">
-      <div className="profile-panel-title"><ShieldCheck size={22} aria-hidden="true" /><div><h3>{t('profile.accountProtection')}</h3><p>{t('profile.passwordPrivacyHint')}</p></div></div>
-      <div className="profile-security-tip"><Mail size={20} aria-hidden="true" /><div><strong>{t('profile.account')}</strong><p>{currentUser?.email || t('profile.emailMissing')}</p></div></div>
-      <div className="profile-security-tip"><Smartphone size={20} aria-hidden="true" /><div><strong>{t('profile.currentSession')}</strong><p>{t('profile.sessionPrivacyHint')}</p></div></div>
-    </section>
+    <div className="profile-security-layout">
+      <ProfilePasswordForm currentUser={currentUser} />
+      <div className="profile-section-stack">
+        <MfaPanel />
+        <section className="profile-panel">
+          <div className="profile-panel-title"><Monitor size={22} aria-hidden="true" /><div><h3>{t('profile.currentBrowser')}</h3><p>{t('profile.currentSession')}</p></div></div>
+          <DetailFields fields={[[t('common.email'), currentUser?.email || t('common.notProvided')], [t('profile.position'), roleLabel(t, currentUser?.roleCode || currentUser?.role)]]} />
+          <p className="profile-panel-note"><ShieldCheck size={16} aria-hidden="true" />{t('profile.sessionPrivacyHint')}</p>
+        </section>
+      </div>
+    </div>
   </div>;
 }
 
@@ -66,6 +73,7 @@ export function ProfileNotificationsPanel({ unreadChatCount = 0, unreadInboxCoun
   ];
   return <div className="profile-section-stack">
     <ProfileSectionHeading title={t('profile.notifications')} description={t('profile.notificationsDescription')} />
+    <div className="profile-notifications-layout"><FirebasePreferences browserPush={browserPush} />
     <section className="profile-panel profile-notification-panel">
       <div className="profile-panel-title"><Bell size={22} aria-hidden="true" /><div><h3>{t('profile.allNotifications')}</h3><p>{t('profile.newNotifications', { count: unreadChatCount + unreadInboxCount })}</p></div></div>
       {items.map(({ tab, icon: Icon, label, description, count }) => <button key={tab} type="button" className="profile-notification-row" onClick={() => onNavigate?.(tab)}>
@@ -74,21 +82,6 @@ export function ProfileNotificationsPanel({ unreadChatCount = 0, unreadInboxCoun
         <span className={`profile-count-badge ${count ? 'has-unread' : ''}`}>{count}</span><ChevronRight size={17} aria-hidden="true" />
       </button>)}
     </section>
-    <FirebasePreferences browserPush={browserPush} />
-  </div>;
-}
-
-export function ProfileContactPanel({ currentUser, timeZone }) {
-  const { t } = useTranslation();
-  return <div className="profile-section-stack">
-    <ProfileSectionHeading title={t('profile.contact')} description={t('profile.contactDetails')} />
-    <section className="profile-panel">
-      <div className="profile-panel-title"><Building2 size={22} aria-hidden="true" /><div><h3>{currentUser?.company || t('common.company')}</h3><p>{t('profile.companyTeam')}</p></div></div>
-      <DetailFields fields={[[t('common.email'), currentUser?.email || t('profile.emailMissing')], [t('common.phone'), currentUser?.phone || t('profile.phoneMissing')]]} />
-    </section>
-    <section className="profile-panel">
-      <div className="profile-panel-title"><Smartphone size={22} aria-hidden="true" /><div><h3>{t('profile.devicesAndSessions')}</h3><p>{t('profile.currentSession')}</p></div></div>
-      <DetailFields fields={[[t('profile.timeZone'), timeZone]]} />
-    </section>
+    </div>
   </div>;
 }

@@ -18,7 +18,7 @@ function mockMapbox({ confidence = 'exact', postalMismatch = false, ambiguous = 
       const stop = stops.find(s => address.includes(s.address_line));
       const feature = { geometry: { type: 'Point', coordinates: [-95, stop.type === 'pickup' ? 30 : 33] }, properties: {
         feature_type: 'address', match_code: { confidence, street: 'matched', place: 'matched' },
-        context: { address: { address_number: stop.address_line.split(' ')[0] },
+        context: { address: { address_number: stop.address_line.split(' ')[0], street_name: stop.address_line.split(' ').slice(1).join(' ') },
           region: { region_code: stop.region }, country: { country_code: 'US' }, postcode: { name: postalMismatch ? '00000' : stop.postal_code } },
       } };
       return Response.json({ features: ambiguous ? [feature, feature] : [feature] });

@@ -27,8 +27,14 @@ export function ChatReadBoundary({ message, enabled, onRead, children }) {
   return <div ref={ref}>{children}</div>;
 }
 
-export default function ChatTimeline({ isVisible = true, restoreState, onSaveState, announceNewMessages = true, currentUserId, ...props }) {
+export default function ChatTimeline({ isVisible = true, restoreState, onSaveState, announceNewMessages = true, currentUserId, hasNewerMessages = false, onLatest, ...props }) {
   const { t } = useTranslation();
+  const latestRequest = useRef(false);
+  const mounted = useRef(true);
+  const [latestLoading, setLatestLoading] = useState(false);
+  const [latestError, setLatestError] = useState(false);
+  const [latestEpoch, setLatestEpoch] = useState(0);
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
   const announcementState = useRef(null);
   const [announcement, setAnnouncement] = useState('');
   useEffect(() => {
@@ -41,6 +47,7 @@ export default function ChatTimeline({ isVisible = true, restoreState, onSaveSta
   }, [props.messages, currentUserId, isVisible, announceNewMessages, t]);
   const host = useRef(null);
   const snapshot = useRef(restoreState);
+  const forceBottom = useRef(false);
   const [viewportHeight, setViewportHeight] = useState(0);
   useLayoutEffect(() => {
     if (!isVisible) return;
@@ -58,10 +65,37 @@ export default function ChatTimeline({ isVisible = true, restoreState, onSaveSta
     snapshot.current = value;
     onSaveState?.(value);
   }, [onSaveState]);
-  const getRestoreState = useCallback(() => snapshot.current, []);
+  const getRestoreState = useCallback(() => {
+    if (forceBottom.current) { forceBottom.current = false; return { atBottom: true }; }
+    return snapshot.current;
+  }, []);
+  const goToLatest = async () => {
+    if (latestRequest.current || !onLatest) return;
+    latestRequest.current = true;
+    setLatestLoading(true);
+    setLatestError(false);
+    try {
+      await onLatest();
+      if (!mounted.current) return;
+      snapshot.current = { atBottom: true };
+      forceBottom.current = true;
+      setLatestEpoch(value => value + 1);
+    } catch {
+      if (mounted.current) setLatestError(true);
+    } finally {
+      latestRequest.current = false;
+      if (mounted.current) setLatestLoading(false);
+    }
+  };
   return <div ref={host} className="relative min-h-0 flex-1 overflow-hidden">
     <div className="sr-only" role="status" aria-live="polite" aria-atomic="true">{announcement}</div>
-    {isVisible && viewportHeight > 0 && <VisibleChatTimeline {...props} viewportHeight={viewportHeight} getRestoreState={getRestoreState} onSaveState={save} />}
+    {isVisible && viewportHeight > 0 && <VisibleChatTimeline key={latestEpoch} {...props} viewportHeight={viewportHeight} getRestoreState={getRestoreState} onSaveState={save} />}
+    {(hasNewerMessages || latestLoading || latestError) && onLatest && <div className="absolute bottom-3 left-1/2 z-20 flex -translate-x-1/2 flex-col items-center gap-2">
+      {latestError && <p role="alert" className="rounded-lg bg-white px-3 py-2 text-xs text-red-700 shadow dark:bg-zinc-900 dark:text-red-300">{t('errors.chatOpen')}</p>}
+      <button type="button" disabled={latestLoading} onClick={goToLatest} className="whitespace-nowrap rounded-full bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-lg hover:bg-blue-500 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600 disabled:opacity-60">
+        {latestLoading ? t('common.loading') : t('chat.latestMessages')}
+      </button>
+    </div>}
   </div>;
 }
 

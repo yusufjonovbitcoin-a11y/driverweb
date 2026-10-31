@@ -45,7 +45,7 @@ function harness({role='dispatcher', providerStatus='completed', uncertain=false
         maybeSingle:async()=>({data:{status:'review',current_assignment_id:null}})};
       assert.equal(name,'profiles'); return {select(){return this;},eq(){return this;},
       maybeSingle:async()=>({data:{id:'test-user',company_id:'test-company',role,status:'active'}})}; } };
-  const environment = {SUPABASE_URL:'https://test.invalid',SUPABASE_ANON_KEY:'test',SUPABASE_SERVICE_ROLE_KEY:'test',OPENAI_API_KEY:'test'};
+  const environment = {SUPABASE_URL:'https://test.invalid',SUPABASE_ANON_KEY:'test',SUPABASE_SERVICE_ROLE_KEY:'test',OPENAI_API_KEY:'test',OPENAI_PDF_ENGINE:'direct'};
   vm.runInNewContext(output[0].code, { testClient:client, Deno:{env:{get:name=>environment[name]},serve:fn=>{handler=fn;}},
     console:{info(){},error(){}}, performance, AbortSignal, Response, Request, File, FormData, Headers,
     URL, crypto, TextEncoder, TextDecoder, Uint8Array, btoa, Intl, structuredClone,
@@ -195,6 +195,19 @@ for (const confirmWithoutGps of [false, true]) test(confirmWithoutGps
     rpc:async(name,args)=>{
       events.push(['rpc',name,args]);
       if(name==='consume_edge_rate_limit' || name==='can_access_driver') return {data:true,error:null};
+      if(name==='prepare_import_assignment_upload') {
+        events.push(['rpc','create_document_import_draft',{target_import_id:args.p_import_id,expected_checksum:args.p_expected_checksum}]);
+        events.push(['rpc','begin_import_document_upload',args]);
+        return {data:{loadId:'load-id',bucket:'load-documents',storagePath,
+          documentId:'document-id',versionId:'version-id',alreadyUploaded:false},error:null};
+      }
+      if(name==='finalize_import_assignment_source') {
+        events.push(['rpc','complete_import_document_upload',args]);
+        events.push(['update','manual_load_imports',{storage_path:storagePath}]);
+        return {data:{id:'document-id',load_id:'load-id',current_version_id:'version-id'},error:null};
+      }
+      if(name==='review_and_assign_document_load') return {data:{id:'assignment-id',load_id:'load-id',
+        driver_id:args.target_driver_id,status:'active'},error:null};
       if(name==='create_document_import_draft') return {data:'load-id',error:null};
       if(name==='begin_import_document_upload') return {data:{bucket:'load-documents',storagePath,
         documentId:'document-id',versionId:'version-id',alreadyUploaded:false},error:null};
@@ -206,7 +219,7 @@ for (const confirmWithoutGps of [false, true]) test(confirmWithoutGps
       return {data:{path},error:null};
     }};}},
   };
-  const environment={SUPABASE_URL:'https://test.invalid',SUPABASE_ANON_KEY:'test',SUPABASE_SERVICE_ROLE_KEY:'test',OPENAI_API_KEY:'test'};
+  const environment={SUPABASE_URL:'https://test.invalid',SUPABASE_ANON_KEY:'test',SUPABASE_SERVICE_ROLE_KEY:'test',OPENAI_API_KEY:'test',OPENAI_PDF_ENGINE:'direct'};
   vm.runInNewContext(output[0].code,{testClient:client,
     Deno:{env:{get:name=>environment[name]},serve:fn=>{handler=fn;}},
     console:{info(){},error(){}},performance,AbortSignal,Response,Request,File,FormData,Headers,

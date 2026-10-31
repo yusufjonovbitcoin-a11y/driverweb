@@ -40,11 +40,11 @@ export function validMapStops(stops = []) {
     .map(stop => ({ ...stop, lat: Number(stop.latitude), lng: Number(stop.longitude) }));
 }
 
-export function mapboxFocusPoints({ path = [], deadheadPath = [], stops = [], live = null, fitToStops = false } = {}) {
+export function mapboxFocusPoints({ path = [], deadheadPath = [], stops = [], live = null, start = null, fitToStops = false } = {}) {
   // Fleet view frames every pickup/delivery, not a distant truck or GPS outlier.
   // Keep the whole-track/deadhead framing for the import preview.
   if (fitToStops) return stops.length ? stops : path;
-  return [...path, ...deadheadPath, ...stops, ...(live ? [live] : [])];
+  return [...path, ...deadheadPath, ...stops, ...(live ? [live] : []), ...(start ? [start] : [])];
 }
 
 export function mapboxLineFeatures(points = [], recorded = false) {

@@ -5,9 +5,9 @@ function encodePublicId(publicId: string) {
 // Cloudinary's Upload API download endpoint enforces expires_at. CDN path
 // signatures alone do not expire. Only server-owned asset identifiers are used.
 export async function temporaryAuthenticatedDownloadUrl({cloudName, apiKey,
-  apiSecret, publicId, resourceType, format, expiresAt, timestamp = Math.floor(Date.now()/1000)}: {
+  apiSecret, publicId, resourceType, format, expiresAt, transformation, timestamp = Math.floor(Date.now()/1000)}: {
   cloudName: string; apiKey: string; apiSecret: string; publicId: string;
-  resourceType: string; format?: string | null; expiresAt: number; timestamp?: number;
+  resourceType: string; format?: string | null; expiresAt: number; timestamp?: number; transformation?: string;
 }) {
   if (!['raw','image','video'].includes(resourceType) || !Number.isInteger(expiresAt) || expiresAt <= timestamp) {
     throw new Error('Invalid temporary media download');
@@ -16,6 +16,7 @@ export async function temporaryAuthenticatedDownloadUrl({cloudName, apiKey,
     type: 'authenticated', attachment: 'false', expires_at: String(expiresAt)};
   // Raw public IDs already include their extension.
   if (format && resourceType !== 'raw') params.format = format;
+  if (transformation) params.transformation = transformation;
   const source = Object.keys(params).sort().map(key => `${key}=${params[key]}`).join('&');
   const digest = await crypto.subtle.digest('SHA-256',new TextEncoder().encode(source+apiSecret));
   params.signature = [...new Uint8Array(digest)].map(byte => byte.toString(16).padStart(2,'0')).join('');
@@ -39,6 +40,7 @@ export async function signedAuthenticatedDeliveryUrl({
   resourceType,
   version,
   format,
+  transformation,
 }: {
   cloudName: string;
   apiSecret: string;
@@ -46,9 +48,11 @@ export async function signedAuthenticatedDeliveryUrl({
   resourceType: string;
   version: number;
   format?: string | null;
+  transformation?: string;
 }) {
   const suffix = format ? `.${format}` : "";
-  const path = `v${version}/${publicId}${suffix}`;
+  const prefix = transformation ? `${transformation}/` : '';
+  const path = `${prefix}v${version}/${publicId}${suffix}`;
   const signature = (await sha1Base64Url(`${path}${apiSecret}`)).slice(0, 8);
-  return `https://res.cloudinary.com/${encodeURIComponent(cloudName)}/${resourceType}/authenticated/s--${signature}--/v${version}/${encodePublicId(publicId)}${suffix}`;
+  return `https://res.cloudinary.com/${encodeURIComponent(cloudName)}/${resourceType}/authenticated/s--${signature}--/${prefix}v${version}/${encodePublicId(publicId)}${suffix}`;
 }

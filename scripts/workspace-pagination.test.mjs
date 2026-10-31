@@ -20,7 +20,7 @@ test('workspace retains 1205 drivers/loads and all associated documents beyond A
     member_directory: ids.map(id => ({ id, full_name: `Driver ${id}`, role: 'driver', status: 'active', avatar_path: `avatars/${id}` })),
     load_overview: ids.map(id => ({ id, load_number: id, status: 'draft', updated_at: '2026-10-05' })),
     documents: ids.map(id => ({ id, load_id: id, document_type: 'rate_confirmation', current_version_id: `version-${id}` })),
-    offers: [], assignments: [], warnings: [], driver_presence: [], document_review_overview: [],
+    offers: [], assignments: [], warnings: [], driver_presence: [], document_review_overview: [], assignment_driver_pay: [],
   };
   globalThis.workspaceTestClient = { from(table) {
     let rows = tables[table], key = 'id', cursor = null;

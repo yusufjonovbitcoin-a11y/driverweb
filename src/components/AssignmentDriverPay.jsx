@@ -34,11 +34,10 @@ export function AssignmentDriverPayView({ state, onRefresh, onRetry }) {
     style: 'currency', currency: 'USD', minimumFractionDigits: 2, maximumFractionDigits: 4,
   }) }) : null;
   const errorId = `${id}-error`;
-  return <section aria-labelledby={`${id}-title`} className="space-y-3 rounded-xl border border-zinc-200 bg-zinc-50/60 p-4 dark:border-zinc-800 dark:bg-zinc-900/40">
-    <div className="flex flex-wrap items-center justify-between gap-2">
-      <h3 id={`${id}-title`} className="text-sm font-bold text-zinc-900 dark:text-white">{t('driverPay.title')}</h3>
+  return <section aria-label={t('driverPay.title')} className="space-y-3 rounded-xl border border-zinc-200 bg-zinc-50/60 p-4 dark:border-zinc-800 dark:bg-zinc-900/40">
+    {pay ? <div className="flex flex-wrap items-center justify-end gap-2">
       {pay ? <span role="status" className={`rounded-md px-2 py-1 text-xs font-semibold ${failed ? 'bg-red-100 text-red-900 dark:bg-red-900/40 dark:text-red-200' : pending ? 'bg-amber-100 text-amber-900 dark:bg-amber-900/40 dark:text-amber-200' : 'bg-teal-100 text-teal-900 dark:bg-teal-900/40 dark:text-teal-200'}`}>{t(`driverPay.${statusKeys[pay.status]}`)}</span> : null}
-    </div>
+    </div> : null}
     {!pay && !error ? <p role="status" className="text-sm text-zinc-500">{t('common.loading')}</p> : null}
     {pay ? <>
       {pending ? <p role={failed ? 'alert' : undefined} className="text-sm text-zinc-600 dark:text-zinc-300">{t(`driverPay.${hintKey}`)}</p> : null}

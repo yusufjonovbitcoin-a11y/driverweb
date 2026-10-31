@@ -1,0 +1,31 @@
+-- Cover tenant/FK access paths in active assignments, documents, chat and financial workflows.
+-- Keep existing indexes: low usage in a small deployment is not evidence that they are obsolete.
+create index if not exists "fk_access_assignment_driver_pay_1" on public."assignment_driver_pay" ("company_id");
+create index if not exists "fk_access_assignment_driver_pay_2" on public."assignment_driver_pay" ("load_id");
+create index if not exists "fk_access_assignments_3" on public."assignments" ("accepted_price_snapshot_id");
+create index if not exists "fk_access_assignments_4" on public."assignments" ("assigned_by","company_id");
+create index if not exists "fk_access_assignments_5" on public."assignments" ("company_id");
+create index if not exists "fk_access_assignments_6" on public."assignments" ("driver_id","company_id");
+create index if not exists "fk_access_assignments_7" on public."assignments" ("load_id","company_id");
+create index if not exists "fk_access_assignments_8" on public."assignments" ("offer_id","company_id");
+create index if not exists "fk_access_chat_messages_9" on public."chat_messages" ("company_id");
+create index if not exists "fk_access_chat_messages_10" on public."chat_messages" ("reply_to_id");
+create index if not exists "fk_access_document_versions_11" on public."document_versions" ("company_id");
+create index if not exists "fk_access_document_versions_12" on public."document_versions" ("document_id","company_id");
+create index if not exists "fk_access_document_versions_13" on public."document_versions" ("uploaded_by","company_id");
+create index if not exists "fk_access_documents_14" on public."documents" ("company_id");
+create index if not exists "fk_access_documents_15" on public."documents" ("created_by","company_id");
+create index if not exists "fk_access_documents_16" on public."documents" ("current_version_id","company_id");
+create index if not exists "fk_access_documents_17" on public."documents" ("load_id","company_id");
+create index if not exists "fk_access_documents_18" on public."documents" ("removed_by");
+create index if not exists "fk_access_documents_19" on public."documents" ("stop_id","company_id");
+create index if not exists "fk_access_driver_earnings_20" on public."driver_earnings" ("company_id");
+create index if not exists "fk_access_driver_earnings_21" on public."driver_earnings" ("sent_by");
+create index if not exists "fk_access_loads_22" on public."loads" ("current_assignment_id","company_id");
+create index if not exists "fk_access_loads_23" on public."loads" ("broker_message_id","company_id");
+create index if not exists "fk_access_loads_24" on public."loads" ("owner_dispatcher_id","company_id");
+create index if not exists "fk_access_loads_25" on public."loads" ("trash_previous_driver_id");
+create index if not exists "fk_access_loads_26" on public."loads" ("trashed_by");
+create index if not exists "fk_access_media_assets_27" on public."media_assets" ("company_id");
+create index if not exists "fk_access_media_assets_28" on public."media_assets" ("uploaded_by");
+notify pgrst,'reload schema';

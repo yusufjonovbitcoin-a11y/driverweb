@@ -1,6 +1,6 @@
 import { withCors } from "../_shared/cors.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-import { accountPasswordError } from '../_shared/password-policy.ts';
+import { accountPasswordError, driverPasswordError } from '../_shared/password-policy.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
@@ -62,7 +62,7 @@ Deno.serve((request) => withCors(request, async () => {
   if (!email.includes('@') || !fullName || !companyId) {
     return json({ error: 'Email, full name, and company are required' }, 400);
   }
-  const passwordError = accountPasswordError(password);
+  const passwordError = role === 'driver' ? driverPasswordError(password) : accountPasswordError(password);
   if (passwordError) return json({ error: passwordError }, 400);
   if (gmailLabel && (
     gmailLabel.length > 100

@@ -11,14 +11,14 @@ const bundle = await rolldown({ input: fileURLToPath(new URL('./webPush.js', imp
     if (id === 'firebase/messaging') return '\0messaging';
   }, load(id) {
     if (id === '\0supabase') return 'export const supabase = globalThis.testClient;';
-    if (id === '\0firebase') return 'export const firebaseVapidKey="test-public-key"; export const getFirebaseApp=async()=>({});';
+    if (id === '\0firebase') return 'export const firebaseConfig=globalThis.testFirebaseConfig; export const firebaseVapidKey=globalThis.testVapidKey; export const getFirebaseApp=async()=>({});';
     if (id === '\0messaging') return 'export const isSupported=async()=>true; export const getMessaging=()=>({}); export const getToken=async()=>"test-token";';
   } }],
 });
 const { output } = await bundle.generate({ format: 'iife', name: 'PushModule', codeSplitting: false });
 await bundle.close();
 
-function harness({ protocolVersion = 2, updateProtocol = false } = {}) {
+function harness({ protocolVersion = 2, updateProtocol = false, apiKey = 'test-api-key', vapidKey = 'test-public-key' } = {}) {
   const messages = []; const events = []; const storage = new Map(); const rpcCalls = [];
   let owner = 'a'; let updates = 0; let revoked = 0;
   const active = { state: 'activated', postMessage(message, ports) {
@@ -34,6 +34,7 @@ function harness({ protocolVersion = 2, updateProtocol = false } = {}) {
     }
   }
   const context = { console, setTimeout, clearTimeout, queueMicrotask, MessageChannel: Channel,
+    testFirebaseConfig: { apiKey }, testVapidKey: vapidKey,
     CustomEvent: class { constructor(type, value) { this.type = type; this.detail = value.detail; } },
     isSecureContext: true, PushManager: {}, Notification: { permission: 'granted' },
     navigator: { serviceWorker: { getRegistration: async () => registration } },
@@ -60,6 +61,17 @@ test('actual browser bridge unwraps FCM data, binds recipient and honors categor
   h.setSession('b');
   assert.equal(await h.api.dispatchBrowserNotification({ event: 'incoming_call', recipient_id: 'a' }), false);
   assert.equal(h.messages.filter(item => item.type === 'TFLEETS_NOTIFY').length, 1);
+});
+
+test('missing web configuration has an actionable diagnostic and never claims registration success', async () => {
+  for (const [options, expected] of [[{ apiKey: '' }, 'firebaseConfigMissing'], [{ vapidKey: '' }, 'vapidKeyMissing']]) {
+    const h = harness(options);
+    assert.equal(h.api.pushConfigurationError(), expected);
+    h.api.webPush.setAccount('a');
+    await assert.rejects(h.api.webPush.enable(), new RegExp(expected));
+    assert.equal(h.rpcCalls.some(call => call.name === 'register_push_device'), false);
+    assert.equal(h.storage.has('tfleets.push.preferences.v1.a'), false);
+  }
 });
 
 test('existing worker updates before v2 enable and persists independent categories after ACK', async () => {

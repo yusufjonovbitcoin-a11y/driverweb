@@ -1,12 +1,11 @@
 import { requireSupabase, supabaseAnonKey, supabaseUrl } from '../lib/supabase';
 import { uploadMediaRequest } from './mediaRequestTransport';
+import { validateChatMedia } from './chatMediaPolicy';
 
 // The object key contains a stable client operation ID. A retry never overwrites
 // an object; a conflict only acknowledges the same already-uploaded operation.
 export async function uploadChatMedia({ file, path, signal, onProgress }) {
-  if (!file || !Number.isFinite(file.size) || file.size <= 0 || file.size > 50 * 1024 * 1024) {
-    throw new Error('Chat files must be between 1 byte and 50 MB.');
-  }
+  const mimeType = validateChatMedia(file);
   if (!path || path.includes('\0') || path.startsWith('/') || path.split('/').some((segment) => !segment || segment === '..' || segment === '.')) {
     throw new Error('Invalid chat media path.');
   }
@@ -28,7 +27,7 @@ export async function uploadChatMedia({ file, path, signal, onProgress }) {
     await uploadMediaRequest({
       url: `${supabaseUrl}/storage/v1/object/chat-media/${path.split('/').map(encodeURIComponent).join('/')}`,
       headers: { Authorization: `Bearer ${token}`, apikey: supabaseAnonKey,
-        'Content-Type': file.type || 'application/octet-stream', 'x-upsert': 'false', 'cache-control': 'private, max-age=0' },
+        'Content-Type': mimeType, 'x-upsert': 'false', 'cache-control': 'private, max-age=0' },
       body: file, onProgress, signal,
     });
   } catch (error) {
@@ -37,5 +36,5 @@ export async function uploadChatMedia({ file, path, signal, onProgress }) {
         /^(?:the resource|asset) already exists\.?$/i.test(error.message));
     if (!duplicate) throw error;
   }
-  return { reference: path, storagePath: path, fileName: file.name, mimeType: file.type, sizeBytes: file.size };
+  return { reference: path, storagePath: path, fileName: file.name, mimeType, sizeBytes: file.size };
 }

@@ -15,6 +15,9 @@ export default function DriversPage(props) {
     onPrefetchDriver={loadDriverDetail}
     onAssignLoad={props.onAssignLoad}
     onOpenChat={props.onOpenChat}
+    onOpenLoad={props.onOpenDocs}
+    canManageDriver={props.canManageDriver}
+    onWorkspaceRefresh={props.onWorkspaceRefresh}
     unreadChatsByDriver={props.unreadChatsByDriver}
   />;
 }

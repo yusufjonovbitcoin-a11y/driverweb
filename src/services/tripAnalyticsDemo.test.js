@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { demoTrip } from './tripAnalyticsDemo.js';
+import { demoTrip } from '../../tests/legacy/src/services/tripAnalyticsDemo.js';
 import { accountingPreview } from './tripAccounting.js';
 
 test('exactly one clearly marked read-only demo fixture', () => {

@@ -112,8 +112,8 @@ test('legacy 400 duplicate is retry-safe but unrelated errors still fail', async
 test('chat uploads reject empty/oversized files and unsafe keys before sending', async () => {
   const { upload, requests } = storageHarness();
   const base = { file: { name: 'x.pdf', type: 'application/pdf', size: 40 }, path: 'company/chat/id/x.pdf' };
-  await assert.rejects(upload({ ...base, file: { ...base.file, size: 0 } }), /50 MB/);
-  await assert.rejects(upload({ ...base, file: { ...base.file, size: 50 * 1024 * 1024 + 1 } }), /50 MB/);
+  await assert.rejects(upload({ ...base, file: { ...base.file, size: 0 } }), /CHAT_MEDIA_FILE_EMPTY/);
+  await assert.rejects(upload({ ...base, file: { ...base.file, size: 50 * 1024 * 1024 + 1 } }), /CHAT_MEDIA_FILE_TOO_LARGE/);
   await assert.rejects(upload({ ...base, path: 'company/chat/../x.pdf' }), /Invalid/);
   await assert.rejects(upload({ ...base, path: 'company/chat/id/x\0.pdf' }), /Invalid/);
   assert.equal(requests.length, 0);

@@ -22,7 +22,8 @@ test('experimental PDF demo has no header entry, module, or development proxy', 
 test('ordinary PDF viewer assets and primary document parser remain connected', () => {
   const viewer = source('src/components/PdfDocumentViewer.jsx');
   assert.match(viewer, /from 'pdfjs-dist'/);
-  assert.match(viewer, /pdfjs-dist\/build\/pdf\.worker\.min\.mjs\?url/);
+  assert.match(viewer, /prewarmPdfWorker/);
+  assert.match(source('src/components/pdfWorker.js'), /pdfjs-dist\/build\/pdf\.worker\.min\.mjs\?url/);
   assert.match(source('vite.config.js'), /pdfAssets\(\)/);
   assert.match(source('src/services/operationsService.js'), /invokeAuthenticatedFunction\('parse-load-document', formData\)/);
   assert.ok(existsSync(new URL('../supabase/functions/parse-load-document/index.ts', import.meta.url)));

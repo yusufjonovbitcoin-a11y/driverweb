@@ -139,7 +139,6 @@ test('production wiring gates hidden chat and does not request initial-hidden vi
   assert.ok(timeline.includes('isVisible && viewportHeight > 0 &&'));
   assert.ok(timeline.includes('style={{ height: viewportHeight }}'));
   assert.ok(timeline.includes('startReached={loadOlder}'));
-  assert.ok(!timeline.includes('chat.latestMessages'), 'Floating latest-messages button is removed');
   assert.ok(timeline.includes('totalListHeightChanged={onHeight}'));
   assert.ok(!timeline.includes('initialTopMostItemIndex='));
   assert.ok(!timeline.includes('restoreStateFrom='));

@@ -1,0 +1,2 @@
+import {defineConfig} from '@playwright/test';import {browserOptions} from './playwright.browser.js';
+export default defineConfig({testDir:'./tests/ui',testMatch:'security.check.js',outputDir:'test-results/security',use:{...browserOptions,baseURL:'http://127.0.0.1:5193',trace:'retain-on-failure'},webServer:{command:'npx vite build --config tests/ui/security.vite.config.js && node scripts/security-preview.mjs',url:'http://127.0.0.1:5193/tests/ui/security.html',reuseExistingServer:!process.env.CI}});

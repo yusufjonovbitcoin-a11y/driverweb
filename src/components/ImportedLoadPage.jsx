@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from 'react';
 import { ArrowUpRight, Check, FileText, LoaderCircle, MapPin, Phone } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { formatCurrency, formatNumber } from '../i18n/format';
-import { briefFieldLabel } from '../services/driverBrief';
 import ImportRouteMap from './ImportRouteMap';
 import ImportReviewPanels from './ImportReviewPanels';
 import { buildImportedLoad, canAssignImportedLoad, importedMapState, importedRatePerMile, importedTripRatePerMile, stopAddress, stopScheduleParts } from './importedLoadModel';
@@ -13,6 +12,7 @@ import { canLookupImportedStop, importedStopContact } from '../services/importCo
 import { usePreviewRoute } from '../hooks/usePreviewRoute';
 import { phoneUri } from '../../supabase/functions/_shared/load-enrichment.ts';
 import { copyText } from '../services/copyText';
+import { documentImportDisplayTiming } from '../services/documentImportTiming.js';
 
 const show = value => value == null || value === '' ? '—' : String(value);
 const phoneHref = phoneUri;
@@ -21,6 +21,12 @@ export default function ImportedLoadPage({ load, processing, drivers = [], onBac
   const { t } = useTranslation();
   const headingRef = useRef(null);
   const submitRef = useRef(false);
+  const reportedTiming = useRef(null);
+  useEffect(() => {
+    if (!import.meta.env.DEV || processing || !load.importTiming || reportedTiming.current === load.importTiming) return;
+    reportedTiming.current = load.importTiming;
+    console.info('[document-import-timing]', JSON.stringify(documentImportDisplayTiming(load.importTiming)));
+  }, [processing, load.importTiming]);
   const [driverId, setDriverId] = useState(load.preferredDriverId || '');
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState('');
@@ -30,10 +36,6 @@ export default function ImportedLoadPage({ load, processing, drivers = [], onBac
     return () => clearInterval(timer);
   }, []);
   const details = buildImportedLoad(load);
-  const sourceUrl = load.sourceUrl || load.documents?.rateCon;
-  const warningFields = [...new Set([
-    ...details.blockingFields, ...(load.review?.warningFields || []),
-  ])];
   const selectedDriver = drivers.find(driver => driver.id === driverId);
   const mapState = importedMapState(details, selectedDriver, now);
   const contactsEnabled = Boolean((load.id || load.previewTicket) && !processing && !load.importError
@@ -78,13 +80,7 @@ export default function ImportedLoadPage({ load, processing, drivers = [], onBac
       <p>{load.importError}</p>
       <button className="import-button primary" onClick={onRetry}>{t('loadImport.retry')}</button>
     </div> : <>
-      <div className="review-page-heading">
-        <div><div className="review-title-line"><h1 ref={headingRef} tabIndex={-1} id="import-load-title">{t('loads.loadNumber')} <span>{details.number ? `#${String(details.number).replace(/^#/, '')}` : '—'}</span></h1>
-          <span className={`import-status${load.review?.required ? ' needs-review' : ''}`}><span />{t(load.review?.required ? 'loadImport.needsReview' : 'loadImport.prepared')}</span></div>
-          <p className="review-heading-file"><FileText size={15} />{load.fileName || load.driverBrief?.sourceFileName || t('documents.brokerRateCon')}</p></div>
-        <div className="review-heading-actions"><div className="import-total"><strong>{formatCurrency(details.rate)}</strong><span>{t('loads.rate')}</span></div>
-        {sourceUrl && <a className="import-button" href={sourceUrl} target="_blank" rel="noreferrer"><ArrowUpRight size={17} />{t('driverBrief.original')}</a>}</div>
-      </div>
+      <h1 className="sr-only" ref={headingRef} tabIndex={-1} id="import-load-title">{t('loads.loadNumber')} {details.number ? `#${String(details.number).replace(/^#/, '')}` : '—'}</h1>
       <ImportReviewPanels load={load} details={details} selectedDriver={selectedDriver} road={road} ratePerMile={ratePerMile}
         stops={<div className="import-stops">
             {details.stops.map((stop, index) => <Stop key={index} number={index + 1}
@@ -108,7 +104,6 @@ export default function ImportedLoadPage({ load, processing, drivers = [], onBac
           </div>}
       />
       <form className={`import-assignment${load.preferredDriverId ? ' import-assignment-fixed' : ''}`} onSubmit={assign}>
-            {warningFields.length > 0 && <details className="import-review-warning"><summary>{t('driverBrief.warning')}</summary><p>{warningFields.map(key => briefFieldLabel(t, key)).join(', ')}</p></details>}
             {!load.preferredDriverId && <label className="import-driver-select">{t('loads.selectDriver')}
               <select value={driverId} onChange={event => setDriverId(event.target.value)} disabled={submitting}>
                 <option value="">{t('loads.selectDriver')}</option>
@@ -119,7 +114,7 @@ export default function ImportedLoadPage({ load, processing, drivers = [], onBac
             {submitError && <p role="alert" className="import-blocked">{submitError}</p>}
             <div className="import-actions">
               <button type="button" className="import-button" onClick={onBack} disabled={submitting}>{t('loadImport.back')}</button>
-              <button type="submit" className="import-button primary" disabled={!eligible}>{submitting ? <LoaderCircle size={18} className="animate-spin" /> : <Check size={19} />}{t('loadImport.assign')}</button>
+              <button type="submit" className="import-button primary" disabled={!eligible} aria-busy={submitting}>{submitting ? <LoaderCircle size={18} className="animate-spin" /> : <Check size={19} />}{t(submitting ? 'loadImport.assigning' : 'loadImport.assign')}</button>
             </div>
           </form>
     </>}

@@ -1,7 +1,7 @@
 // This manifest is fetched SERVER-TO-SERVER from a configured private worker.
 // Never accept a browser-submitted manifest, quote, bbox or worker URL as trusted.
 export type PdfSource = { version: number; checksum: string; engine: string; pageCount: number;
-  pages: Array<{ number: number; width: number; height: number; ocr: boolean; image?: string;
+  pages: Array<{ number: number; width: number; height: number; ocr: boolean; image?: string; quality?: 'native' | 'vision_required';
     blocks: Array<{ id: string; text: string; bbox: number[] }> }> };
 
 export function validatePdfSource(source: any, checksum: string): PdfSource {
@@ -12,7 +12,7 @@ export function validatePdfSource(source: any, checksum: string): PdfSource {
   for (const [i, page] of source.pages.entries()) {
     if (page.number !== i + 1 || !Number.isFinite(page.width) || !Number.isFinite(page.height)
       || page.width <= 0 || page.height <= 0 || typeof page.ocr !== 'boolean'
-      || !Array.isArray(page.blocks) || !page.blocks.length) throw Error('PDF_SOURCE_INVALID');
+      || !Array.isArray(page.blocks) || (!page.blocks.length && page.quality !== 'vision_required')) throw Error('PDF_SOURCE_INVALID');
     for (const b of page.blocks) {
       if (typeof b.id !== 'string' || !new RegExp(`^page_${i + 1}_block_\\d+_line_\\d+$`).test(b.id) || ids.has(b.id)
         || typeof b.text !== 'string' || !b.text.trim() || !Array.isArray(b.bbox) || b.bbox.length !== 4
@@ -24,11 +24,14 @@ export function validatePdfSource(source: any, checksum: string): PdfSource {
   return source;
 }
 
-export async function fetchPdfSource(bytes: Uint8Array, checksum: string, url: string, token: string, fetcher = fetch) {
+export async function fetchPdfSource(bytes: Uint8Array, checksum: string, url: string, token: string, fetcher = fetch,
+  options: { textOnly?: boolean; ocrPages?: number[] } = {}) {
   const endpoint = new URL(url);
   if (endpoint.protocol !== 'https:' || endpoint.username || endpoint.password || token.length < 32) throw Error('PDF_WORKER_NOT_CONFIGURED');
   const response = await fetcher(endpoint.href, { method: 'POST', redirect: 'error', signal: AbortSignal.timeout(65_000),
-    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/pdf' }, body: bytes as any });
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/pdf',
+      ...(options.textOnly ? { 'X-PDF-Mode': 'text' } : {}),
+      ...(options.ocrPages?.length ? { 'X-PDF-OCR-Pages': options.ocrPages.join(',') } : {}) }, body: bytes as any });
   if (!response.ok) throw Error('PDF_PREPROCESS_FAILED');
   // Bound the response before JSON parsing, including chunked responses.
   const reader = response.body!.getReader(); let size = 0; const chunks: Uint8Array[] = [];
@@ -37,7 +40,7 @@ export async function fetchPdfSource(bytes: Uint8Array, checksum: string, url: s
   const data = new Uint8Array(size); let offset = 0;
   for (const chunk of chunks) { data.set(chunk, offset); offset += chunk.length; }
   const source = validatePdfSource(JSON.parse(new TextDecoder().decode(data)), checksum);
-  if (source.pages.some(p => !p.image?.startsWith('data:image/jpeg;base64,'))) throw Error('PDF_SOURCE_IMAGE_MISSING');
+  if (!options.textOnly && source.pages.some(p => !p.image?.startsWith('data:image/jpeg;base64,'))) throw Error('PDF_SOURCE_IMAGE_MISSING');
   return source;
 }
 
@@ -52,9 +55,16 @@ export function storedPdfSource(source: PdfSource): PdfSource {
     blocks: page.blocks.map(({ id, text, bbox }) => ({ id, text, bbox })) })) };
 }
 
+const evidenceIndexes = new WeakMap<PdfSource, Map<string, PdfSource['pages'][number]['blocks'][number] & { page: number; ocr: boolean }>>();
+
 export function evidenceFromSource(ids: unknown, source: PdfSource, field: string) {
   if (!Array.isArray(ids) || !ids.length || ids.length > 80 || new Set(ids).size !== ids.length) return null;
-  const selected = ids.map(id => source.pages.flatMap(page => page.blocks.map(b => ({ ...b, page: page.number, ocr: page.ocr }))).find(b => b.id === id));
+  let index = evidenceIndexes.get(source);
+  if (!index) {
+    index = new Map(source.pages.flatMap(page => page.blocks.map(block => [block.id, { ...block, page: page.number, ocr: page.ocr }])));
+    evidenceIndexes.set(source, index);
+  }
+  const selected = ids.map(id => index!.get(id));
   // One source page per fact. Long legal clauses must be split at page boundaries.
   if (selected.some(b => !b) || new Set(selected.map(b => b!.page)).size !== 1) return null;
   const blocks = selected as NonNullable<typeof selected[number]>[];

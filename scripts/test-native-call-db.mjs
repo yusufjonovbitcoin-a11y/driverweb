@@ -1,4 +1,5 @@
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { postgresHost, postgresStartOptions, postgresSpawnOptions, normalizePostgresOutput, removeTestCluster } from './isolated-postgres.mjs';
+import { mkdtemp, readFile } from 'node:fs/promises';
 import { spawn, spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -6,19 +7,19 @@ import { fileURLToPath } from 'node:url';
 import assert from 'node:assert/strict';
 // Fresh private-socket cluster; never reads app credentials or DATABASE_URL.
 const root=fileURLToPath(new URL('..',import.meta.url)), dir=await mkdtemp(path.join(tmpdir(),'tfleets-native-call-'));
-const bin=process.env.PG_BIN||'', connection=['-h',dir,'-p','55448','-d','postgres','-v','ON_ERROR_STOP=1','-Atq'];
-function run(exe,args,input){const r=spawnSync(path.join(bin,exe),args,{cwd:root,input,encoding:'utf8',maxBuffer:8*1024*1024});if(r.error||r.status!==0)throw r.error||new Error(r.stderr+'\n'+r.stdout);if(r.stderr)process.stdout.write(r.stderr);return r.stdout;}
+const bin=process.env.PG_BIN || (process.platform === 'win32' ? 'C:/Program Files/PostgreSQL/18/bin' : ''), connection=['-h',postgresHost(dir),'-p','55448','-d','postgres','-v','ON_ERROR_STOP=1','-Atq'];
+function run(exe,args,input){const r=spawnSync(path.join(bin,exe),args,postgresSpawnOptions(exe,{cwd:root,input,encoding:'utf8',maxBuffer:8*1024*1024}));if(r.error||r.status!==0)throw r.error||new Error(r.stderr+'\n'+r.stdout);if(r.stderr)process.stdout.write(r.stderr);return normalizePostgresOutput(r.stdout);}
 const sql=text=>run('psql',connection,text);
 async function source(file,start,end){let text=await readFile(path.join(root,file),'utf8');if(start){assert(text.includes(start));text=text.slice(text.indexOf(start));}if(end){assert(text.includes(end));text=text.slice(0,text.indexOf(end));}return text;}
 const migration=(name,start,end)=>source('supabase/migrations/'+name,start,end).then(sql);
-function asyncSql(text,onOutput=()=>{}){return new Promise((resolve,reject)=>{const p=spawn(path.join(bin,'psql'),connection,{cwd:root});let out='',err='';const timer=setTimeout(()=>{p.kill();reject(new Error('Concurrency test timed out'));},10000);p.stdout.on('data',x=>{out+=x;onOutput(out);});p.stderr.on('data',x=>err+=x);p.on('error',reject);p.on('close',code=>{clearTimeout(timer);resolve({code,out,err});});p.stdin.end(text);});}
+function asyncSql(text,onOutput=()=>{}){return new Promise((resolve,reject)=>{const p=spawn(path.join(bin,'psql'),connection,{cwd:root});let out='',err='';const timer=setTimeout(()=>{p.kill();reject(new Error('Concurrency test timed out'));},10000);p.stdout.on('data',x=>{out+=normalizePostgresOutput(String(x));onOutput(out);});p.stderr.on('data',x=>err+=x);p.on('error',reject);p.on('close',code=>{clearTimeout(timer);resolve({code,out,err});});p.stdin.end(text);});}
 // Keep a real transaction open until another connection is observed waiting.
 function heldTransaction(text, marker) {
  const p=spawn(path.join(bin,'psql'),connection,{cwd:root}); let out='',err='',ready;
  const started=new Promise(resolve=>ready=resolve);
  const result=new Promise((resolve,reject)=>{
   const timer=setTimeout(()=>{p.kill();reject(new Error('Held transaction timed out'));},10000);
-  p.stdout.on('data',x=>{out+=x;if(out.includes(marker))ready();});p.stderr.on('data',x=>err+=x);
+  p.stdout.on('data',x=>{out+=normalizePostgresOutput(String(x));if(out.includes(marker))ready();});p.stderr.on('data',x=>err+=x);
   p.on('error',reject);p.on('close',code=>{clearTimeout(timer);resolve({code,out,err});});
  });
  p.stdin.write(text+'\n');
@@ -33,7 +34,7 @@ async function waitForDatabaseLock(applicationName) {
 }
 let started=false;
 try{
- run('initdb',['-D',dir+'/data','-A','trust','--no-locale','--encoding=UTF8']);run('pg_ctl',['-D',dir+'/data','-l',dir+'/server.log','-o',`-k ${dir} -h '' -p 55448 -c wal_level=logical`,'start']);started=true;
+ run('initdb',['-D',dir+'/data','-A','trust','--no-locale','--encoding=UTF8']);run('pg_ctl',['-D',dir+'/data','-l',dir+'/server.log','-o',postgresStartOptions(dir, 55448, '-c wal_level=logical'),'start']);started=true;
  sql(await source('scripts/chat-test-fixtures/bootstrap.sql'));
  await migration('20261001141119_chat_reliability_hardening.sql');
  await migration('20261004234608_chat_consistency_and_privacy.sql');
@@ -71,4 +72,4 @@ try{
  sql(`select test_assert(not exists(select 1 from voip_devices v join push_devices p on p.id=v.fcm_device_id where v.disabled_at is null and (v.user_id,v.company_id) is distinct from (p.user_id,p.company_id)),'concurrent transfer cannot create an active cross-owner VoIP link');`);
  sql(`select test_assert((select disabled_at is not null from voip_devices where token=repeat('b',64)),'concurrent transfer leaves the old VoIP endpoint revoked');`);
  console.log('PASS: native call SQL, safety, durable fanout, credential-free wake, expiry, atomic device claim and concurrent ownership transfer');
-}finally{if(started)run('pg_ctl',['-D',dir+'/data','-m','fast','stop']);await rm(dir,{recursive:true,force:true});}
+}finally{if(started)run('pg_ctl',['-D',dir+'/data','-m','fast','stop']);await removeTestCluster(dir);}

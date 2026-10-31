@@ -1,7 +1,7 @@
 import React from "react";
 import { createRoot } from "react-dom/client";
 import i18n from "../../src/i18n";
-import FinanceWorkspace from "../../src/components/finance/FinanceWorkspace";
+import FinanceWorkspace from "../legacy/src/components/finance/FinanceWorkspace";
 await i18n.changeLanguage("ru");
 createRoot(document.getElementById("root")).render(
   <div style={{ padding: 24, fontFamily: "Arial,sans-serif", background: "#f4f7fb", minHeight: "100vh" }}>

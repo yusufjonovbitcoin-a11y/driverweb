@@ -88,7 +88,7 @@ function clearMarkers(markers) {
   markers.length = 0;
 }
 
-export default function TrackingMap({ points, deadheadPoints, livePosition, routeKey, title, routeStops,
+export default function TrackingMap({ points, deadheadPoints, livePosition, routeKey, title, routeStops, routeStartPosition, routeStartLabel = 'Start',
   lineColor = '#2563eb', liveMarkerText = 'D', liveMarkerIcon = null,
   pickupLabel = 'A', deliveryLabel = 'B', liveLabel = 'D', isVisible = true,
   viewportPadding = 70, focusRequest = 0, recordedLine = false,
@@ -105,6 +105,9 @@ export default function TrackingMap({ points, deadheadPoints, livePosition, rout
   const [retry, setRetry] = useState(0);
   const liveLatitude = livePosition?.lat;
   const liveLongitude = livePosition?.lng;
+  const startLatitude = routeStartPosition?.lat, startLongitude = routeStartPosition?.lng;
+  const start = useMemo(() => validMapCoordinate(startLatitude, startLongitude)
+    ? { lat: Number(startLatitude), lng: Number(startLongitude) } : null, [startLatitude, startLongitude]);
   const geometry = useMemo(() => buildMapboxGeometry(points), [points]);
   const lineFeatures = useMemo(() => mapboxLineFeatures(points, recordedLine), [points, recordedLine]);
   const deadhead = useMemo(() => buildMapboxGeometry(deadheadPoints || []), [deadheadPoints]);
@@ -218,6 +221,12 @@ export default function TrackingMap({ points, deadheadPoints, livePosition, rout
     map.getSource('driver-recorded')?.setData({ type: 'FeatureCollection', features: recordedFeatures });
     clearMarkers(markersRef.current);
 
+    if (start) {
+      markersRef.current.push(new mapboxgl.Marker({ element: markerElement('#1d4ed8', 'S', routeStartLabel, null, true) })
+        .setLngLat([start.lng, start.lat])
+        .setPopup(new mapboxgl.Popup({ offset: 18 }).setText(routeStartLabel)).addTo(map));
+    }
+
     if (routeStops?.length) {
       stops.forEach(stop => {
         const label = stop.markerLabel;
@@ -234,7 +243,7 @@ export default function TrackingMap({ points, deadheadPoints, livePosition, rout
       markersRef.current.push(new mapboxgl.Marker({ element: markerElement('#ef4444', 'D', deliveryLabel) })
         .setLngLat([geometry.end.lng, geometry.end.lat]).addTo(map));
     }
-  }, [geometry, lineFeatures, recordedFeatures, deadhead, status, isVisible, lineColor, pickupLabel, deliveryLabel, routeStops, stops, t]);
+  }, [geometry, lineFeatures, recordedFeatures, deadhead, status, isVisible, lineColor, pickupLabel, deliveryLabel, routeStops, stops, start, routeStartLabel, t]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -262,7 +271,7 @@ export default function TrackingMap({ points, deadheadPoints, livePosition, rout
     if (!isVisible || status !== 'ready' || !map || waitingForStops) return;
     const path = geometry.path.length ? geometry.path : recordedFeatures.flatMap(feature =>
       feature.geometry.coordinates.map(([lng, lat]) => ({ lng, lat })));
-    const focusPoints = mapboxFocusPoints({ path, deadheadPath: deadhead.path, stops, live, fitToStops });
+    const focusPoints = mapboxFocusPoints({ path, deadheadPath: deadhead.path, stops, live, start, fitToStops });
     const hasRoute = focusPoints.length > 0;
     const cameraKey = `${routeKey}:${paddingKey}:${focusRequest}:${fitToStops}:${!fitToStops && Boolean(live)}:${JSON.stringify(stops.map(stop => [stop.lat, stop.lng]))}`;
     if (shouldFitMapbox(fittedRouteRef.current, cameraKey, hasRoute)) {
@@ -288,7 +297,7 @@ export default function TrackingMap({ points, deadheadPoints, livePosition, rout
         map.jumpTo({ center: [DEFAULT_MAP_CENTER.lng, DEFAULT_MAP_CENTER.lat], zoom: 5 });
       }
     }
-  }, [geometry, recordedFeatures, deadhead, live, routeKey, status, isVisible, paddingKey, focusRequest, stops, fitToStops, waitingForStops]);
+  }, [geometry, recordedFeatures, deadhead, live, start, routeKey, status, isVisible, paddingKey, focusRequest, stops, fitToStops, waitingForStops]);
 
   return (
     <div className="relative h-full w-full">

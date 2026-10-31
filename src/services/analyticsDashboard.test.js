@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { chartPoints, expenseSegments, demoDashboard } from './analyticsDashboard.js';
+import { chartPoints, expenseSegments, demoDashboard } from '../../tests/legacy/src/services/analyticsDashboard.js';
 
 test('chart keeps unknown values as gaps and real zeros at the baseline', () => {
   const points = chartPoints([{ month: '2026-08', fuel: null }, { month: '2026-09', fuel: 0 }, { month: '2026-10', fuel: 100 }], 'fuel');

@@ -1,4 +1,5 @@
 import { chatLogoutEpoch } from './chatSession.js';
+import { normalizeChatMedia } from './chatMediaPolicy.js';
 
 export const MEDIA_FILE_LIMIT = 50 * 1024 * 1024;
 export const MEDIA_QUEUE_LIMIT = 200 * 1024 * 1024;
@@ -91,6 +92,7 @@ export class ChatMediaOutbox {
   notify() { for (const listener of this.listeners) listener(); }
   list() { return [...this.rows.values()].map(({ blob: _blob, key: _key, scope: _scope, ...row }) => ({ ...row, status: !this.owned.has(row.client_id) && ['queued', 'sending'].includes(row.status) ? 'failed' : row.status })); }
   async enqueue({ file, conversationId, senderId, companyId, durationMs = null }) {
+    file = normalizeChatMedia(file);
     const storageEpoch = await this.ready();
     if (!(file instanceof Blob) || file.size === 0) throw new Error('CHAT_MEDIA_FILE_EMPTY');
     if (file.size > MEDIA_FILE_LIMIT) throw new Error('CHAT_MEDIA_FILE_TOO_LARGE');

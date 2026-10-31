@@ -64,7 +64,7 @@ export function singlePassValueSupported(path: string, value: unknown, quote: st
       ? /(?:hazmat|hazardous(?: materials?)?)\s*[:=]?\s*(?:yes|true)\b/.test(text)
         || /^hazmat\s*[:=]?\s*hazardous$/.test(text)
         || /\bhazmat\s+(?:un\s*)?\d{4}\b/.test(text)
-      : /(?:hazmat|hazardous(?: materials?)?)\s*[:=]?\s*(?:no|false)\b|\bnon[- ]hazardous\b/.test(text);
+      : /(?:hazmat|hazardous(?: materials?)?)\s*[:=]?\s*(?:no|false)\b|\b(?:non|not)[- ]hazardous\b/.test(text);
   }
   if (typeof value !== 'string') return false;
   if (/\.(scheduledDate|readyDate)$/.test(path) && /^\d{4}-\d{2}-\d{2}$/.test(value)) {

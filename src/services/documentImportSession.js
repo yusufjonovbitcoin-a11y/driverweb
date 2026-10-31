@@ -54,10 +54,3 @@ export function continueDocumentImport(current, drivers) {
 export function shouldCancelImportOnNavigation(importTab, nextTab) {
   return Boolean(importTab && importTab !== nextTab);
 }
-
-export function findExistingFinalizedLoad(loads, loadNumber) {
-  const number = String(loadNumber || '').trim().replace(/^#/, '');
-  if (!number) return null;
-  return (loads || []).find(load => String(load.loadNumber || '').trim().replace(/^#/, '') === number
-    && !['draft', 'review'].includes(load.databaseStatus)) || null;
-}

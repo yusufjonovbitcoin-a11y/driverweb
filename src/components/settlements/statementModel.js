@@ -40,12 +40,14 @@ export function statementModel(snapshot) {
         ? `${name} ${Number(rule.value)}%`
         : name + frequency;
     return {
+      ruleId: id,
       label,
       amount: applied ? statementMoney(applied.amount / 100) : "",
     };
   });
-  for (const rule of c.deductions.filter((r) => r.id.startsWith("custom_")))
+  for (const rule of c.deductions.filter((r) => r.id.startsWith("custom_") || r.id === 'pdf_net_adjustment'))
     deductions.push({
+      ruleId: rule.id,
       label: rule.label,
       amount: statementMoney(rule.amount / 100),
     });
@@ -72,12 +74,16 @@ export function statementModel(snapshot) {
     r.miles > 0 ? statementMoney(r.gross / 100 / r.miles) : "—",
     r.miles == null ? "—" : String(r.miles),
     "$" + statementMoney(r.gross / 100),
-    "$" + statementMoney((r.gross - r.commission) / 100),
+    "$" + statementMoney((r.net ?? (r.gross - r.commission)) / 100),
   ]);
   return {
     columns,
     rows,
     deductions,
+    netAdjustments: c.rows.filter(r => r.netAdjustment).map(r => ({
+      label: `Load Net adjustment: ${r.load.loadNumber}`,
+      amount: `${r.netAdjustment > 0 ? '+' : ''}${statementMoney(r.netAdjustment / 100)}`,
+    })),
     totals: [
       "Total earnings",
       "",
