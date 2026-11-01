@@ -90,6 +90,7 @@ function toUiLoad(row, offersByLoad, documentsByLoad, warningsByLoad, reviewsByD
     status: loadBoardStatus(row, stagesByAssignment.get(row.current_assignment_id)),
     databaseStatus: row.status,
     ...loadTrashMetadata(row),
+    executionResetAt: row.execution_reset_at || null,
     broker: row.broker_name || null,
     brokerContact: row.broker_contact_name || '',
     brokerPhone: row.broker_phone || '',
@@ -312,10 +313,10 @@ export async function fetchWorkspace() {
   };
 }
 
-export async function fetchWorkspaceAvatar(member) {
+export async function fetchWorkspaceAvatar(member, options) {
   const urls = await resolveProfileAvatarUrls(requireSupabase(), [
     { id: member.id, avatar_path: member.avatarPath },
-  ], cloudinarySignedUrl);
+  ], cloudinarySignedUrl, options);
   return urls.get(member.id) || null;
 }
 

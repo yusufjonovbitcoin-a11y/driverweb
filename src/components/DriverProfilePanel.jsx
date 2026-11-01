@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import LoadNumber from './LoadNumber.jsx';
+import MemberAvatar from './MemberAvatar.jsx';
 import { useTranslation } from 'react-i18next';
 import {
   ArrowLeft,
@@ -78,11 +79,7 @@ export default function DriverProfilePanel({
 
       <header className="cdp-header">
         <div className="cdp-identity">
-          <div className="cdp-avatar">
-            {driver.avatar
-              ? <img src={driver.avatar} alt="" />
-              : <span aria-hidden="true">{driver.name.charAt(0)}{driver.name.split(' ')[1]?.charAt(0) || ''}</span>}
-          </div>
+          <MemberAvatar member={driver} className="cdp-avatar" />
           <div className="cdp-name">
             <div><h2 id="driver-profile-title">{driver.name}</h2><span className="cdp-badge"><i aria-hidden="true" />{stateLabel}</span></div>
             <p>{driver.driverNumber || t('common.notProvided')}</p>

@@ -632,7 +632,17 @@
     "copyAddressError": "Manzilni nusxalab bo‘lmadi. Matnni belgilab, qo‘lda nusxalang.",
     "evidence": "Ajratilgan ma’lumotlar va manbalarini tekshirish",
     "assign": "Haydovchiga tayinlash",
-    "assigning": "Tayinlanmoqda…"
+    "assigning": "Tayinlanmoqda…",
+    "documentDetected": "Hujjat turi: {{type}}",
+    "rateConOnly": "Yuk yaratish uchun Rate Con — stavka yoki yuk tasdiqnomasini yuklang. Bu hujjat yangi yuk sifatida tahlil qilinmaydi.",
+    "documentTypes": {
+      "bol": "BOL — yuk xati",
+      "pod": "POD — yetkazib berish tasdig‘i",
+      "invoice": "Invoice — hisob-faktura",
+      "driver_sheet": "Haydovchi varaqasi",
+      "other": "Boshqa hujjat",
+      "unknown": "Rate Con ekanligi tasdiqlanmadi"
+    }
   },
   "driverBrief": {
     "title": "Haydovchi uchun yuk varaqasi",
@@ -2234,5 +2244,27 @@
     "rateLimited": "Parol bo‘yicha so‘rovlar juda ko‘p. Bir necha daqiqadan so‘ng qayta urinib ko‘ring.",
     "failed": "Yangi parol o‘rnatilmadi. Qayta urinib ko‘ring.",
     "historyRequested": "Haydovchi parolini o‘zgartirish so‘raldi"
+  },
+  "staffCompletion": {
+    "action": "Reysni yakunlash",
+    "title": "Yetkazishni tasdiqlash va reysni yakunlash",
+    "description": "Barcha bekatlardagi ishlar tugaganini tasdiqlang. Haydovchi ilovada amal bajargan bo‘lishi shart emas.",
+    "documentsReady": "BOL / POD saqlangan · {{count}} ta hujjat",
+    "deliveryDate": "Haqiqiy yetkazish sanasi",
+    "deliveryTime": "Haqiqiy yetkazish vaqti",
+    "timeZone": "Vaqt mintaqasi",
+    "note": "Izoh (ixtiyoriy)",
+    "payNote": "Reysni yakunlash to‘lovni tasdiqlamaydi. Haydovchi START bosmagan bo‘lsa, GPS masofasi va mil uchun haq hisoblanmaydi.",
+    "confirm": "Tasdiqlash va yakunlash",
+    "saving": "Yakunlanmoqda…",
+    "success": "Yetkazish tasdiqlandi. Reys yakunlandi.",
+    "documentsError": "Avval har bir yuklash uchun BOL va har bir yetkazish uchun POD saqlang.",
+    "permissionError": "Reysni faqat faol kompaniya administratori yoki dispetcher yakunlay oladi.",
+    "conflictError": "Reys, tayinlov yoki hujjatlar o‘zgargan. Oynani yoping va qayta tasdiqlashdan oldin ma’lumotlarni yangilang.",
+    "timeError": "Haqiqiy yetkazish vaqti va vaqt mintaqasini tekshiring. Yetkazish kelajakda bo‘lishi mumkin emas.",
+    "ambiguousTime": "Soat o‘zgarganda bu vaqt ikki marta uchraydi. UTC ni tanlab, aniq UTC vaqtini kiriting.",
+    "saveError": "Yakunlash tasdiqlanmadi. Aloqani tekshirib qayta urinib ko‘ring: bir so‘rov reysni ikki marta yakunlamaydi.",
+    "noStart": "STARTsiz yakunlangan",
+    "noStartHint": "Reys haydovchining START nuqtasisiz yakunlangan. GPS masofasi va mil uchun haq hisoblanmagan."
   }
 }

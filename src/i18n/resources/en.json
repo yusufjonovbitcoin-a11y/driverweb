@@ -632,7 +632,17 @@
     "copyAddressError": "Could not copy address. Select the text and copy it manually.",
     "evidence": "Review extracted fields and their sources",
     "assign": "Assign to driver",
-    "assigning": "Assigning…"
+    "assigning": "Assigning…",
+    "documentDetected": "Document type: {{type}}",
+    "rateConOnly": "To create a load, upload a Rate Con — a rate or load confirmation. This document is not analyzed as a new load.",
+    "documentTypes": {
+      "bol": "BOL — Bill of Lading",
+      "pod": "POD — Proof of Delivery",
+      "invoice": "Invoice",
+      "driver_sheet": "Driver sheet",
+      "other": "Other document",
+      "unknown": "Rate Con not confirmed"
+    }
   },
   "driverBrief": {
     "title": "Driver sheet",
@@ -2232,5 +2242,27 @@
     "rateLimited": "Too many password requests. Wait a few minutes and try again.",
     "failed": "Could not set the new password. Try again.",
     "historyRequested": "Driver password change requested"
+  },
+  "staffCompletion": {
+    "action": "Finish trip",
+    "title": "Confirm delivery and finish trip",
+    "description": "Confirm that every stop is complete. This works even if the driver has not used the app.",
+    "documentsReady": "BOL / POD saved · {{count}} documents",
+    "deliveryDate": "Actual delivery date",
+    "deliveryTime": "Actual delivery time",
+    "timeZone": "Time zone",
+    "note": "Note (optional)",
+    "payNote": "Completing a trip does not confirm payment. Without a driver START, GPS mileage and mileage pay remain uncalculated.",
+    "confirm": "Confirm and finish",
+    "saving": "Finishing…",
+    "success": "Delivery confirmed. Trip completed.",
+    "documentsError": "Save a BOL for every pickup and a POD for every delivery first.",
+    "permissionError": "Only an active company administrator or dispatcher can finish a trip.",
+    "conflictError": "The trip, assignment or documents changed. Close this window and refresh before confirming again.",
+    "timeError": "Check the actual delivery time and time zone. The delivery cannot be in the future.",
+    "ambiguousTime": "This time occurs twice during the daylight-saving change. Select UTC and enter the exact UTC time.",
+    "saveError": "Could not confirm completion. Check the connection and retry; the same request will not complete the trip twice.",
+    "noStart": "Finished without START",
+    "noStartHint": "The trip was finished without a recorded driver START. GPS mileage and mileage pay have not been calculated."
   }
 }

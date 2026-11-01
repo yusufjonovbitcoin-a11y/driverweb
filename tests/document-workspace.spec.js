@@ -47,3 +47,26 @@ test('read-only table retains every stop and receipt without edit controls', asy
   await fileRow(page, 'pod2.pdf').getByRole('button', { name: 'pod2.pdf', exact: true }).click();
   expect(await page.evaluate(() => window.fixtureOpened)).toMatchObject({ id: 'pod2', stop_id: 'd2', current_version_id: 'v-pod2' });
 });
+
+test('missing receipt has an Add action and supports upload, open, replacement and removal', async ({ page }) => {
+  await page.goto('/tests/ui/document-workspace.html?missingReceipt');
+  const receipt = page.locator('.document-registry-row').filter({ hasText: 'Payment receipt' });
+  await expect(receipt.getByRole('button', { name: 'Add file', exact: true })).toBeVisible();
+  const chooser = page.waitForEvent('filechooser');
+  await receipt.getByRole('button', { name: 'Add file', exact: true }).click();
+  await (await chooser).setFiles({ ...pdf, name: 'payment-receipt.pdf' });
+  await expect(fileRow(page, 'payment-receipt.pdf')).toBeVisible();
+  expect(await page.evaluate(() => window.fixtureActions[0])).toMatchObject({ type: 'receipt', documentId: 'receipt', stopId: null, expectedVersionId: null });
+  await fileRow(page, 'payment-receipt.pdf').getByRole('button', { name: 'View', exact: true }).click();
+  expect(await page.evaluate(() => window.fixtureOpened)).toMatchObject({ id: 'receipt', current_version_id: 'new-receipt' });
+  await fileRow(page, 'payment-receipt.pdf').locator('input[type=file]').setInputFiles({ ...pdf, name: 'corrected-receipt.pdf' });
+  await expect(fileRow(page, 'corrected-receipt.pdf')).toBeVisible();
+  expect(await page.evaluate(() => window.fixtureActions[1])).toMatchObject({ type: 'receipt', documentId: 'receipt', expectedVersionId: 'new-receipt' });
+  await fileRow(page, 'corrected-receipt.pdf').locator('summary').click();
+  await fileRow(page, 'corrected-receipt.pdf').getByRole('button', { name: 'Remove file', exact: true }).click();
+  await page.getByRole('dialog').getByRole('button', { name: 'Remove file', exact: true }).click();
+  await expect(receipt.getByRole('button', { name: 'Add file', exact: true })).toBeVisible();
+  expect(await page.evaluate(() => window.fixtureActions[2])).toMatchObject({ type: 'receipt', action: 'remove', documentId: 'receipt' });
+  await expect(fileRow(page, 'pod1.pdf')).toBeVisible();
+  await expect(fileRow(page, 'a.pdf')).toBeVisible();
+});

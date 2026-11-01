@@ -51,6 +51,8 @@ function harness({role='dispatcher', providerStatus='completed', uncertain=false
     URL, crypto, TextEncoder, TextDecoder, Uint8Array, btoa, Intl, structuredClone,
     fetch:async(url, options)=>{
       assert.equal(url,'https://api.openai.com/v1/responses');
+      if (JSON.parse(options.body).text?.format?.name === 'load_import_document_type') return Response.json({status:'completed',
+        output:[{content:[{type:'output_text',text:JSON.stringify({type:'rate_confirmation',confidence:.99})}]}]});
       requests.push(JSON.parse(options.body)); const candidate=extraction();
       if(uncertain) candidate.documentReview.uncertainFields=['loadNumber'];
       let wire=candidate;
@@ -224,7 +226,9 @@ for (const confirmWithoutGps of [false, true]) test(confirmWithoutGps
     Deno:{env:{get:name=>environment[name]},serve:fn=>{handler=fn;}},
     console:{info(){},error(){}},performance,AbortSignal,Response,Request,File,FormData,Headers,
     URL,crypto,TextEncoder,TextDecoder,Uint8Array,btoa,Intl,structuredClone,
-    fetch:async()=>{
+    fetch:async(_url, options)=>{
+      if (JSON.parse(options.body).text?.format?.name === 'load_import_document_type') return Response.json({status:'completed',
+        output:[{content:[{type:'output_text',text:JSON.stringify({type:'rate_confirmation',confidence:.99})}]}]});
       const candidate=extraction();
       const fact=(value,path)=>({value,page:1,quote:candidate.evidence.find(e=>e.field===path)?.quote??null});
       const wire={loadNumber:fact(candidate.loadNumber,'loadNumber'),requirements:[],
@@ -292,7 +296,8 @@ test('review warnings do not produce a document-review rejection on Send',async(
 test('real upload handler reopens a blocked review without model calls or storage writes',async()=>{
   const preparedLoad={id:'saved-load',review:{blockingFields:['loadNumber']}};
   const h=harness({existing:{id:'saved-import',status:'needs_review',load_id:'saved-load',
-    extracted_result:preparedLoad,extraction_schema_version:DOCUMENT_EXTRACTION_VERSION}});
+    extracted_result:preparedLoad,extraction_schema_version:DOCUMENT_EXTRACTION_VERSION+10000,
+    raw_extraction:{candidate:{loadImportClassification:{version:1,type:'rate_confirmation',method:'ai_classification'}}}}});
   const response=await h.run(true,false); const result=await response.json();
   assert.equal(response.status,200); assert.deepEqual(result.preparedLoad,preparedLoad);
   assert.equal(result.duplicate,true); assert.equal(h.requests.length,0);

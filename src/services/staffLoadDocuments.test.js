@@ -154,6 +154,27 @@ test('explicit multi-stop upload targets exactly its supplied stop', async () =>
   assert.equal(f.calls[0].params.p_document_type, 'pod');
 });
 
+test('receipt uploads commit to the load and update only the receipt projection', async () => {
+  const receipt = { ...row, document_type: 'receipt', stop_id: null };
+  const f = fixture({ rpcResult: name => name === 'complete_staff_document_upload' ? { data: receipt } : undefined });
+  const result = await f.manager.run(load, { type: 'receipt', action: 'upload', documentId: null, expectedVersionId: null, file: pdf() });
+  assert.equal(f.calls[0].params.p_document_type, 'receipt');
+  assert.equal(f.calls[0].params.p_stop_id, null);
+  assert.equal(f.calls[0].params.p_document_id, null);
+  const original = { ...load, stage: 'in_progress', documents: { receipt: 'old-url', shipperBol: 'bol-url' },
+    documentChecks: { receipt: { status: 'passed' } } };
+  const updated = applyStaffDocumentResult(original, result);
+  assert.equal(updated.documents.receipt, null);
+  assert.equal(updated.documents.shipperBol, 'bol-url');
+  assert.equal(updated.documentMeta.receipt.current_version_id, 'version-new');
+  assert.equal(updated.documentChecks.receipt, null);
+  assert.equal(updated.rate, original.rate);
+  assert.equal(updated.stage, original.stage);
+  const wrongStop = fixture({ rpcResult: name => name === 'complete_staff_document_upload'
+    ? { data: { ...receipt, stop_id: 'pickup' } } : undefined });
+  await assert.rejects(wrongStop.manager.run(load, { type: 'receipt', action: 'upload', expectedVersionId: null, file: pdf() }), /INVALID_RESULT/);
+});
+
 test('replayed ack cannot overwrite metadata for a newer version or different document', async () => {
   for (const changed of [{ current_version_id: 'newer' }, { id: 'other-doc' }, { document_type: 'pod' }, { load_id: 'other-load' }]) {
     const f = fixture({ rpcResult: name => name === 'complete_staff_document_upload' ? { data: { ...row, ...changed } } : undefined });
@@ -182,9 +203,9 @@ test('remove is scoped and versioned; never invokes Storage or Cloudinary deleti
     p_expected_current_version_id: 'version-old', p_operation_id: 'op-1' } });
 });
 
-test('receipt, trashed load, stale version and unsupported actions cannot mutate', async () => {
+test('trashed load, stale version and unsupported actions cannot mutate', async () => {
   const f = fixture();
-  for (const request of [{ type: 'receipt', action: 'upload' }, { type: 'pod', action: 'delete' },
+  for (const request of [{ type: 'invoice', action: 'upload' }, { type: 'pod', action: 'delete' },
     { type: 'pod', action: 'remove', expectedVersionId: null }]) await assert.rejects(f.manager.run(load, request), /CONFLICT/);
   await assert.rejects(f.manager.run({ ...load, trashedAt: 'now' }, uploadRequest(pdf())), /CONFLICT/);
   assert.equal(f.calls.length, 0);

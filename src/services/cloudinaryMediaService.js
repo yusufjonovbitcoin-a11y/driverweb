@@ -55,8 +55,9 @@ export async function uploadCloudinaryMedia({
   });
 }
 
-export async function cloudinarySignedUrl(reference) {
+export async function cloudinarySignedUrl(reference, { force = false } = {}) {
   if (!isCloudinaryReference(reference)) return null;
+  if (force) invalidateSignedMediaUrl(requireSupabase(), reference);
   return cachedSignedMediaUrl(requireSupabase(), reference, async () => {
     const result = await request({ action: 'signedUrl', reference });
     return result;

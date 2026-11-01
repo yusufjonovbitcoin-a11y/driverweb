@@ -48,7 +48,7 @@ function useMapOverlays(isVisible) {
   return { canvasRef, dockRef, padding };
 }
 
-export default function FleetMap({ drivers, loads, isVisible = true, onOpenDocs, onTrashLoad, onManageDocument }) {
+export default function FleetMap({ drivers, loads, isVisible = true, onOpenDocs, onTrashLoad, onManageDocument, onCompleteLoad }) {
   const { t } = useTranslation();
   const [selectedTruckId, setSelectedTruckId] = useWorkspaceView('map.driver', drivers[0]?.id || null);
   const [selectedLoadId, setSelectedLoadId] = useWorkspaceView('map.load', null);
@@ -164,7 +164,7 @@ export default function FleetMap({ drivers, loads, isVisible = true, onOpenDocs,
         </div>
       </section>
       {detailsLoad && <React.Suspense fallback={<div className="fleet-map-details-loading" role="status">{t('common.loading')}</div>}>
-        <LoadDetailsModal load={detailsLoad} driver={selectedDriver} onClose={closeDetails} onTrashLoad={onTrashLoad} onManageDocument={onManageDocument}
+        <LoadDetailsModal load={detailsLoad} driver={selectedDriver} onClose={closeDetails} onTrashLoad={onTrashLoad} onManageDocument={onManageDocument} onCompleteLoad={onCompleteLoad}
           onOpenDocs={onOpenDocs} />
       </React.Suspense>}
     </div>

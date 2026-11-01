@@ -19,7 +19,7 @@ export async function mutate(_load, action) {
   await new Promise(resolve => setTimeout(resolve, 250));
   let item = context.documentItems.find(row => row.id === action.documentId);
   if (!item) {
-    item = row('new-file', { bol: 'bol', pod: 'pod', ratecon: 'rate_confirmation' }[action.type], action.stopId);
+    item = row('new-file', { bol: 'bol', pod: 'pod', ratecon: 'rate_confirmation', receipt: 'receipt' }[action.type], action.stopId);
     context.documentItems.push(item);
   }
   item.current_version_id = action.action === 'remove' ? null : `new-${item.id}`;

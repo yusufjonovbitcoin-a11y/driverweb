@@ -7,6 +7,7 @@ import { useDeliveryMonitor } from '../hooks/useDeliveryMonitor.js';
 import { deliveryMonitorProblemCount } from './deliveryMonitorModel.js';
 import { setDriverAccountStatus } from '../services/driverSettingsService.js';
 import LoadNumber from './LoadNumber.jsx';
+import MemberAvatar from './MemberAvatar.jsx';
 import './driver-roster-list.css';
 import './delivery-monitor.css';
 
@@ -136,7 +137,7 @@ export default function DriverRosterList({ drivers, loads, onOpenDriver, onPrefe
           onFocus={prefetchDriverDetail}
           onClick={event => { if (!event.target.closest('button, a, input, label')) onOpenDriver(driver.id); }}
           onKeyDown={event => { if (event.target === event.currentTarget && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); onOpenDriver(driver.id); } }}>
-          <td><div className="drivers-roster-person"><span className="drivers-roster-avatar">{driver.avatar ? <img src={driver.avatar} alt="" onError={event => { event.currentTarget.style.display = 'none'; }} /> : driver.name.split(' ').map(part => part.charAt(0)).slice(0, 2).join('')}</span>
+          <td><div className="drivers-roster-person"><MemberAvatar member={driver} className="drivers-roster-avatar" />
             <span className="drivers-roster-person-copy"><strong>{driver.name}{driver.isOnline && <i className="drivers-roster-online-dot" aria-label={t('common.online')} />}</strong><small>{driver.driverNumber || '—'}</small></span>
             {unread > 0 && <span className="drivers-roster-unread" aria-label={t('chat.unreadMessages', { count: unread })}>{unread > 99 ? '99+' : unread}</span>}</div></td>
           <td><strong>{load ? <LoadNumber load={load} /> : '—'}</strong>{activeLoads.length > 1 && <small title={activeLoads.slice(1).map(item => item.loadNumber).filter(Boolean).join(', ')}>+{activeLoads.length - 1}</small>}</td>

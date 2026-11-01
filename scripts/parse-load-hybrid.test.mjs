@@ -23,7 +23,7 @@ async function harness({ conflict = false, role = 'dispatcher', repair = false, 
   const pdf = await PDFDocument.create();
   const page = pdf.addPage([612, 792]);
   const font = await pdf.embedFont(StandardFonts.Helvetica);
-  const lines = ['Load # TEST-42', 'Pickup', '1 First Ave', 'Phoenix, AZ 85001', 'Delivery',
+  const lines = ['Rate Confirmation - Load # TEST-42', 'Pickup', '1 First Ave', 'Phoenix, AZ 85001', 'Delivery',
     '2 Second Ave, Dallas, TX 75001', 'Dallas, TX 75001'];
   if (conflict) lines.push('2 Second Ave, Dallas, Texas 75002');
   const positions = [750, 690, 670, 650, 570, 550, 530, 510];
@@ -38,7 +38,7 @@ async function harness({ conflict = false, role = 'dispatcher', repair = false, 
         return { select() { return this; }, eq(key, value) { filters.set(key, value); return this; }, maybeSingle: async () => {
           assert.equal(filters.get('company_id'), 'company-a'); assert.equal(filters.get('created_by'), 'actor');
           assert.equal(filters.get('checksum_sha256'), Buffer.from(await crypto.subtle.digest('SHA-256', bytes)).toString('hex'));
-          assert.equal(filters.get('extraction_schema_version'), 1019);
+          assert.equal(filters.get('extraction_schema_version'), 11019);
           return { data: savedImport };
         } };
       }
@@ -48,7 +48,7 @@ async function harness({ conflict = false, role = 'dispatcher', repair = false, 
       } }), insert() { writes.push(table); }, update() { writes.push(table); } };
     } };
   const environment = { SUPABASE_URL: 'https://test.invalid', SUPABASE_ANON_KEY: 'test',
-    SUPABASE_SERVICE_ROLE_KEY: 'test', OPENAI_API_KEY: 'test' };
+    SUPABASE_SERVICE_ROLE_KEY: 'test', OPENAI_API_KEY: 'test', OPENAI_PDF_ENGINE: 'hybrid' };
   const fact = (field, value, ...source_ids) => ({ field, value, source_ids });
   const response = { facts: [fact('loadNumber', 'TEST-42', 'p1b0')], requirements: [], contractTerms: [],
     documentReview: { documentReadable: true, singleLoad: true, allPagesRead: true, pageCount: 1,
@@ -98,6 +98,22 @@ test('normal preview parses a real PDF on the server and sends only indexed text
   assert.equal(result.preparedLoad.id, null); assert.ok(result.preparedLoad.previewTicket.signature);
   assert.deepEqual(h.writes, []);
 });
+
+for (const [heading, code] of [['BILL OF LADING', 'BOL'], ['PROOF OF DELIVERY', 'POD'], ['INVOICE', 'INVOICE']]) {
+  test(`${code} PDF is identified before load extraction, preview signing or database writes`, async () => {
+    const pdf = await PDFDocument.create(); const page = pdf.addPage([612, 792]);
+    const font = await pdf.embedFont(StandardFonts.Helvetica);
+    [heading, 'Shipment 123 - Shipper and receiver information', 'Pickup - Delivery - Document signature'].forEach((line, i) =>
+      page.drawText(line, { x: 40, y: 740 - i * 30, font, size: 12 }));
+    const h = await harness({ documentBytes: await pdf.save() });
+    const response = await h.preview(); const body = await response.json();
+    assert.equal(response.status, 422);
+    assert.equal(body.error, `LOAD_IMPORT_TYPE_${code}`);
+    assert.equal(body.preparedLoad, undefined);
+    assert.equal(h.requests.length, 0, 'no full extraction or retry AI call');
+    assert.equal(h.parserCalls, 1); assert.deepEqual(h.writes, []);
+  });
+}
 
 test('selecting an identical file twice reuses a bound preview without another paid call', async () => {
   const h = await harness();

@@ -1,4 +1,4 @@
-const types = { ratecon: 'rate_confirmation', bol: 'bol', pod: 'pod' };
+const types = { ratecon: 'rate_confirmation', bol: 'bol', pod: 'pod', receipt: 'receipt' };
 export const STAFF_DOCUMENT_MAX_BYTES = 50 * 1024 * 1024;
 const failure = code => Object.assign(new Error(code), { code });
 
@@ -24,7 +24,7 @@ export async function fetchStaffLoadDocumentContext(client, loadId, signal) {
   const [documents, stops] = await Promise.all([
     client.from('documents').select('id,load_id,document_type,stop_id,current_version_id,current_version:document_versions!documents_current_version_fk(file_name,mime_type,size_bytes,uploaded_at)')
       .eq('load_id', loadId).order('id').abortSignal(signal),
-    client.from('load_stops').select('id,type,sequence,city,region,address_line,facility_name')
+    client.from('load_stops').select('id,type,sequence,city,region,address_line,facility_name,status,requires_document')
       .eq('load_id', loadId).order('sequence').order('id').abortSignal(signal),
   ]);
   if (documents.error) throw documents.error;
@@ -129,7 +129,7 @@ export function createStaffDocumentManager({ client, ownerId, uploadMedia, timeo
         }
         if (!row?.id || row.load_id !== load.id || row.document_type !== types[request.type]
           || row.id !== (record.plan?.documentId || request.documentId)
-          || (request.stopId && row.stop_id !== request.stopId)) throw failure('STAFF_DOCUMENT_INVALID_RESULT');
+          || (row.stop_id ?? null) !== (request.stopId || null)) throw failure('STAFF_DOCUMENT_INVALID_RESULT');
         // A replay must never label someone else's newer version with this
         // operation's filename/MIME, even if a stale server returns that row.
         if ((row.current_version_id || null) !== (request.action === 'upload' ? record.plan.versionId : null)) {
@@ -142,7 +142,7 @@ export function createStaffDocumentManager({ client, ownerId, uploadMedia, timeo
   };
 }
 
-const uiType = { rate_confirmation: 'rateCon', bol: 'shipperBol', pod: 'receiverPod' };
+const uiType = { rate_confirmation: 'rateCon', bol: 'shipperBol', pod: 'receiverPod', receipt: 'receipt' };
 export function applyStaffDocumentResult(load, row) {
   if (load.id !== row.load_id || !uiType[row.document_type]) return load;
   const key = uiType[row.document_type];

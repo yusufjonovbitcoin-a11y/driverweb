@@ -1,4 +1,5 @@
 const ERROR_PATTERNS = [
+  [/LOAD_IMPORT_TYPE_(?:BOL|POD|INVOICE|DRIVER_SHEET|OTHER|UNKNOWN)/, 'loadImport.rateConOnly'],
   [/DRIVER_REQUIRED/, 'loads.selectDriver'],
   [/DRIVER_PAY_HANDOFF_REQUIRES_REVIEW/, 'driverPay.handoffReview'],
   [/DRIVER_PAY_START_ADDRESS_REQUIRED/, 'driverPay.addressRequired'],

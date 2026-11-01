@@ -136,6 +136,33 @@ function storageError(message, status, code, statusCode = String(status)) {
   return Object.assign(new Error(message), { name: 'StorageApiError', status, code, statusCode });
 }
 
+test('a failed avatar can renew its Storage signature without flushing document URLs', async () => {
+  let requests = 0;
+  const client = {
+    auth: {
+      async getSession() { return { data: { session: { user: { id: 'staff-a' } } } }; },
+      onAuthStateChange() {},
+    },
+    storage: { from() { return { async createSignedUrl() { return { data: { signedUrl: `signed-${++requests}` } }; } }; } },
+  };
+  const member = [{ id: 'a', avatar_path: 'company/avatar.jpg' }];
+  const first = await resolveProfileAvatarUrls(client, member);
+  assert.equal(first.get('a'), 'signed-1');
+  assert.equal((await resolveProfileAvatarUrls(client, member)).get('a'), 'signed-1');
+  assert.equal((await resolveProfileAvatarUrls(client, member, null, { force: true })).get('a'), 'signed-2');
+  assert.equal((await resolveProfileAvatarUrls(client, member)).get('a'), 'signed-2');
+});
+
+test('avatar recovery requests a renewed Cloudinary signature for the same reference', async () => {
+  const reference = 'cloudinary:00000000-0000-0000-0000-000000000002';
+  const result = await resolveProfileAvatarUrls({}, [{ id: 'a', avatar_path: reference }], async (path, options) => {
+    assert.equal(path, reference);
+    assert.deepEqual(options, { force: true });
+    return 'renewed-avatar';
+  }, { force: true });
+  assert.equal(result.get('a'), 'renewed-avatar');
+});
+
 function storageClient(resolve) {
   const client = documentClient('company/document.pdf');
   client.auth = {

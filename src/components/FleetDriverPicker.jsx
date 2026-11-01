@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import { Check, ChevronDown, Search, Truck, UsersRound } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import MemberAvatar from './MemberAvatar.jsx';
 import { normalizeSearchText } from '../utils/globalSearch.js';
 import './fleet-driver-picker.css';
 
@@ -129,8 +130,7 @@ export default function FleetDriverPicker({ drivers, selectedDriver, onSelect, i
 }
 
 function DriverAvatar({ driver }) {
-  const initials = driver?.name?.split(/\s+/).filter(Boolean).slice(0, 2).map(part => part[0]).join('').toUpperCase() || '—';
-  return driver?.avatar ? <img className="fleet-driver-avatar" src={driver.avatar} alt="" /> : <span className="fleet-driver-avatar" aria-hidden="true">{initials}</span>;
+  return <MemberAvatar member={driver} className="fleet-driver-avatar" />;
 }
 
 function DriverPresence({ driver }) {

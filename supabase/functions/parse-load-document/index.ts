@@ -14,6 +14,8 @@ import { runDocumentEngine, DOCUMENT_ENGINE_VERSION } from '../_shared/load-docu
 import { fetchPdfSource } from '../_shared/pdf-source.ts';
 import { LoadPreviewCache, previewCacheKey } from '../_shared/load-preview-cache.ts';
 import { documentTokenCost } from '../_shared/load-document-cost.ts';
+import { extractCloudPdfSource, type CloudPdfResult } from '../_shared/pdf-cloud-source.ts';
+import { inspectLoadImportDocument, requireRateConClassification, LOAD_IMPORT_TYPE_VERSION } from '../_shared/load-import-type.ts';
 
 const previewCache = new LoadPreviewCache<any>();
 
@@ -401,14 +403,36 @@ function normalizeStop(stop: StopExtraction) {
 }
 
 async function extractAndVerify(file: File, bytes: Uint8Array, apiKey: string, model: string) {
+  const inspection = await inspectLoadImportDocument({ file, bytes, checksum: await sha256(bytes), model,
+    parsePdf: extractCloudPdfSource,
+    request: async body => {
+      const response = await fetch('https://api.openai.com/v1/responses', { method: 'POST', signal: AbortSignal.timeout(30_000),
+        headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+        .catch(error => { if (error?.name === 'TimeoutError' || error?.name === 'AbortError') throw Error('AI_DOCUMENT_TIMEOUT'); throw error; });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        console.info(JSON.stringify({event:'load_import_type_provider_error',model,status:response.status,
+          code:payload.error?.code,param:payload.error?.param}));
+        throw Error(response.status === 429 ? 'AI_DOCUMENT_RATE_LIMIT' : 'AI_DOCUMENT_PROVIDER_ERROR');
+      }
+      return payload;
+    },
+  });
+  const result = await extractAndVerifyContent(file, bytes, apiKey, model, inspection.parsed);
+  (result.candidate as any).loadImportClassification = inspection.classification;
+  return result;
+}
+
+async function extractAndVerifyContent(file: File, bytes: Uint8Array, apiKey: string, model: string, parsed?: CloudPdfResult) {
   const started = performance.now();
   try {
-    if (file.type === 'application/pdf' && Deno.env.get('OPENAI_PDF_ENGINE') !== 'direct') {
+    if (file.type === 'application/pdf' && Deno.env.get('OPENAI_PDF_ENGINE') === 'hybrid') {
       const checksum = await sha256(bytes);
       const workerUrl = Deno.env.get('PDF_PREPROCESSOR_URL');
       const workerToken = Deno.env.get('PDF_PREPROCESSOR_TOKEN');
       try {
         const result = await runDocumentEngine({ bytes, checksum, model,
+          ...(parsed ? { parsePdf: async () => parsed } : {}),
           documentSchema: extractionSchema, stopSchema,
           retryModel: Deno.env.get('OPENAI_LOAD_RETRY_MODEL') ?? model,
           ...(workerUrl && workerToken ? { ocrPdf: (data: Uint8Array, hash: string, pages: number[]) =>
@@ -639,9 +663,10 @@ Deno.serve((request) => withCors(request, async () => {
   const checksum = await sha256(bytes);
   const hashedAt = performance.now();
   // Do not reuse old worker-backed, source-verified PDF snapshots for AI-only previews.
-  const hybridPdf = file.type === 'application/pdf' && Deno.env.get('OPENAI_PDF_ENGINE') !== 'direct';
+  // Keep deployed direct extraction unless hybrid was explicitly configured.
+  const hybridPdf = file.type === 'application/pdf' && Deno.env.get('OPENAI_PDF_ENGINE') === 'hybrid';
   const directPdf = file.type === 'application/pdf' && !hybridPdf;
-  const extractionVersion = DOCUMENT_EXTRACTION_VERSION + (hybridPdf ? 1000 : directPdf ? 2 : 0);
+  const extractionVersion = DOCUMENT_EXTRACTION_VERSION + (hybridPdf ? 1000 : directPdf ? 2 : 0) + LOAD_IMPORT_TYPE_VERSION * 10_000;
   let corrections: any = null;
   if (form.has('corrections')) {
     try { corrections = JSON.parse(String(form.get('corrections'))); }
@@ -697,6 +722,8 @@ Deno.serve((request) => withCors(request, async () => {
           const candidate = saved?.raw_extraction?.candidate;
           const metrics = candidate?.engineMetrics;
           if (saved && reusableLoadImport(saved, extractionVersion, checksum, true)
+            && candidate?.loadImportClassification?.version === LOAD_IMPORT_TYPE_VERSION
+            && candidate?.loadImportClassification?.type === 'rate_confirmation'
             && metrics?.version === DOCUMENT_ENGINE_VERSION && metrics?.requestedModel === model
             && metrics?.retryModel === (Deno.env.get('OPENAI_LOAD_RETRY_MODEL') ?? model)) {
             return { candidate, verified: verifyLoadExtraction(candidate, null, true), audit: saved.raw_extraction.audit };
@@ -705,6 +732,7 @@ Deno.serve((request) => withCors(request, async () => {
         return extractAndVerify(file, bytes, openAiKey, model);
       });
       const { candidate, verified } = cached.value;
+      requireRateConClassification(candidate.loadImportClassification);
       console.info(JSON.stringify({ event: 'load_preview_cache', hit: cached.hit, engine: candidate.extractionEngine ?? candidate.extractionMode }));
       const previewStarted = performance.now();
       const previewTicket = await issueLoadPreviewTicket(candidate,
@@ -732,6 +760,7 @@ Deno.serve((request) => withCors(request, async () => {
         signature: form.get('previewSignature') },
         { actorId: profile.id, companyId: profile.company_id, checksum,
           fileName: file.name, mimeType: file.type, version: extractionVersion }, serviceRoleKey);
+      requireRateConClassification(candidate.loadImportClassification);
       const verified = verifyLoadExtraction(candidate, null, true);
       preparedSnapshot(file, checksum, verified);
       const conflicts = ((candidate as any).engineIssues ?? []).filter((issue: any) => issue.reason?.startsWith('conflicting_'));
@@ -760,6 +789,8 @@ Deno.serve((request) => withCors(request, async () => {
     .eq("checksum_sha256", checksum)
     .maybeSingle();
   if (existing && !corrections && !confirmedPreview && reusableLoadImport(existing, extractionVersion, checksum, false)) {
+    try { requireRateConClassification(existing.raw_extraction?.candidate?.loadImportClassification); }
+    catch (error) { return json({ error: error instanceof Error ? error.message : 'LOAD_IMPORT_TYPE_UNKNOWN' }, 422); }
     return json({
       loadId: existing.load_id,
       preparedLoad: existing.extracted_result,
@@ -851,6 +882,7 @@ Deno.serve((request) => withCors(request, async () => {
     const persistStarted = performance.now();
     if (((candidate as any).engineIssues ?? []).some((issue: any) => issue.reason?.startsWith('conflicting_')))
       return await fail('DOCUMENT_CRITICAL_CONFLICT', 422);
+    requireRateConClassification(candidate.loadImportClassification);
     const snapshot = preparedSnapshot(file, checksum, verified);
     const { extracted, normalizedPickup, normalizedDelivery, normalizedStops,
       pickupCity, deliveryCity, loadNumber, driverBrief, requirements, missingFields } = snapshot;

@@ -2,7 +2,7 @@ import {
   isCloudinaryReference,
   isMissingCloudinaryMediaError,
 } from './cloudinaryMediaErrors.js';
-import { cachedSignedMediaUrl } from './mediaUrlCache.js';
+import { cachedSignedMediaUrl, invalidateSignedMediaUrl } from './mediaUrlCache.js';
 import { mapWithConcurrency } from './readAllRows.js';
 
 function isMissingStorageObject(error) {
@@ -15,7 +15,8 @@ function isMissingStorageObject(error) {
     && /^(object|file) not found[.!]?$/i.test(error.message || '');
 }
 
-function storageSignedUrl(client, bucket, path) {
+function storageSignedUrl(client, bucket, path, force = false) {
+  if (force) invalidateSignedMediaUrl(client, `storage:${bucket}:${path}`);
   return cachedSignedMediaUrl(client, `storage:${bucket}:${path}`, async () => {
     const { data, error } = await client.storage.from(bucket).createSignedUrl(path, 3600);
     if (error) {
@@ -70,18 +71,18 @@ export async function resolveDocumentMediaUrls(client, documents, signMedia) {
   });
 }
 
-export async function resolveProfileAvatarUrls(client, members, signMedia) {
+export async function resolveProfileAvatarUrls(client, members, signMedia, { force = false } = {}) {
   const entries = await mapWithConcurrency(members, async (member) => {
     if (!member.avatar_path) return [member.id, null];
     if (isCloudinaryReference(member.avatar_path)) {
       try {
-        return [member.id, await signMedia(member.avatar_path)];
+        return [member.id, await signMedia(member.avatar_path, { force })];
       } catch (error) {
         if (isMissingCloudinaryMediaError(error)) return [member.id, null];
         throw error;
       }
     }
-    return [member.id, await storageSignedUrl(client, 'profile-media', member.avatar_path)];
+    return [member.id, await storageSignedUrl(client, 'profile-media', member.avatar_path, force)];
   });
   return new Map(entries);
 }

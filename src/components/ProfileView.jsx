@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import MemberAvatar from './MemberAvatar.jsx';
 import {
   connectGmailIntegration,
   disconnectGmailIntegration,
@@ -556,11 +557,7 @@ export default function ProfileView({
           return (
             <li key={driver.id} aria-labelledby={cardTitleId} onClick={() => openDriver(driver)} className="cursor-pointer overflow-hidden rounded-2xl border border-zinc-200 bg-white transition hover:border-blue-300 dark:border-zinc-800 dark:bg-zinc-900">
               <div className="flex items-center gap-3 px-4 py-3.5">
-                <span className="grid h-11 w-11 flex-none place-items-center overflow-hidden rounded-full bg-zinc-100 text-xs font-bold text-zinc-800 dark:bg-zinc-800 dark:text-zinc-200">
-                  {driver.avatar
-                    ? <img src={driver.avatar} alt="" className="h-full w-full object-cover" />
-                    : <span aria-hidden="true">{driver.name.charAt(0)}{driver.name.split(' ')[1]?.charAt(0) || ''}</span>}
-                </span>
+                <MemberAvatar member={driver} className="grid h-11 w-11 flex-none place-items-center overflow-hidden rounded-full bg-zinc-100 text-xs font-bold text-zinc-800 dark:bg-zinc-800 dark:text-zinc-200" />
                 <div className="min-w-0 flex-1">
                   <h4 id={cardTitleId} className="truncate font-bold text-zinc-900 dark:text-zinc-100"><button type="button" onClick={(event) => { event.stopPropagation(); openDriver(driver); }} className="text-left hover:text-blue-700 focus-visible:rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-600 dark:hover:text-blue-300">{driver.name}</button></h4>
                   <p className="mt-0.5 break-words text-xs text-zinc-500">
@@ -630,11 +627,7 @@ export default function ProfileView({
                   <tr key={driver.id} onClick={() => openDriver(driver)} className="cursor-pointer transition-colors hover:bg-zinc-50/80 dark:hover:bg-zinc-800/40">
                     <td className="py-3.5 px-4 whitespace-nowrap">
                       <div className="flex items-center space-x-3">
-                        <span className="flex h-9 w-9 flex-shrink-0 items-center justify-center overflow-hidden rounded-xl border border-zinc-200 bg-zinc-100 font-mono text-xs font-bold text-zinc-800 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200">
-                          {driver.avatar
-                            ? <img src={driver.avatar} alt="" className="h-full w-full object-cover" />
-                            : <span aria-hidden="true">{driver.name.charAt(0)}{driver.name.split(' ')[1]?.charAt(0) || ''}</span>}
-                        </span>
+                        <MemberAvatar member={driver} className="flex h-9 w-9 flex-shrink-0 items-center justify-center overflow-hidden rounded-xl border border-zinc-200 bg-zinc-100 font-mono text-xs font-bold text-zinc-800 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200" />
                         <div>
                           <div className="flex items-center space-x-2 whitespace-nowrap">
                             <button type="button" onClick={(event) => { event.stopPropagation(); openDriver(driver); }} className="text-left text-sm font-bold text-zinc-900 hover:text-blue-700 focus-visible:rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-600 dark:text-zinc-100 dark:hover:text-blue-300">{driver.name}</button>
@@ -710,9 +703,7 @@ export default function ProfileView({
             ) : filteredDispatchers.map((dispatcher) => (
               <li key={dispatcher.id} className="overflow-hidden rounded-2xl border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
                 <div className="flex items-center gap-3 px-4 py-4">
-                  <div className="grid h-11 w-11 flex-none place-items-center overflow-hidden rounded-full bg-cyan-50 text-xs font-black text-cyan-700 dark:bg-cyan-950/50 dark:text-cyan-300">
-                    {dispatcher.avatar ? <img src={dispatcher.avatar} alt="" className="h-full w-full object-cover" /> : <span aria-hidden="true">{dispatcher.name?.charAt(0) || 'D'}</span>}
-                  </div>
+                  <MemberAvatar member={dispatcher} className="grid h-11 w-11 flex-none place-items-center overflow-hidden rounded-full bg-cyan-50 text-xs font-black text-cyan-700 dark:bg-cyan-950/50 dark:text-cyan-300" />
                   <div className="min-w-0 flex-1">
                     <p className="break-words text-sm font-bold text-zinc-900 dark:text-zinc-100">{dispatcher.name}</p>
                     <p className="mt-0.5 break-all text-xs text-zinc-500">{dispatcher.email || t('common.notProvided')}</p>
@@ -756,9 +747,7 @@ export default function ProfileView({
                   <tr key={dispatcher.id} className="transition hover:bg-zinc-50/80 dark:hover:bg-zinc-800/40">
                     <td className="px-4 py-3.5">
                       <div className="flex items-center gap-3">
-                        <div className="grid h-9 w-9 flex-none place-items-center overflow-hidden rounded-xl bg-cyan-50 text-xs font-black text-cyan-700 dark:bg-cyan-950/50 dark:text-cyan-300">
-                          {dispatcher.avatar ? <img src={dispatcher.avatar} alt="" className="h-full w-full object-cover" /> : <span aria-hidden="true">{dispatcher.name?.charAt(0) || 'D'}</span>}
-                        </div>
+                        <MemberAvatar member={dispatcher} className="grid h-9 w-9 flex-none place-items-center overflow-hidden rounded-xl bg-cyan-50 text-xs font-black text-cyan-700 dark:bg-cyan-950/50 dark:text-cyan-300" />
                         <div><p className="font-bold text-zinc-900 dark:text-zinc-100">{dispatcher.name}</p><p className="mt-0.5 text-xs text-zinc-400">{t('roles.dispatcher')}</p></div>
                       </div>
                     </td>

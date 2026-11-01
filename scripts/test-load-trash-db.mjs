@@ -287,6 +287,23 @@ end $$; revoke all on schema worker_cron from public,anon,authenticated,service_
     const { runImportSourceChecks }=await import('./run-import-source-checks.mjs');
     await runImportSourceChecks({sql,migration,asyncSql,root});
   }
+  if (process.env.STAFF_COMPLETION_TEST === '1') {
+    assert.equal(process.env.START_PAY_AUDIT_TEST,'1','Staff completion requires real START guards');
+    assert.equal(process.env.STAFF_DOCUMENT_TEST,'1','Staff completion requires real document schema');
+    await migration('20261031221340_staff_complete_load_with_documents.sql');
+    sql(await readFile(path.join(root,'scripts/load-trash-test-fixtures/staff-completion-checks.sql'),'utf8'));
+    const staff=`set role authenticated; set "request.jwt.claim.sub"='00000000-0000-0000-0000-000000000001';`;
+    const completion=`select complete_staff_load(l.id,l.current_assignment_id,l.version,'00000000-0000-0000-0000-000000099902',
+      test_completion_versions(l.id),timestamp '2026-10-01 12:00:00','UTC') from loads l where l.id='00000000-0000-0000-0000-000000099002';`;
+    let notify;
+    const locked=new Promise(resolve=>{notify=resolve;});
+    const first=asyncSql(`begin; ${staff} ${completion} select 'COMPLETION_LOCKED'; select pg_sleep(0.4); commit;`,text=>{if(text.includes('COMPLETION_LOCKED'))notify();});
+    await Promise.race([locked,first.then(result=>{if(!result.stdout.includes('COMPLETION_LOCKED'))throw new Error(result.stderr);})]);
+    const [one,two]=await Promise.all([first,asyncSql(`${staff} ${completion}`)]);
+    assert.equal(one.code,0,one.stderr);assert.equal(two.code,0,two.stderr);
+    sql(`select test_assert((select count(*)=1 from audit_events where entity_id='00000000-0000-0000-0000-000000099002' and action='load.staff_completed'),'concurrent requests produce one completion audit');`);
+    console.log('PASS: staff completion without START, multi-stop evidence, accounting delivery, permission guards and idempotent receipts');
+  }
   if (process.env.IMPORT_CONFIRMATION_TEST === '1') {
     assert.equal(process.env.IMPORT_SOURCE_TEST,'1','Confirmation requires actual import source schema');
     await migration('202609250004_ai_document_intelligence.sql','create or replace function public.apply_ai_import_metadata(', 'drop view if exists public.load_overview;');

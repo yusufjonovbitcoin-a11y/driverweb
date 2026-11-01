@@ -1,6 +1,7 @@
 import './accessibility.css';
 import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
+import MemberAvatar from './MemberAvatar.jsx';
 import { OperationScope, acquireCallMedia, stopMediaStream } from '../services/chatAsyncSafety';
 import React, { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -107,11 +108,7 @@ function DriverAvatar({ driver, sizeClass = 'w-11 h-11' }) {
   const { t } = useTranslation();
   return (
     <div className={`relative ${sizeClass} flex-none`}>
-      <div className="h-full w-full overflow-hidden rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 text-white grid place-items-center font-black">
-        {driver.avatar ? (
-          <img src={driver.avatar} alt={t('chat.avatarAlt', { name: driver.name })} className="h-full w-full object-cover" />
-        ) : driver.name?.charAt(0)}
-      </div>
+      <MemberAvatar member={driver} alt={t('chat.avatarAlt', { name: driver.name })} className="h-full w-full overflow-hidden rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 text-white grid place-items-center font-black" />
       {driver.isOnline && <span className="absolute right-0 bottom-0 w-3 h-3 bg-emerald-500 rounded-full border-2 border-white dark:border-zinc-950" />}
     </div>
   );
@@ -1623,9 +1620,7 @@ export default function DispatchChat({
           {playbackBlocked && <button type="button" onClick={() => remoteVideoRef.current?.play().then(() => setPlaybackBlocked(false)).catch(() => {})} className="absolute left-4 top-4 z-30 rounded-lg bg-blue-600 px-4 py-2">{t('chat.enableSound')}</button>}
           <header className="relative z-20 flex min-h-[118px] shrink-0 items-center justify-center px-5 pt-5 text-center sm:min-h-[136px]">
             <div>
-              <div className="mx-auto grid h-14 w-14 place-items-center overflow-hidden rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 text-xl font-black shadow-lg ring-2 ring-white/10">
-                {callDriver?.avatar ? <img src={callDriver.avatar} alt="" className="h-full w-full object-cover" /> : callDriver?.name?.charAt(0) || '?'}
-              </div>
+              <MemberAvatar member={callDriver} className="mx-auto grid h-14 w-14 place-items-center overflow-hidden rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 text-xl font-black shadow-lg ring-2 ring-white/10" />
               <h2 className="mt-2 text-lg font-bold leading-tight">{callDriver?.name || t('roles.driver')}</h2>
               <p className="mt-1 flex items-center justify-center gap-1.5 text-xs text-zinc-400">
                 <ShieldCheck className="h-3.5 w-3.5" />
@@ -1658,9 +1653,7 @@ export default function DispatchChat({
 
               {(activeCall.kind !== 'video' || !remoteVideoReady) && (
                 <div className="relative z-10 px-6 text-center">
-                  <div className="mx-auto grid h-28 w-28 place-items-center overflow-hidden rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 text-5xl font-black shadow-2xl ring-4 ring-white/10">
-                    {callDriver?.avatar ? <img src={callDriver.avatar} alt="" className="h-full w-full object-cover" /> : callDriver?.name?.charAt(0) || '?'}
-                  </div>
+                  <MemberAvatar member={callDriver} className="mx-auto grid h-28 w-28 place-items-center overflow-hidden rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 text-5xl font-black shadow-2xl ring-4 ring-white/10" />
                   <h3 className="mt-5 text-2xl font-bold">{callDriver?.name || t('roles.driver')}</h3>
                   <p className="mt-2 text-sm text-zinc-400">{callConnectionState === 'connected' ? (activeCall.kind === 'video' ? t('chat.waitingVideo') : t('chat.audioCall')) : t('chat.connecting')}</p>
                 </div>

@@ -44,11 +44,13 @@ import { useBackgroundAssignments } from './hooks/useBackgroundAssignments.js';
 import BackgroundAssignments from './components/BackgroundAssignments.jsx';
 import { applyStaffDocumentResult, refreshOpenDocumentLoad } from './services/staffLoadDocuments.js';
 import { loadImportFileError } from './services/loadImportFile';
+import { rejectedLoadImportType } from './services/loadImportType';
 import { createDocumentImportRunner, mergeDocumentImportResult, continueDocumentImport, shouldCancelImportOnNavigation } from './services/documentImportSession';
 import { createDocumentImportTiming } from './services/documentImportTiming.js';
 import { setAppLocale } from './i18n';
 import { changeLocaleWithProfileSync } from './i18n/localeSync';
 import { supabase } from './lib/supabase';
+import { completeStaffLoad, applyStaffLoadCompletion } from './services/staffLoadCompletion.js';
 import { useWebPush } from './hooks/useWebPush';
 import { useBrowserNotifications } from './hooks/useBrowserNotifications';
 import { syncAnalyticsPrivacy, trackPage } from './services/firebaseAnalytics';
@@ -655,7 +657,8 @@ function Workspace({ auth, browserPush }) {
       },
       onError: (error) => {
         const importError = localizedError(t, error, 'errors.documentAnalysis');
-        setAiPreparedLoad(current => current?.importRequestId === importRequestId ? { ...current, importError } : current);
+        setAiPreparedLoad(current => current?.importRequestId === importRequestId
+          ? { ...current, importError, importDocumentType: rejectedLoadImportType(error) } : current);
         showToast(importError);
       },
       onFinish: () => setAiProcessing(false),
@@ -705,6 +708,17 @@ function Workspace({ auth, browserPush }) {
   };
   const canManageLoads = ['company_admin', 'dispatcher'].includes(currentUser?.roleCode);
   const handleTrashLoad = canManageLoads ? (load) => handleLoadTrashAction('trash', load) : undefined;
+  const handleCompleteLoad = canManageLoads ? async (load, request) => {
+    const actorId = currentUserId;
+    const result = await completeStaffLoad(supabase, load, request);
+    if (!workspaceActiveRef.current || assignmentAccountRef.current !== actorId) return result;
+    workspaceGenerationRef.current += 1;
+    setLoads(current => assignmentAccountRef.current === actorId ? current.map(item => applyStaffLoadCompletion(item, result)) : current);
+    setSelectedLoadForDocs(current => current && assignmentAccountRef.current === actorId ? applyStaffLoadCompletion(current, result) : current);
+    showToast(t('staffCompletion.success'));
+    void refreshWorkspace({ quiet: true });
+    return result;
+  } : undefined;
   const handleManageDocument = canManageLoads ? async (load, request) => {
     if (!staffDocumentManagerRef.current) {
       const { makeStaffDocumentManager } = await import('./services/staffLoadDocumentService.js');
@@ -996,6 +1010,7 @@ function Workspace({ auth, browserPush }) {
               onOpenDocs={handleOpenDocs}
               onTrashLoad={handleTrashLoad}
               onManageDocument={handleManageDocument}
+              onCompleteLoad={handleCompleteLoad}
               trashedLoads={trashedLoads}
               onRestoreLoad={canManageLoads ? (load, driverId) => handleLoadTrashAction('restore', load, driverId) : undefined}
               onPermanentlyDeleteLoad={canManageLoads ? (load) => handleLoadTrashAction('delete', load) : undefined}
@@ -1019,6 +1034,7 @@ function Workspace({ auth, browserPush }) {
               onOpenDocs={handleOpenDocs}
               onTrashLoad={handleTrashLoad}
               onManageDocument={handleManageDocument}
+              onCompleteLoad={handleCompleteLoad}
               onImportDriverDocument={(file, driverId) => handleAiDocument(file, driverId)}
               isAiProcessing={aiProcessing}
               unreadChatsByDriver={unreadChatsByDriver}
@@ -1076,7 +1092,7 @@ function Workspace({ auth, browserPush }) {
           {mapWasOpened && <div className={activeTab === 'map' && !importPageVisible ? 'h-full min-h-0' : 'hidden'}>
             <LazyRouteBoundary>
               <React.Suspense fallback={<div className="grid h-full place-items-center"><LoaderCircle className="h-7 w-7 animate-spin" /></div>}>
-                <FleetMap drivers={drivers} loads={loads} isVisible={activeTab === 'map' && !importPageVisible} onOpenDocs={handleOpenDocs} onTrashLoad={handleTrashLoad} onManageDocument={handleManageDocument} />
+                <FleetMap drivers={drivers} loads={loads} isVisible={activeTab === 'map' && !importPageVisible} onOpenDocs={handleOpenDocs} onTrashLoad={handleTrashLoad} onManageDocument={handleManageDocument} onCompleteLoad={handleCompleteLoad} />
               </React.Suspense>
             </LazyRouteBoundary>
           </div>}

@@ -779,9 +779,6 @@ export async function runDocumentEngine(options: EngineOptions) {
           schema: requestSchema,
         },
       },
-      ...(model.startsWith("gpt-5")
-        ? { reasoning: { effort: "minimal" } }
-        : {}),
     });
     metrics.calls.push({
       model: payload.model ?? model,

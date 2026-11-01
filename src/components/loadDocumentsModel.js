@@ -1,4 +1,4 @@
-export const managedDocumentTypes = { rateCon: 'ratecon', shipperBol: 'bol', receiverPod: 'pod' };
+export const managedDocumentTypes = { rateCon: 'ratecon', shipperBol: 'bol', receiverPod: 'pod', receipt: 'receipt' };
 const databaseTypes = { rateCon: 'rate_confirmation', shipperBol: 'bol', receiverPod: 'pod', receipt: 'receipt' };
 const maxBytes = 50 * 1024 * 1024;
 export const documentPermissionDenied = cause => [401, 403].includes(Number(cause?.status))

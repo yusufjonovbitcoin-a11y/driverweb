@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import MemberAvatar from './MemberAvatar.jsx';
 import { ArrowRight, CalendarDays, CheckCircle2, Clock3, MapPin, MessageCircle, Phone, Search, Truck, TriangleAlert, X } from 'lucide-react';
 import { arrivalJobs, arrivalLane, arrivalMatches, arrivalPhone, arrivalState } from './arrivalBoardModel.js';
 import { useArrivalEstimates } from '../hooks/useArrivalEstimates.js';
@@ -16,20 +17,17 @@ function duration(milliseconds, t) {
 }
 
 function ArrivalCard({ job, state, now, clock, date, t, onOpenChat, onOpenLoad }) {
-  const [failedAvatar, setFailedAvatar] = useState(null);
   const { driver, load } = job;
   const phone = arrivalPhone(driver.phone);
   const isProblem = load && PROBLEMS.has(state.status);
   const eta = state.eta;
-  const initials = (driver.name || '?').split(' ').map(part => part[0]).slice(0, 2).join('');
   const gpsAge = job.location ? duration(now - job.location.observedAt, t) : null;
   const issue = state.issue === 'late' ? t('arrival.lateBy', { duration: duration(state.minutes * 60_000, t) })
     : state.issue === 'noGps' && gpsAge ? t('arrival.gpsAge', { duration: gpsAge })
       : t(`arrival.issue.${state.issue}`);
   return <article className={`arrival-card arrival-tone-${state.status}`}>
     <div className="arrival-card-heading">
-      <span className="arrival-avatar">{driver.avatar && failedAvatar !== driver.avatar
-        ? <img src={driver.avatar} alt="" onError={() => setFailedAvatar(driver.avatar)} /> : initials}</span>
+      <MemberAvatar member={driver} className="arrival-avatar" />
       <div className="arrival-person"><strong>{driver.name || t('arrival.driver')}</strong>
         {load ? <button className="arrival-load-link" disabled={job.demo} onClick={() => onOpenLoad(load)}>{load.loadNumber}</button>
           : <small>{driver.driverNumber}</small>}</div>

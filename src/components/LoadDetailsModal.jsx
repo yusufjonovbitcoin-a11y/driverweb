@@ -9,6 +9,8 @@ import { buildLoadDetails, savedLoadRoadSummary, savedStopContact } from './load
 import LoadDocumentsManager from './LoadDocumentsManager.jsx';
 import DriverInstructionsEditor from './DriverInstructionsEditor.jsx';
 import AssignmentDriverPay from './AssignmentDriverPay.jsx';
+import StaffLoadCompletion from './StaffLoadCompletion.jsx';
+import { completionEvidence } from '../services/staffLoadCompletion.js';
 import { useLoadCurrentLocation } from '../hooks/useLoadCurrentLocation';
 import { useLoadStartLocation } from '../hooks/useLoadStartLocation.js';
 import { useImportContacts } from '../hooks/useImportContacts';
@@ -28,7 +30,7 @@ const loadPdfTools = () => import('../services/loadDocumentPdf');
 
 const value = (content) => content ?? '—';
 
-export default function LoadDetailsModal({ load, driver, onClose, onOpenDocs, onTrashLoad, onManageDocument }) {
+export default function LoadDetailsModal({ load, driver, onClose, onOpenDocs, onTrashLoad, onManageDocument, onCompleteLoad }) {
   const { t } = useTranslation();
   const closeRef = useRef(null);
   const pdfAssetRef = useRef(null);
@@ -42,6 +44,7 @@ export default function LoadDetailsModal({ load, driver, onClose, onOpenDocs, on
   const [combineError, setCombineError] = useState('');
   const [documentSnapshot, setDocumentSnapshot] = useState(null);
   const documentContext = documentSnapshot?.loadId === load.id ? documentSnapshot.context : null;
+  const completion = completionEvidence(load, documentContext);
   const receiveDocumentContext = useCallback(context => setDocumentSnapshot({ loadId: load.id, context }), [load.id]);
   const documentCount = documentContext?.documentItems.filter(row => row.current_version_id || row.url).length || 0;
   const details = buildLoadDetails(load, driver);
@@ -226,7 +229,7 @@ export default function LoadDetailsModal({ load, driver, onClose, onOpenDocs, on
         <span className="reference-progress-dot">{stage != null && index < stage ? <Check size={12} /> : null}</span><span>{loadStatusLabel(t, status)}</span>
       </div>)}
     </section>
-    {load.currentAssignmentId && load.driverId ? <AssignmentDriverPay assignmentId={load.currentAssignmentId} loadId={load.id} driverId={load.driverId} /> : null}
+    {load.currentAssignmentId && load.driverId ? <AssignmentDriverPay assignmentId={load.currentAssignmentId} loadId={load.id} driverId={load.driverId} completed={load.databaseStatus === 'completed'} /> : null}
   </div>;
   const stopsContent = <div className="saved-review-stops" data-load-section="stops" tabIndex={-1}>
     {details.stops.map((stop, index) => {
@@ -259,6 +262,7 @@ export default function LoadDetailsModal({ load, driver, onClose, onOpenDocs, on
         stops={stopsContent} map={map} roadSummary={roadSummary} road={road}
         showRouteFacts={false}
         overviewContent={overviewContent} requirementsContent={requirementsContent} documentsContent={documentsContent}
+        tabActions={onCompleteLoad ? <StaffLoadCompletion key={load.id} load={load} evidence={completion} onComplete={onCompleteLoad} /> : null}
         sourceNoteKey="savedLoadWorkspace.sourceNote" />
     </section>
   </div>;

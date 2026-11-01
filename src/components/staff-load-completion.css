@@ -1,0 +1,30 @@
+.review-tabs-bar { display:flex; align-items:center; gap:12px; flex-shrink:0; min-width:0; background:var(--surface); border-bottom:1px solid var(--line); }
+.review-tabs-bar .review-tabs { flex:1; min-width:0; border-bottom:0; }
+.staff-completion-trigger { display:inline-flex; align-items:center; gap:7px; flex-shrink:0; margin:5px 10px 5px 0; padding:7px 11px; border-radius:var(--dispatch-radius-control); background:var(--action-bg); color:var(--action-ink); font-size:var(--dispatch-caption); font-weight:650; cursor:pointer; }
+.staff-completion-trigger:hover { background:var(--action-hover); }
+.staff-completion-dialog { width:min(520px,calc(100% - 32px)); max-height:calc(100dvh - 48px); margin:auto; padding:0; color:var(--ink); background:var(--surface); border:1px solid var(--line); border-radius:var(--dispatch-radius-card); box-shadow:var(--dispatch-overlay-shadow); overflow-y:auto; }
+.staff-completion-dialog:modal,.staff-completion-dialog::backdrop { overscroll-behavior:contain; }
+.staff-completion-dialog::backdrop { background:rgb(5 15 30 / .55); overflow:hidden; }
+.staff-completion-dialog header,.staff-completion-dialog footer { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:18px 22px; }
+.staff-completion-dialog header { border-bottom:1px solid var(--line); }
+.staff-completion-dialog header>div { display:flex; align-items:center; gap:12px; min-width:0; }
+.staff-completion-dialog h2 { font-size:var(--dispatch-heading); font-weight:650; }
+.staff-completion-dialog header p { margin-top:3px; color:var(--muted); font-size:var(--dispatch-caption); overflow-wrap:anywhere; }
+.staff-completion-symbol { display:grid; place-items:center; flex-shrink:0; width:40px; height:40px; border-radius:10px; color:var(--accent); background:var(--accent-soft); }
+.staff-completion-close { padding:5px; color:var(--muted); cursor:pointer; }
+.staff-completion-body { padding:20px 22px; font-size:var(--dispatch-body); }
+.staff-completion-copy,.staff-completion-pay-note { color:var(--muted); }
+.staff-completion-evidence { display:flex; align-items:center; gap:8px; margin:16px 0; color:var(--accent); }
+.staff-completion-dialog fieldset { display:grid; gap:14px; border:0; margin:0; padding:0; min-width:0; }
+.staff-completion-fields { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+.staff-completion-dialog label { display:flex; flex-direction:column; gap:6px; min-width:0; font-size:var(--dispatch-caption); font-weight:600; }
+.staff-completion-dialog :is(input,textarea) { width:100%; min-width:0; padding:9px 11px; border:1px solid var(--line); border-radius:var(--dispatch-radius-control); background:var(--surface); color:var(--ink); font:inherit; }
+.staff-completion-dialog textarea { resize:vertical; }
+.staff-completion-pay-note { margin-top:16px; font-size:var(--dispatch-caption); }
+.staff-completion-error { margin-top:12px; color:var(--danger,#bc2744); font-size:var(--dispatch-body); }
+.staff-completion-dialog footer { border-top:1px solid var(--line); justify-content:flex-end; }
+.staff-completion-dialog footer button { display:inline-flex; align-items:center; justify-content:center; gap:7px; min-height:38px; padding:8px 13px; border:1px solid var(--line); border-radius:var(--dispatch-radius-control); font-size:var(--dispatch-caption); font-weight:650; cursor:pointer; }
+.staff-completion-dialog footer .is-primary { background:var(--action-bg); border-color:var(--action-bg); color:var(--action-ink); }
+.staff-completion-dialog button:disabled { opacity:.55; cursor:not-allowed; }
+.staff-completion-dialog :is(button,input,textarea):focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+@media(max-width:650px) { .review-tabs-bar { flex-wrap:wrap; gap:0; } .review-tabs-bar .review-tabs { flex-basis:100%; } .staff-completion-trigger { margin-left:10px; } }

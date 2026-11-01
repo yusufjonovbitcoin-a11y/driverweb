@@ -75,6 +75,11 @@ export default function ImportedLoadPage({ load, processing, drivers = [], onBac
       <h1 ref={headingRef} tabIndex={-1} id="import-load-title">{t('loadImport.processing')}</h1>
       <p>{t('loadImport.processingHint')}</p>
       <div className="import-skeleton-grid" aria-hidden="true">{Array.from({ length: 6 }, (_, i) => <div className="import-skeleton" key={i} />)}</div>
+    </div> : load.importDocumentType ? <div className="import-processing import-document-type" role="status">
+      <div className="import-scan-icon"><FileText size={30} aria-hidden="true" /></div>
+      <h1 ref={headingRef} tabIndex={-1} id="import-load-title">{t('loadImport.documentDetected', { type: t(`loadImport.documentTypes.${load.importDocumentType}`) })}</h1>
+      <p>{t('loadImport.rateConOnly')}</p>
+      <button type="button" className="import-button primary" onClick={onBack}>{t('loadImport.back')}</button>
     </div> : load.importError ? <div className="import-error" role="alert">
       <h1 ref={headingRef} tabIndex={-1} id="import-load-title">{t('errors.documentAnalysis')}</h1>
       <p>{load.importError}</p>

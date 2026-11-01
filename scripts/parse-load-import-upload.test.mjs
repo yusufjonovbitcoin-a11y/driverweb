@@ -9,7 +9,7 @@ import { getDocumentProxy, getResolvedPDFJS } from 'unpdf';
 const nativePdf = await PDFDocument.create();
 const nativePage = nativePdf.addPage([612, 792]);
 const nativeFont = await nativePdf.embedFont(StandardFonts.Helvetica);
-['Load # TEST-42', 'Pickup', '1 First Ave', 'Phoenix, AZ', 'Delivery', '2 Second Ave', 'Dallas, TX'].forEach((line, i) =>
+['Rate Confirmation - Load # TEST-42', 'Pickup', '1 First Ave', 'Phoenix, AZ', 'Delivery', '2 Second Ave', 'Dallas, TX'].forEach((line, i) =>
   nativePage.drawText(line, { x: 40, y: 740 - i * 45, size: 12, font: nativeFont }));
 const nativeBytes = await nativePdf.save();
 
@@ -209,7 +209,7 @@ function harness(options = {}) {
     },
   });
   async function run({ preview = false, ticket, auth = true } = {}) {
-    const form = new FormData(); form.set('file', new File([options.hybrid ? nativeBytes : '%PDF-1.7\nTest'], 'rate.pdf', { type: 'application/pdf' }));
+    const form = new FormData(); form.set('file', new File([nativeBytes], 'rate.pdf', { type: 'application/pdf' }));
     if (preview) form.set('previewOnly', 'true');
     if (ticket) {
       form.set('previewPayload', ticket.payload); form.set('previewSignature', ticket.signature); form.set('confirmDriverId', DRIVER);
@@ -304,7 +304,7 @@ test('a non409 storage authorization failure never attempts completion or assign
 
 test('409 is not success: database completion rejection prevents assigning a mismatched object', async () => {
   const h = harness({ uploadError: { statusCode: '409', message: 'The resource already exists' },
-    downloadBytes: new TextEncoder().encode('%PDF-1.7\nTest'), completeError: 'IMPORT_DOCUMENT_STORAGE_METADATA_INVALID' });
+    downloadBytes: nativeBytes, completeError: 'IMPORT_DOCUMENT_STORAGE_METADATA_INVALID' });
   const ticket = await h.preview(); const result = await h.run({ ticket });
   assert.equal(result.status, 409); assert.equal(result.body.error, 'IMPORT_DOCUMENT_STORAGE_METADATA_INVALID');
   assert.equal(h.state.completeCalls, 1); assert.equal(h.state.assignments.length, 0);

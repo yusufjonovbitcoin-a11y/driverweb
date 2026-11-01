@@ -18,7 +18,7 @@ const OPTIONAL_ENGINE_FIELDS = new Set(['trailerLengthPrinted', 'currency', 'acc
 const show = value => value == null || value === '' ? '—' : String(value);
 
 export default function ImportReviewPanels({ load, details, selectedDriver, stops, map, roadSummary, road, ratePerMile, showRouteFacts = true,
-  overviewContent, documentsContent, requirementsContent, routeStartLocation, routeStartStatus, sourceNoteKey = 'importWorkspace.sourceNote', keepMounted = false }) {
+  overviewContent, documentsContent, requirementsContent, tabActions, routeStartLocation, routeStartStatus, sourceNoteKey = 'importWorkspace.sourceNote', keepMounted = false }) {
   const { t } = useTranslation();
   const id = useId();
   const [tab, setTab] = useState('overview');
@@ -66,13 +66,14 @@ export default function ImportReviewPanels({ load, details, selectedDriver, stop
     </section>
   </div>;
 
-  return <>
-    <div className="review-tabs" role="tablist" aria-label={t('importWorkspace.sections')}>
+  const tabs = <div className="review-tabs" role="tablist" aria-label={t('importWorkspace.sections')}>
       {TABS.map(([key, Icon]) => <button key={key} type="button" role="tab" id={`${id}-${key}`} aria-controls={`${id}-${key}-panel`}
         aria-selected={tab === key} tabIndex={tab === key ? 0 : -1} ref={node => { tabRefs.current[key] = node; }} onKeyDown={keyboard} onClick={() => selectTab(key)}>
         <Icon size={19} /><span>{t(`importWorkspace.${key}`)}</span>{key === 'requirements' && <small>{requirements.length}</small>}
       </button>)}
-    </div>
+    </div>;
+  return <>
+    {tabActions ? <div className="review-tabs-bar">{tabs}{tabActions}</div> : tabs}
     <div className="review-panels" ref={panelRef}>
       {TABS.map(([key]) => <div key={key} id={`${id}-${key}-panel`} role="tabpanel" aria-labelledby={`${id}-${key}`} tabIndex={0} hidden={tab !== key}>
         {(keepMounted || tab === key) && key === 'overview' && <>

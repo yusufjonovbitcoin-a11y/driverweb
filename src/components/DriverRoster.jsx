@@ -1,5 +1,6 @@
 import React, { useEffect, useId, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import MemberAvatar from './MemberAvatar.jsx';
 import {
   Check,
   Clock3,
@@ -34,6 +35,7 @@ export default function DriverRoster({
   onDeleteLoad,
   onTrashLoad,
   onManageDocument,
+  onCompleteLoad,
   onImportDriverDocument,
   isAiProcessing = false,
   selectedDriverId,
@@ -185,10 +187,7 @@ export default function DriverRoster({
         {dropError && <p className="driver-trip-drop-error" role="alert">{dropError}</p>}
         <section className="driver-trip-summary" aria-label={t('drivers.driver')}>
           <div className="driver-trip-identity">
-            <div className="driver-trip-avatar">
-              <span>{selectedDriver.name?.split(/\s+/).map((part) => part[0]).slice(0, 2).join('').toUpperCase()}</span>
-              {selectedDriver.avatar && <img src={selectedDriver.avatar} alt="" onError={(event) => { event.currentTarget.style.display = 'none'; }} />}
-            </div>
+            <MemberAvatar member={selectedDriver} className="driver-trip-avatar" />
             <div className="driver-trip-identity-copy">
               <div className="driver-trip-name-row">
                 <h1>{selectedDriver.name}</h1>
@@ -242,6 +241,7 @@ export default function DriverRoster({
             onDeleteLoad={onDeleteLoad}
             onTrashLoad={onTrashLoad}
             onManageDocument={onManageDocument}
+            onCompleteLoad={onCompleteLoad}
             onImportDocument={isSuspended ? undefined : (file) => onImportDriverDocument?.(file, selectedDriver.id)}
             isAiProcessing={isAiProcessing}
           />
@@ -374,17 +374,7 @@ export default function DriverRoster({
                     <td className="py-3.5 px-4 whitespace-nowrap">
                       <div className="flex items-center space-x-3">
                         <div className="relative flex-shrink-0">
-                          <div className="relative w-11 h-11 overflow-hidden rounded-xl bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 flex items-center justify-center font-mono font-bold text-sm text-zinc-800 dark:text-zinc-200">
-                            {driver.name.charAt(0)}{driver.name.split(' ')[1]?.charAt(0) || ''}
-                            {driver.avatar && (
-                              <img
-                                src={driver.avatar}
-                                alt=""
-                                className="absolute inset-0 h-full w-full object-cover"
-                                onError={(event) => { event.currentTarget.style.display = 'none'; }}
-                              />
-                            )}
-                          </div>
+                          <MemberAvatar member={driver} className="relative w-11 h-11 overflow-hidden rounded-xl bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 flex items-center justify-center font-mono font-bold text-sm text-zinc-800 dark:text-zinc-200" />
                           {unreadChatCount > 0 && (
                             <span
                               className="absolute -right-2 -top-2 z-10 grid min-h-5 min-w-5 place-items-center rounded-full border-2 border-white bg-red-500 px-1 text-[10px] font-black leading-none text-white shadow-sm dark:border-zinc-950"
@@ -518,6 +508,7 @@ function DriverLoadWorkspace({
   onDeleteLoad,
   onTrashLoad,
   onManageDocument,
+  onCompleteLoad,
   onImportDocument,
   isAiProcessing,
 }) {
@@ -530,6 +521,7 @@ function DriverLoadWorkspace({
         onDeleteLoad={onDeleteLoad}
         onTrashLoad={onTrashLoad}
         onManageDocument={onManageDocument}
+        onCompleteLoad={onCompleteLoad}
         onAssignedDocumentUpload={onImportDocument}
         isAiProcessing={isAiProcessing}
         includeUnassigned={false}

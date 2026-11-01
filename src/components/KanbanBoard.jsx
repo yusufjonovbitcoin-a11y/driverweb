@@ -45,6 +45,7 @@ export default function KanbanBoard({
   onDeleteLoad,
   onTrashLoad,
   onManageDocument,
+  onCompleteLoad,
   onSendOffer,
   onDropOnOffer,
   onAssignedDocumentUpload,
@@ -697,6 +698,7 @@ export default function KanbanBoard({
           driver={getDriver(detailsLoad.driverId)}
           onTrashLoad={onTrashLoad}
           onManageDocument={onManageDocument}
+          onCompleteLoad={onCompleteLoad}
           onClose={closeLoadDetails}
           onOpenDocs={onOpenDocs}
         />

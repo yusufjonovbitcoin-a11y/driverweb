@@ -47,5 +47,7 @@ export async function runStaffDocumentChecks({sql,migration,asyncSql,root}) {
     'concurrent different replacements keep first committed pointer');
     select test_assert(not exists(select 1 from jobs where idempotency_key='document-check:${right.versionId}'),
     'rejected stale replacement cannot queue review or overwrite newer evidence');`);
-  console.log('PASS: staff documents preserve immutable history/privacy, scoped optimistic changes, old-worker fencing and concurrent commit');
+  await migration('20261101085245_staff_payment_receipt_management.sql');
+  sql(await readFile(path.join(root,'scripts/load-trash-test-fixtures/staff-receipt-checks.sql'),'utf8'));
+  console.log('PASS: staff documents and receipts preserve immutable history/privacy, scoped optimistic changes, old-worker fencing and concurrent commit');
 }

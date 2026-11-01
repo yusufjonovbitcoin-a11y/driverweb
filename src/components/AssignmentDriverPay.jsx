@@ -7,7 +7,7 @@ import { createAssignmentDriverPay, observeAssignmentDriverPay } from '../servic
 const statusKeys = { awaiting_start: 'pending', calculating: 'calculating', retry_wait: 'retryWait', failed: 'failed', ready: 'calculated' };
 const hintKeys = { awaiting_start: 'pendingHint', calculating: 'calculatingHint', retry_wait: 'retryWaitHint', failed: 'failedHint' };
 
-export default function AssignmentDriverPay({ assignmentId, loadId, driverId }) {
+export default function AssignmentDriverPay({ assignmentId, loadId, driverId, completed = false }) {
   const reader = useMemo(() => createAssignmentDriverPay({
     scope: { assignmentId, loadId, driverId }, getClient: requireSupabase,
   }), [assignmentId, loadId, driverId]);
@@ -17,16 +17,17 @@ export default function AssignmentDriverPay({ assignmentId, loadId, driverId }) 
     try { return observeAssignmentDriverPay(reader, requireSupabase(), { assignmentId, loadId, driverId }); }
     catch { return () => reader.dispose(); }
   }, [reader, assignmentId, loadId, driverId]);
-  return <AssignmentDriverPayView state={state} onRefresh={reader.load} onRetry={reader.retry} />;
+  return <AssignmentDriverPayView state={state} onRefresh={reader.load} onRetry={reader.retry} completed={completed} />;
 }
 
-export function AssignmentDriverPayView({ state, onRefresh, onRetry }) {
+export function AssignmentDriverPayView({ state, onRefresh, onRetry, completed = false }) {
   const { t } = useTranslation();
   const id = useId();
   const { pay, loaded, busy, error } = state;
   if (loaded && !pay && !error) return null;
   const pending = pay && pay.status !== 'ready';
   const failed = pay?.status === 'failed';
+  const withoutStart = completed && pay?.status === 'awaiting_start';
   const hintKey = failed && ['DRIVER_PAY_ROUTE_ADDRESS_INCOMPLETE', 'DRIVER_PAY_ROUTE_INVALID'].includes(pay.errorCode)
     ? 'routeReviewHint' : hintKeys[pay?.status];
   const unknown = t('driverPay.awaitingDistance');
@@ -36,11 +37,11 @@ export function AssignmentDriverPayView({ state, onRefresh, onRetry }) {
   const errorId = `${id}-error`;
   return <section aria-label={t('driverPay.title')} className="space-y-3 rounded-xl border border-zinc-200 bg-zinc-50/60 p-4 dark:border-zinc-800 dark:bg-zinc-900/40">
     {pay ? <div className="flex flex-wrap items-center justify-end gap-2">
-      {pay ? <span role="status" className={`rounded-md px-2 py-1 text-xs font-semibold ${failed ? 'bg-red-100 text-red-900 dark:bg-red-900/40 dark:text-red-200' : pending ? 'bg-amber-100 text-amber-900 dark:bg-amber-900/40 dark:text-amber-200' : 'bg-teal-100 text-teal-900 dark:bg-teal-900/40 dark:text-teal-200'}`}>{t(`driverPay.${statusKeys[pay.status]}`)}</span> : null}
+      {pay ? <span role="status" className={`rounded-md px-2 py-1 text-xs font-semibold ${failed ? 'bg-red-100 text-red-900 dark:bg-red-900/40 dark:text-red-200' : pending ? 'bg-amber-100 text-amber-900 dark:bg-amber-900/40 dark:text-amber-200' : 'bg-teal-100 text-teal-900 dark:bg-teal-900/40 dark:text-teal-200'}`}>{t(withoutStart ? 'staffCompletion.noStart' : `driverPay.${statusKeys[pay.status]}`)}</span> : null}
     </div> : null}
     {!pay && !error ? <p role="status" className="text-sm text-zinc-500">{t('common.loading')}</p> : null}
     {pay ? <>
-      {pending ? <p role={failed ? 'alert' : undefined} className="text-sm text-zinc-600 dark:text-zinc-300">{t(`driverPay.${hintKey}`)}</p> : null}
+      {pending ? <p role={failed ? 'alert' : undefined} className="text-sm text-zinc-600 dark:text-zinc-300">{t(withoutStart ? 'staffCompletion.noStartHint' : `driverPay.${hintKey}`)}</p> : null}
       <dl className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
         <PayFact label={t('driverPay.frozenRate')} value={rate} />
         <PayFact label={t('driverPay.totalPay')} value={pending ? unknown : formatCurrency(pay.amount)} />
