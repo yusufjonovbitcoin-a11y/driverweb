@@ -1257,6 +1257,8 @@
     "noDocuments": "No documents found",
     "aiChecking": "AI is checking…",
     "aiPassed": "AI check passed",
+    "reviewsLoading": "Loading document checks…",
+    "reviewsUnavailable": "Document check results unavailable",
     "aiWarning": "AI found items that need review.",
     "issueCount": "{{count}} issue",
     "approveInvoice": "Approve invoice",

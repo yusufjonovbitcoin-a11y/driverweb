@@ -50,3 +50,33 @@ test('accounting and analytics restore their selected sections', async ({ page }
   await page.reload();
   await expect(page.getByRole('heading', { name: 'Load financial register' })).toBeVisible();
 });
+
+test('refresh shows the driver and restored load before slow document checks finish', async ({ page }) => {
+  const target = `${workspace}?reviews=held#drivers?driver=route-driver&load=route-load&loadSection=overview`;
+  await page.goto(target);
+  const dialog = page.getByRole('dialog', { name: /ROUTE-101/ });
+  await expect(dialog).toBeVisible();
+  await page.reload();
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByRole('tab', { name: 'Overview', exact: true })).toHaveAttribute('aria-selected', 'true');
+  await page.evaluate(() => window.releaseWorkspaceReviews());
+  await expect(dialog).toBeVisible();
+  await expect(page).toHaveURL(target);
+});
+
+test('pending or unavailable document checks do not hide the workspace or claim success', async ({ page }) => {
+  await page.goto(`${workspace}?reviews=held#docs`);
+  await expect(page.getByText('Loading document checks…', { exact: true })).toBeVisible();
+  await expect(page.getByText('ROUTE-101', { exact: true })).toBeVisible();
+  await expect(page.getByText('AI check passed', { exact: true })).toHaveCount(0);
+  await page.evaluate(() => window.releaseWorkspaceReviews('error'));
+  await expect(page.getByText('Document check results unavailable', { exact: true })).toBeVisible();
+  await expect(page.getByText('ROUTE-101', { exact: true })).toBeVisible();
+
+  await page.reload();
+  await expect(page.getByText('Loading document checks…', { exact: true })).toBeVisible();
+  await page.evaluate(() => window.releaseWorkspaceReviews());
+  await expect(page.getByText('Loading document checks…', { exact: true })).toHaveCount(0);
+  await expect(page.getByText('Document check results unavailable', { exact: true })).toHaveCount(0);
+  await expect(page.getByText('ROUTE-101', { exact: true })).toBeVisible();
+});

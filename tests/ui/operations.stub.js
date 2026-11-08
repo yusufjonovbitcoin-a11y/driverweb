@@ -22,7 +22,18 @@ const load = {
   origin: { city: 'Buffalo', state: 'NY' }, destination: { city: 'Boston', state: 'MA' },
   rate: 2200, distanceMiles: 455, documents: {},
 };
-export const fetchWorkspace = async () => ({ loads: [load], drivers: [driver], rosterDrivers: [driver], members: [], rosterMembers: [] });
+export const fetchWorkspace = async ({ onCoreReady } = {}) => {
+  const snapshot = status => ({ loads: [{ ...load, documentReviewsStatus: status }], drivers: [driver], rosterDrivers: [driver], members: [], rosterMembers: [] });
+  if (new URLSearchParams(window.location.search).get('reviews') === 'held') {
+    onCoreReady?.(snapshot('loading'));
+    const outcome = await new Promise(resolve => { window.releaseWorkspaceReviews = resolve; });
+    if (outcome === 'error') {
+      onCoreReady?.(snapshot('error'));
+      throw new Error('Synthetic review unavailable');
+    }
+  }
+  return snapshot('ready');
+};
 export const subscribeWorkspace = () => () => {};
 export const fetchDriverPresence = async () => [];
 export const fetchWorkspaceAvatar = async () => null;

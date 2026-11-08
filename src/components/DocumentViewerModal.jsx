@@ -4,6 +4,7 @@ import { BadgeCheck, FileText, LoaderCircle, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { formatCurrency } from '../i18n/format';
 import DocumentViewerActions from './DocumentViewerActions.jsx';
+import DocumentReviewStatus from './DocumentReviewStatus.jsx';
 import ImageDocumentViewer from './ImageDocumentViewer';
 import { resolveTripDocumentSource, fetchTripDocument, saveDocumentBlob } from '../services/tripDocumentAccess.js';
 import { openChatAttachment } from '../services/openChatAttachment';
@@ -109,7 +110,7 @@ export default function DocumentViewerModal({
           </div>
         </header>
 
-        {currentDoc.available && <DocumentCheckSummary review={currentDoc.review} t={t} />}
+        {currentDoc.available && <DocumentCheckSummary review={currentDoc.review} availability={load.documentReviewsStatus} t={t} />}
 
         <main className="min-h-0 flex-1 bg-zinc-100/70 dark:bg-zinc-900/60">
           {currentDoc.available ? (
@@ -232,7 +233,10 @@ export function FreshDocumentViewer({ document: doc, presentation }) {
     : <ImageDocumentViewer key={attempt} url={source.mediaUrl} title={doc.fileName || doc.title} presentation={presentation} onOpenOriginal={openOriginal} onRetrySource={retry} onSourceError={recoverSource} onDownload={download} downloading={downloading} actionError={actionError} />;
 }
 
-function DocumentCheckSummary({ review, t }) {
+function DocumentCheckSummary({ review, availability, t }) {
+  if (availability === 'loading' || availability === 'error') {
+    return <div className="shrink-0 border-b border-zinc-200 px-6 py-2 dark:border-zinc-800"><DocumentReviewStatus status={availability} /></div>;
+  }
   if (!review) return null;
   const status = review.check_status;
 

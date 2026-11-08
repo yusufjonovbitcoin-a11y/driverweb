@@ -1257,6 +1257,8 @@
     "noDocuments": "Hujjatlar topilmadi",
     "aiChecking": "AI tekshirmoqda…",
     "aiPassed": "AI tekshiruvidan o‘tdi",
+    "reviewsLoading": "Hujjat tekshiruvlari yuklanmoqda…",
+    "reviewsUnavailable": "Hujjat tekshiruvlari natijalarini olib bo‘lmadi",
     "aiWarning": "AI hujjatda tekshirish kerak bo‘lgan joylarni topdi.",
     "issueCount": "{{count}} ta xato",
     "approveInvoice": "Invoysni tasdiqlash",

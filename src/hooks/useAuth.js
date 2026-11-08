@@ -1,54 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
 import { isSupabaseConfigured, supabase } from '../lib/supabase';
 import { createAuthStateController } from '../services/authStateController';
-import { normalizeLocale } from '../i18n/locales';
+import { loadAuthProfile } from '../services/authProfile.js';
 import { savePersonalProfile } from '../services/personalProfile';
-import { requireMfaAssurance } from '../services/mfa';
 import { chatAccountKey, clearPersistedChatSession } from '../services/chatSession';
 import { clearPersistedChatMedia } from '../services/chatMediaOutbox';
 import { createChatPrivacyLifecycle } from '../services/chatPrivacyLifecycle';
-
-function toUiUser(profile, companyName) {
-  if (!profile) return null;
-  return {
-    id: profile.id,
-    name: profile.full_name,
-    email: profile.email,
-    phone: profile.phone || '',
-    role: profile.role,
-    roleCode: profile.role,
-    locale: profile.locale ? normalizeLocale(profile.locale) : null,
-    companyId: profile.company_id,
-    company: companyName || (profile.role === 'super_admin' ? 'ApexHaul Platform' : 'Kompaniya'),
-    avatarInitial: profile.full_name?.charAt(0)?.toUpperCase() || 'U',
-  };
-}
-
-async function loadProfile(userId) {
-  await requireMfaAssurance(supabase);
-  const { data: verified, error: verificationError } = await supabase.auth.getUser();
-  if (verificationError) throw verificationError;
-  if (verified.user?.id !== userId) throw new Error('Sessiya tugagan. Hisobga qayta kiring.');
-  const { data: profile, error } = await supabase
-    .from('profiles')
-    .select('*')
-    .eq('id', userId)
-    .maybeSingle();
-  if (error) throw error;
-  if (!profile) throw new Error('Bu hisob uchun faol profil topilmadi. Administratorga murojaat qiling.');
-  if (profile.status !== 'active') throw new Error('Bu hisob faol emas. Kompaniya administratoriga murojaat qiling.');
-  let companyName = '';
-  if (profile.company_id) {
-    const { data: company, error: companyError } = await supabase
-      .from('companies')
-      .select('name')
-      .eq('id', profile.company_id)
-      .maybeSingle();
-    if (companyError) throw companyError;
-    companyName = company?.name || '';
-  }
-  return toUiUser(profile, companyName);
-}
 
 export function useAuth() {
   const [state, setState] = useState({ session: null, currentUser: null, loading: isSupabaseConfigured, authError: '' });
@@ -60,7 +17,7 @@ export function useAuth() {
       clearPersistedChatSession(scope);
       void clearPersistedChatMedia(scope).catch(() => {});
     } });
-    const controller = createAuthStateController({ loadUser: loadProfile, onChange: next => {
+    const controller = createAuthStateController({ loadUser: userId => loadAuthProfile(supabase, userId), onChange: next => {
       privacy.update(next);
       setState(next);
     } });

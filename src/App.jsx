@@ -134,6 +134,11 @@ function Workspace({ auth, browserPush }) {
     return tabs.includes(hash) ? hash : 'kanban';
   });
   useEffect(() => {
+    // Load the requested screen's code while session/data checks are in flight.
+    // Only the active route is essential; other routes stay on the idle queue.
+    void prefetchRoute(activeTab)?.catch(() => {});
+  }, [activeTab]);
+  useEffect(() => {
     if (!authLoading) void trackPage(currentUser?.id ? activeTab : 'login');
   }, [activeTab, authLoading, currentUser?.id]);
   const [loads, setLoads] = useState([]);
@@ -278,8 +283,8 @@ function Workspace({ auth, browserPush }) {
     if (!workspaceActiveRef.current) return;
     const generation = ++workspaceGenerationRef.current;
     const isCurrent = () => workspaceActiveRef.current && generation === workspaceGenerationRef.current;
-    try {
-      const workspace = await fetchWorkspace();
+    let avatarsStarted = false;
+    const applyWorkspace = (workspace) => {
       if (!isCurrent()) return;
       const querySources = JSON.stringify([
         workspace.loads.map(load => [load.id, load.status, load.rate, load.distanceMiles, load.driverId, load.trashedAt, load.version]),
@@ -307,11 +312,18 @@ function Workspace({ auth, browserPush }) {
       setMembers(previous => preserveWorkspaceAvatars(workspace.members, previous));
       setWorkspaceReady(true);
       setWorkspaceError('');
-      void hydrateWorkspaceAvatars([...workspace.members, ...workspace.rosterMembers.filter(member => !workspace.members.some(active => active.id === member.id))], fetchWorkspaceAvatar, (member, avatar) => {
-        setDrivers(previous => applyWorkspaceAvatar(previous, member, avatar));
-        setRosterDrivers(previous => applyWorkspaceAvatar(previous, member, avatar));
-        setMembers(previous => applyWorkspaceAvatar(previous, member, avatar));
-      }, isCurrent);
+      if (!avatarsStarted) {
+        avatarsStarted = true;
+        void hydrateWorkspaceAvatars([...workspace.members, ...workspace.rosterMembers.filter(member => !workspace.members.some(active => active.id === member.id))], fetchWorkspaceAvatar, (member, avatar) => {
+          setDrivers(previous => applyWorkspaceAvatar(previous, member, avatar));
+          setRosterDrivers(previous => applyWorkspaceAvatar(previous, member, avatar));
+          setMembers(previous => applyWorkspaceAvatar(previous, member, avatar));
+        }, isCurrent);
+      }
+    };
+    try {
+      const workspace = await fetchWorkspace({ onCoreReady: applyWorkspace });
+      applyWorkspace(workspace);
     } catch (error) {
       if (isCurrent()) setWorkspaceError(localizedError(t, error, 'errors.workspace'));
     }

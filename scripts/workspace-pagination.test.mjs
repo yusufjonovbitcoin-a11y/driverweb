@@ -47,3 +47,80 @@ test('presence realtime dispatch bypasses whole-workspace refresh', () => {
   assert.equal(presence, 1); assert.equal(full, 0);
   unsubscribe(); delete globalThis.workspaceTestClient;
 });
+
+function progressiveClient({ reviews, coreFailure = false, coreDelay = 0 }) {
+  const tables = {
+    load_overview: [{ id: 'load', load_number: '101', status: 'draft' }],
+    member_directory: [{ id: 'driver', role: 'driver', status: 'active', full_name: 'Driver' }],
+    documents: [{ id: 'doc', load_id: 'load', document_type: 'bol', current_version_id: 'v1' }],
+  };
+  return { from(table) {
+    let cursor = null, offset = 0;
+    return { select() { return this; }, eq() { return this; }, order() { return this; }, limit() { return this; },
+      gt(_, value) { cursor = value; return this; }, range(value) { offset = value; return this; },
+      async then(resolve, reject) {
+        try {
+          if (table === 'document_review_overview') {
+            const rows = await reviews;
+            resolve({ data: offset ? [] : rows });
+          } else {
+            if (coreDelay) await new Promise(done => setTimeout(done, coreDelay));
+            resolve(coreFailure && table === 'load_overview' ? { error: new Error('core unavailable') }
+              : { data: cursor ? [] : tables[table] || [] });
+          }
+        } catch (error) { reject(error); }
+      } };
+  } };
+}
+
+test('core workspace renders while reviews are pending, then includes their actual warnings', async () => {
+  const reviews = Promise.withResolvers(), core = Promise.withResolvers();
+  globalThis.workspaceTestClient = progressiveClient({ reviews: reviews.promise });
+  let finished = false;
+  const pending = fetchWorkspace({ onCoreReady: core.resolve }).then(value => { finished = true; return value; });
+  const early = await core.promise;
+  assert.equal(finished, false);
+  assert.equal(early.drivers[0].name, 'Driver');
+  assert.equal(early.loads[0].documentReviewsStatus, 'loading');
+  assert.equal(early.loads[0].documentChecks.shipperBol, null);
+  assert.equal(early.loads[0].documentMeta.shipperBol.current_version_id, 'v1');
+  const review = { document_id: 'doc', check_id: 'check', check_status: 'failed', active_warnings: [{ code: 'signature_missing' }] };
+  reviews.resolve([review]);
+  const final = await pending;
+  assert.equal(final.loads[0].documentReviewsStatus, 'ready');
+  assert.deepEqual(final.loads[0].documentChecks.shipperBol, review);
+  delete globalThis.workspaceTestClient;
+});
+
+test('review failure preserves usable core data and declares review status unavailable', async () => {
+  const reviews = Promise.withResolvers(), core = Promise.withResolvers(), updates = [];
+  globalThis.workspaceTestClient = progressiveClient({ reviews: reviews.promise });
+  const pending = fetchWorkspace({ onCoreReady: snapshot => { updates.push(snapshot); core.resolve(); } });
+  const failure = assert.rejects(pending, /review unavailable/);
+  await core.promise;
+  reviews.reject(new Error('review unavailable'));
+  await failure;
+  assert.deepEqual(updates.map(value => value.loads[0].documentReviewsStatus), ['loading', 'error']);
+  assert.equal(updates[1].drivers.length, 1);
+  delete globalThis.workspaceTestClient;
+});
+
+test('core failure never publishes an incomplete roster even if reviews also fail', async () => {
+  globalThis.workspaceTestClient = progressiveClient({ reviews: Promise.reject(new Error('review unavailable')), coreFailure: true });
+  let published = false;
+  await assert.rejects(fetchWorkspace({ onCoreReady: () => { published = true; } }), /core unavailable/);
+  assert.equal(published, false);
+  delete globalThis.workspaceTestClient;
+});
+
+test('callers without progressive rendering still await complete document reviews', async () => {
+  const reviews = Promise.withResolvers();
+  globalThis.workspaceTestClient = progressiveClient({ reviews: reviews.promise });
+  let finished = false;
+  const pending = fetchWorkspace().then(value => { finished = true; return value; });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(finished, false);
+  reviews.resolve([]);
+  assert.equal((await pending).loads[0].documentReviewsStatus, 'ready');
+  delete globalThis.workspaceTestClient;
+});

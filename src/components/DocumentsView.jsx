@@ -9,6 +9,7 @@ import {
 import { formatCurrency } from '../i18n/format';
 import { loadStatusLabel } from '../i18n/labels';
 import { hasLoadDocument } from '../services/loadDocumentAvailability.js';
+import DocumentReviewStatus from './DocumentReviewStatus.jsx';
 
 export default function DocumentsView({ loads, drivers, onOpenDocs }) {
   const { t } = useTranslation();
@@ -265,6 +266,7 @@ export default function DocumentsView({ loads, drivers, onOpenDocs }) {
                           }`} title={hasReceipt ? t('documents.uploaded') : t('documents.waiting')}>
                             {t('documents.receipt')}
                           </span>
+                          <DocumentReviewStatus status={load.documentReviewsStatus} />
                           {hasDocumentWarning && (
                             <span className="inline-flex items-center rounded border border-amber-200 bg-amber-50 px-2 py-0.5 text-xs font-bold text-amber-700 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-300">
                               {t('documents.issueCount', { count: Math.max(1, documentIssueCount) })}
@@ -348,6 +350,7 @@ export default function DocumentsView({ loads, drivers, onOpenDocs }) {
                   </span>
                 </div>
 
+                <DocumentReviewStatus status={load.documentReviewsStatus} />
                 {/* Footer with status & button */}
                 <div className="pt-2 border-t border-zinc-100 dark:border-zinc-800 flex items-center justify-between">
                   <div>{getStatusBadge(load.status)}</div>

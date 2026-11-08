@@ -225,19 +225,14 @@ function toUiMember(member, avatar = null) {
   };
 }
 
-export async function fetchWorkspace() {
+export async function fetchWorkspace({ onCoreReady } = {}) {
   const client = requireSupabase();
-  const [
-    loadsResult,
-    offersResult,
-    assignmentsResult,
-    documentsResult,
-    membersResult,
-    presenceResult,
-    warningsResult,
-    reviewsResult,
-    payResult,
-  ] = await Promise.all([
+  // Start reviews concurrently, but let the roster and trips render first.
+  // Handle rejection immediately even if another core query is still pending.
+  const reviews = readAllPages(() => client.from('document_review_overview').select('*')
+    .order('document_id').order('check_id', { nullsFirst: true }))
+    .then(data => ({ data }), error => ({ error }));
+  const results = await Promise.all([
     () => readAllRows(() => client.from('load_overview').select('*')),
     () => readAllRows(() => client.from('offers').select('id,load_id,driver_id,status,compatibility_warnings,created_at')),
     () => readAllRows(() => client.from('assignments').select('id,driver_stage').eq('status', 'active')),
@@ -245,22 +240,20 @@ export async function fetchWorkspace() {
     () => readAllRows(() => client.from('member_directory').select('*')),
     () => fetchDriverPresence(),
     () => readAllRows(() => client.from('warnings').select('id,load_id,code,message,params,created_at').eq('is_active', true)),
-    () => readAllPages(() => client.from('document_review_overview').select('*')
-      .order('document_id').order('check_id', { nullsFirst: true })),
     () => readAllRows(() => client.from('assignment_driver_pay').select('assignment_id,load_id,driver_id,currency,loaded_miles'), 'assignment_id'),
   ].map(async read => ({ data: await read() })));
-  for (const result of [
-    loadsResult,
-    offersResult,
-    assignmentsResult,
-    documentsResult,
-    membersResult,
-    presenceResult,
-    warningsResult,
-    reviewsResult,
-  ]) {
-    if (result.error) throw result.error;
+  onCoreReady?.(toWorkspace(results, [], 'loading'));
+  const reviewResult = await reviews;
+  if (reviewResult.error) {
+    onCoreReady?.(toWorkspace(results, [], 'error'));
+    throw reviewResult.error;
   }
+  return toWorkspace(results, reviewResult.data, 'ready');
+}
+
+function toWorkspace(results, reviews, documentReviewsStatus) {
+  const [loadsResult, offersResult, assignmentsResult, documentsResult, membersResult,
+    presenceResult, warningsResult, payResult] = results;
   const { active: members, roster: rosterMembers } = partitionWorkspaceMembers(membersResult.data || []);
   loadsResult.data.sort((a, b) => String(b.updated_at).localeCompare(String(a.updated_at)) || a.id.localeCompare(b.id));
   offersResult.data.sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)));
@@ -290,7 +283,7 @@ export async function fetchWorkspace() {
     warningsByLoad.set(warning.load_id, current);
   }
   const reviewsByDocument = new Map(
-    (reviewsResult.data || []).map((review) => [review.document_id, review]),
+    reviews.map((review) => [review.document_id, review]),
   );
   const stagesByAssignment = new Map(
     (assignmentsResult.data || []).map((assignment) => [assignment.id, assignment.driver_stage]),
@@ -298,9 +291,10 @@ export async function fetchWorkspace() {
   const presenceByDriver = new Map((presenceResult.data || []).map(item => [item.driver_id, item]));
   const payByAssignment = new Map((payResult.data || []).map(item => [item.assignment_id, item]));
   return {
-    loads: (loadsResult.data || []).map((row) => (
-      toUiLoad(row, offersByLoad, documentsByLoad, warningsByLoad, reviewsByDocument, stagesByAssignment, payByAssignment)
-    )),
+    loads: (loadsResult.data || []).map((row) => ({
+      ...toUiLoad(row, offersByLoad, documentsByLoad, warningsByLoad, reviewsByDocument, stagesByAssignment, payByAssignment),
+      documentReviewsStatus,
+    })),
     drivers: members.filter((member) => member.role === 'driver').map((member) => (
       toUiDriver(
         member,
