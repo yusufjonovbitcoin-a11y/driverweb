@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { useWorkspaceInvalidation } from '../../hooks/WorkspaceCache';
+import { useWorkspaceSelection } from '../../hooks/useWorkspaceRoute.js';
 import { RefreshCw, FileText } from "lucide-react";
 import { displayDayKey } from "../../i18n/timeZone";
 import { usd, day } from "../finance/format";
@@ -52,6 +53,7 @@ export default function SettlementWorkspace({
   settingsApi = LIVE_API,
   initialView,
   company,
+  routePage,
 }) {
   const invalidate = useWorkspaceInvalidation();
   const t = useSettlementText(),
@@ -62,8 +64,8 @@ export default function SettlementWorkspace({
   const [history, setHistory] = useState([]);
   const [reviewSource, setReviewSource] = useState(null);
   const pendingApproval = useRef(null);
-  const [tab, setTab] = useState(initialView?.tab || "settlements"),
-    [scope, setScope] = useState(""),
+  const [tab, setTab] = useWorkspaceSelection(routePage, 'section', initialView?.tab || 'settlements', TABS);
+  const [scope, setScope] = useState(""),
     [record, setRecord] = useState(EMPTY),
     [loading, setLoading] = useState(true),
     [saving, setSaving] = useState(false),
@@ -201,8 +203,7 @@ export default function SettlementWorkspace({
               if (["ArrowLeft", "ArrowRight", "Home", "End"].includes(e.key)) {
                 e.preventDefault();
                 const next = e.key === "Home" ? 0 : e.key === "End" ? TABS.length - 1 : (i + (e.key === 'ArrowRight' ? 1 : TABS.length - 1)) % TABS.length;
-                if (discard()) {
-                  setTab(TABS[next]);
+                if (discard() && setTab(TABS[next])) {
                   document
                     .getElementById(
                       `${tabsId}-${TABS[next]}-tab`,
@@ -212,10 +213,7 @@ export default function SettlementWorkspace({
               }
             }}
             onClick={() => {
-              if (discard()) {
-                setTab(key);
-                setNotice("");
-              }
+              if (discard() && setTab(key)) setNotice("");
             }}
           >
             {t(key)}{key === 'calculated' && history.length > 0 && <small title={t('calculationCount')}>{history.length}</small>}

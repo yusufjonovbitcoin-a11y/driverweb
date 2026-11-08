@@ -1,6 +1,7 @@
 import { useTranslation } from 'react-i18next';
 import { formatCurrency, formatTime } from '../../i18n/format';
 import { useRef, useState } from 'react';
+import { useWorkspaceSelection } from '../../hooks/useWorkspaceRoute.js';
 import { ArrowRight, Building2, Home, Package, Percent, Search, SlidersHorizontal, UserRound } from 'lucide-react';
 import { DateRangePicker } from '../CalendarPicker';
 import { financialCsv } from './financialModel.js';
@@ -12,8 +13,9 @@ const money = value => value == null ? '—' : formatCurrency(value / 100);
 
 
 const amountKeys = ['gross', 'company', 'dispatch', 'other', 'net'];
+const sections = ['overview', 'loads', 'drivers', 'company', 'commissions'];
 
-export default function FinancialCenter({ source, drivers = [], scopeDriver, loading, refreshing, error, onRefresh, onOpenLoad, onOpenAccountingSettings, onSaveAccounting, canEditAccounting = false }) {
+export default function FinancialCenter({ source, drivers = [], scopeDriver, loading, refreshing, error, onRefresh, onOpenLoad, onOpenAccountingSettings, onSaveAccounting, canEditAccounting = false, routePage }) {
   const { t, i18n } = useTranslation();
 
   const columns = [t("financialCenter.grossRevenue"), t("financialCenter.company"), t("financialCenter.dispatcher"), t("financialCenter.otherDeductions"), t("financialCenter.netPay")];
@@ -21,7 +23,8 @@ export default function FinancialCenter({ source, drivers = [], scopeDriver, loa
   const navigation = [['overview', t("financialCenter.overview"), Home], ['loads', t("financialCenter.loads"), Package], ['drivers', t("financialCenter.drivers"), UserRound], ['company', t("financialCenter.company"), Building2], ['commissions', t("financialCenter.commissions"), Percent]];
 
   const main = useRef(null), driverDetails = useRef(null);
-  const [tab, setTab] = useState('overview'), [search, setSearch] = useState(''), [driverFilter, setDriverFilter] = useState('');
+  const [tab, setTab] = useWorkspaceSelection(routePage, 'section', 'overview', sections);
+  const [search, setSearch] = useState(''), [driverFilter, setDriverFilter] = useState('');
   const [from, setFrom] = useState(''), [to, setTo] = useState(''), [group, setGroup] = useState('completed');
   const [selectedId, setSelectedId] = useState(''), [loadDetail, setLoadDetail] = useState(null), [sort, setSort] = useState('date-desc');
   const scopeDriverId = scopeDriver?.id || '';

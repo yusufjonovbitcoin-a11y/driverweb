@@ -30,7 +30,7 @@ const loadPdfTools = () => import('../services/loadDocumentPdf');
 
 const value = (content) => content ?? '—';
 
-export default function LoadDetailsModal({ load, driver, onClose, onOpenDocs, onTrashLoad, onManageDocument, onCompleteLoad }) {
+export default function LoadDetailsModal({ load, driver, onClose, onOpenDocs, onTrashLoad, onManageDocument, onCompleteLoad, routePage }) {
   const { t } = useTranslation();
   const closeRef = useRef(null);
   const pdfAssetRef = useRef(null);
@@ -257,7 +257,7 @@ export default function LoadDetailsModal({ load, driver, onClose, onOpenDocs, on
   const page = <div className="load-details-page load-command-page saved-review-page">
     <section role="dialog" aria-labelledby="load-details-title" className="import-load-page import-workspace saved-load-workspace">
       <h2 ref={closeRef} tabIndex={-1} id="load-details-title" className="sr-only">{t('loads.loadNumber')} {details.number}</h2>
-      <ImportReviewPanels key={load.id} load={load} details={reviewDetails} selectedDriver={driver} keepMounted
+      <ImportReviewPanels key={load.id} load={load} details={reviewDetails} selectedDriver={driver} keepMounted routePage={routePage}
         routeStartLocation={startState.location} routeStartStatus={startState.status}
         stops={stopsContent} map={map} roadSummary={roadSummary} road={road}
         showRouteFacts={false}

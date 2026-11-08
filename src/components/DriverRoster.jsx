@@ -15,6 +15,7 @@ import {
 import DriverSettingsPanel from './DriverSettingsPanel';
 import DriverDocumentRegistry from './DriverDocumentRegistry';
 import KanbanBoard from './KanbanBoard';
+import { updateWorkspaceRoute, useWorkspaceParams } from '../hooks/useWorkspaceRoute.js';
 import { formatAppointment, formatDate, formatTime } from '../i18n/format';
 import {
   activeLoadsForDriver,
@@ -26,6 +27,7 @@ import {
 } from './driverRosterModel';
 
 const AnalyticsOverview = React.lazy(() => import('./AnalyticsOverview'));
+const detailTabs = ['trips', 'analytics', 'documents', 'settings'];
 
 export default function DriverRoster({
   drivers,
@@ -45,16 +47,23 @@ export default function DriverRoster({
   canManageDriver = false,
   canEditAccounting = false,
   onOpenAccountingSettings,
+  routePage,
 }) {
   const { t } = useTranslation();
   const tabId = useId();
-  const [tabSelection, setTabSelection] = useState({ driverId: selectedDriverId, tab: 'trips', settingsVisited: false, documentSearch: '' });
+  const routeTab = useWorkspaceParams(routePage).get('section');
+  const [tabSelection, setTabSelection] = useState({ driverId: selectedDriverId, tab: 'trips', settingsVisited: routeTab === 'settings' });
   if (tabSelection.driverId !== selectedDriverId) {
-    setTabSelection({ driverId: selectedDriverId, tab: 'trips', settingsVisited: false, documentSearch: '' });
+    setTabSelection({ driverId: selectedDriverId, tab: 'trips', settingsVisited: routeTab === 'settings' });
+  } else if (routeTab === 'settings' && !tabSelection.settingsVisited) {
+    setTabSelection({ ...tabSelection, settingsVisited: true });
   }
-  const activeTab = tabSelection.driverId === selectedDriverId ? tabSelection.tab : 'trips';
-  const detailTabs = ['trips', 'analytics', 'documents', 'settings'];
-  const selectTab = (tab) => setTabSelection((previous) => ({ ...previous, driverId: selectedDriverId, tab, settingsVisited: previous.driverId === selectedDriverId && previous.settingsVisited || tab === 'settings' }));
+  const activeTab = routePage ? (detailTabs.includes(routeTab) ? routeTab : 'trips') : tabSelection.tab;
+  const selectTab = (tab) => {
+    if (routePage) return updateWorkspaceRoute(routePage, { section: tab === 'trips' ? null : tab, load: null, loadSection: null });
+    setTabSelection((previous) => ({ ...previous, tab, settingsVisited: previous.settingsVisited || tab === 'settings' }));
+    return true;
+  };
   const onTabKeyDown = (event) => {
     const index = detailTabs.indexOf(activeTab);
     const next = event.key === 'ArrowRight' ? (index + 1) % detailTabs.length
@@ -62,8 +71,7 @@ export default function DriverRoster({
         : event.key === 'Home' ? 0 : event.key === 'End' ? detailTabs.length - 1 : null;
     if (next === null) return;
     event.preventDefault();
-    selectTab(detailTabs[next]);
-    event.currentTarget.querySelectorAll('[role=tab]')[next]?.focus();
+    if (selectTab(detailTabs[next])) event.currentTarget.querySelectorAll('[role=tab]')[next]?.focus();
   };
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('ALL');
@@ -235,6 +243,7 @@ export default function DriverRoster({
         </div>
         <section className="driver-trips-content" role="tabpanel" id={`${tabId}-trips-panel`} aria-labelledby={`${tabId}-trips-tab`} hidden={activeTab !== 'trips'}>
           <DriverLoadWorkspace
+            routePage={activeTab === 'trips' ? routePage : undefined}
             loads={workflow}
             drivers={drivers}
             onOpenDocs={onOpenDocs}
@@ -502,6 +511,7 @@ function formatLastSeen(t, value) {
 }
 
 function DriverLoadWorkspace({
+  routePage,
   loads,
   drivers,
   onOpenDocs,
@@ -515,6 +525,7 @@ function DriverLoadWorkspace({
   return (
     <div className="driver-workspace">
       <KanbanBoard
+        routePage={routePage}
         loads={loads}
         drivers={drivers}
         onOpenDocs={onOpenDocs}

@@ -1,4 +1,5 @@
-import { lazy, Suspense, useId, useRef, useState } from 'react';
+import { lazy, Suspense, useId, useRef } from 'react';
+import { useWorkspaceSelection } from '../hooks/useWorkspaceRoute.js';
 import { ArrowRight, Building2, Check, ClipboardList, DollarSign, ExternalLink, FileText, Info, LayoutDashboard, LoaderCircle, Mail, MapPin, MapPinned, Package, Phone, Route, Truck, Weight, TriangleAlert } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { formatCurrency, formatNumber } from '../i18n/format';
@@ -12,16 +13,17 @@ const TABS = [
   ['overview', LayoutDashboard], ['route', MapPin], ['cargo', Package],
   ['broker', Building2], ['requirements', ClipboardList], ['documents', FileText],
 ];
+const TAB_KEYS = TABS.map(([key]) => key);
 const CARGO_FIELDS = ['cargoDescription', 'equipmentType', 'weightPrinted', 'weightLbs', 'lengthPrinted', 'widthPrinted', 'heightPrinted', 'quantityPrinted', 'palletCount', 'caseCount', 'pieceCount', 'packageCount', 'temperatureFahrenheit', 'isHazmat', 'bolNumber', 'trailerLengthPrinted'];
 const PAYMENT_FIELDS = ['paymentTerms', 'billingEmail', 'requiredDocuments', 'documentDeadline', 'accessorialTerms', 'carrierName', 'carrierMc', 'carrierDot', 'documentDriverName', 'documentDriverPhone', 'currency', 'accessorialChargesPrinted', 'brokerMc', 'brokerAddress'];
 const OPTIONAL_ENGINE_FIELDS = new Set(['trailerLengthPrinted', 'currency', 'accessorialChargesPrinted', 'brokerMc', 'brokerAddress']);
 const show = value => value == null || value === '' ? '—' : String(value);
 
 export default function ImportReviewPanels({ load, details, selectedDriver, stops, map, roadSummary, road, ratePerMile, showRouteFacts = true,
-  overviewContent, documentsContent, requirementsContent, tabActions, routeStartLocation, routeStartStatus, sourceNoteKey = 'importWorkspace.sourceNote', keepMounted = false }) {
+  overviewContent, documentsContent, requirementsContent, tabActions, routeStartLocation, routeStartStatus, sourceNoteKey = 'importWorkspace.sourceNote', keepMounted = false, routePage }) {
   const { t } = useTranslation();
   const id = useId();
-  const [tab, setTab] = useState('overview');
+  const [tab, setTab] = useWorkspaceSelection(routePage, 'loadSection', 'overview', TAB_KEYS);
   const tabRefs = useRef({});
   const panelRef = useRef(null);
   const fields = new Map(details.fields.map(field => [field.key, field]));
@@ -38,7 +40,7 @@ export default function ImportReviewPanels({ load, details, selectedDriver, stop
     .sort((a, b) => b.priority - a.priority || a.index - b.index).slice(0, 3);
   const display = value => typeof value === 'boolean' ? t(value ? 'common.yes' : 'common.no') : show(value);
   function selectTab(key, focus = false) {
-    setTab(key);
+    if (!setTab(key)) return;
     if (panelRef.current) panelRef.current.scrollTop = 0;
     if (focus) {
       tabRefs.current[key]?.focus({ preventScroll: true });

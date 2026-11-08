@@ -24,6 +24,7 @@ import { displayBoardStage } from '../services/loadBoardStatus';
 import { filterWorkspaceLoads } from './loadWorkspaceModel';
 import { localizedError } from '../i18n/errors';
 import LoadNumber from './LoadNumber.jsx';
+import { useWorkspaceSelection } from '../hooks/useWorkspaceRoute.js';
 const LoadDetailsModal = React.lazy(() => import('./LoadDetailsModal'));
 
 function getClipboardImage(clipboardData) {
@@ -57,6 +58,7 @@ export default function KanbanBoard({
   fleetWorkspace = false,
   groupDeliveredWithOnRoad = false,
   hideCompletedCardFooter = false,
+  routePage,
 }) {
   const { t } = useTranslation();
   const styledWorkspace = driverWorkspace || fleetWorkspace;
@@ -86,9 +88,10 @@ export default function KanbanBoard({
   const [isDraggingOverOffer, setIsDraggingOverOffer] = useState(false);
   const [isPasteTargetHovered, setIsPasteTargetHovered] = useState(false);
   const [loadPendingDelete, setLoadPendingDelete] = useState(null);
-  const [selectedLoadDetails, setSelectedLoadDetails] = useState(null);
-  const closeLoadDetails = useCallback(() => setSelectedLoadDetails(null), []);
-  const detailsLoad = loads.find(load => load.id === selectedLoadDetails?.id);
+  const [detailsId, setDetailsId] = useWorkspaceSelection(routePage, 'load', null);
+  const selectLoadDetails = load => setDetailsId(load?.id, { loadSection: null });
+  const closeLoadDetails = useCallback(() => setDetailsId(null, { loadSection: null }), [setDetailsId]);
+  const detailsLoad = loads.find(load => load.id === detailsId);
   const [deleteError, setDeleteError] = useState('');
   const [isDeleting, setIsDeleting] = useState(false);
 
@@ -390,8 +393,8 @@ export default function KanbanBoard({
                         const canDelete = (onTrashLoad || onDeleteLoad) && canDeleteLoad(load);
 
                         return styledWorkspace ? (
-                          <div key={load.id} role="button" tabIndex={0} className="driver-trip-card" onClick={() => setSelectedLoadDetails(load)} onKeyDown={(event) => {
-                            if (event.target === event.currentTarget && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); setSelectedLoadDetails(load); }
+                          <div key={load.id} role="button" tabIndex={0} className="driver-trip-card" onClick={() => selectLoadDetails(load)} onKeyDown={(event) => {
+                            if (event.target === event.currentTarget && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); selectLoadDetails(load); }
                           }}>
                             <div className="driver-trip-card-top"><strong><LoadNumber load={load} /></strong><span className={`driver-trip-stage stage-${col.id.toLowerCase()}`}>{load.status === 'DELIVERED' ? t('loads.awaitingCompletion') : col.title}</span></div>
                             <p className="driver-trip-card-route"><MapPin size={15} /><span>{[load.origin?.city, load.origin?.state].filter(Boolean).join(', ') || t('common.notProvided')}</span><span className="driver-trip-route-arrow">→</span><span>{[load.destination?.city, load.destination?.state].filter(Boolean).join(', ') || t('common.notProvided')}</span></p>
@@ -416,11 +419,11 @@ export default function KanbanBoard({
                             key={load.id}
                             role="button"
                             tabIndex={0}
-                            onClick={() => setSelectedLoadDetails(load)}
+                            onClick={() => selectLoadDetails(load)}
                             onKeyDown={(event) => {
                               if (event.key === 'Enter' || event.key === ' ') {
                                 event.preventDefault();
-                                setSelectedLoadDetails(load);
+                                selectLoadDetails(load);
                               }
                             }}
                             className="cursor-pointer bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 hover:border-teal-400 dark:hover:border-teal-600 rounded-2xl p-3.5 space-y-2.5 transition-colors shadow-xs focus:outline-none focus:ring-2 focus:ring-teal-500/50"
@@ -694,6 +697,7 @@ export default function KanbanBoard({
       {detailsLoad && (
         <React.Suspense fallback={<div className="fixed inset-0 z-50 grid place-items-center bg-white/80 dark:bg-zinc-950/80"><LoaderCircle className="h-7 w-7 animate-spin" aria-label={t('common.loading')} /></div>}>
         <LoadDetailsModal
+          routePage={routePage}
           load={detailsLoad}
           driver={getDriver(detailsLoad.driverId)}
           onTrashLoad={onTrashLoad}

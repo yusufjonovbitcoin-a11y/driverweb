@@ -15,3 +15,25 @@ export const disconnectGmailIntegration = unavailableInFixture;
 export const createFleetVehicle = unavailableInFixture;
 export const decodeVehicleVin = unavailableInFixture;
 export const updateFleetVehicle = unavailableInFixture;
+
+const driver = { id: 'route-driver', name: 'Route Test Driver', driverNumber: '#TEST', accountStatus: 'active' };
+const load = {
+  id: 'route-load', driverId: driver.id, loadNumber: 'ROUTE-101', status: 'ASSIGNED', databaseStatus: 'assigned',
+  origin: { city: 'Buffalo', state: 'NY' }, destination: { city: 'Boston', state: 'MA' },
+  rate: 2200, distanceMiles: 455, documents: {},
+};
+export const fetchWorkspace = async () => ({ loads: [load], drivers: [driver], rosterDrivers: [driver], members: [], rosterMembers: [] });
+export const subscribeWorkspace = () => () => {};
+export const fetchDriverPresence = async () => [];
+export const fetchWorkspaceAvatar = async () => null;
+export const fetchBrokerInboxUnreadCount = async () => 0;
+export const createManualLoad = unavailableInFixture;
+export const approveLoadDraft = unavailableInFixture;
+export const prepareLoadFromDocument = unavailableInFixture;
+export const prepareLoadFromBrokerAttachment = unavailableInFixture;
+export const sendPreviewDocumentLoad = unavailableInFixture;
+export const assignLoadDirectly = unavailableInFixture;
+export const reviewAndAssignDocumentLoad = unavailableInFixture;
+export const createMember = unavailableInFixture;
+export const deleteCompanyMember = unavailableInFixture;
+export const updateMyLocale = unavailableInFixture;

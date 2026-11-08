@@ -9,6 +9,7 @@ export default function DriversPage(props) {
   if (selectedDriverExists) return <React.Suspense fallback={<div className="min-h-48" />}><DriverRoster {...props} /></React.Suspense>;
 
   return <DriverRosterList
+    routePage={props.routePage}
     drivers={props.drivers}
     loads={props.loads}
     onOpenDriver={props.onSelectDriver}

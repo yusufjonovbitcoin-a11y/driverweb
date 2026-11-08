@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { ArrowRight, LocateFixed, Route, Truck } from 'lucide-react';
 import FleetDriverPicker from './FleetDriverPicker';
 import { useWorkspaceQuery, useWorkspaceView } from '../hooks/WorkspaceCache';
+import { updateWorkspaceRoute, useWorkspaceParams, useWorkspaceSelection } from '../hooks/useWorkspaceRoute.js';
 import { useFleetRoute } from '../hooks/useFleetRoute';
 import { fetchDriverTrack, fetchDriverTrackingSessions } from '../services/trackingService';
 import { formatCurrency } from '../i18n/format';
@@ -48,14 +49,15 @@ function useMapOverlays(isVisible) {
   return { canvasRef, dockRef, padding };
 }
 
-export default function FleetMap({ drivers, loads, isVisible = true, onOpenDocs, onTrashLoad, onManageDocument, onCompleteLoad }) {
+export default function FleetMap({ drivers, loads, isVisible = true, onOpenDocs, onTrashLoad, onManageDocument, onCompleteLoad, routePage }) {
   const { t } = useTranslation();
   const [selectedTruckId, setSelectedTruckId] = useWorkspaceView('map.driver', drivers[0]?.id || null);
   const [selectedLoadId, setSelectedLoadId] = useWorkspaceView('map.load', null);
   const [focusRequest, setFocusRequest] = useState(0);
-  const [detailsId, setDetailsId] = useState(null);
+  const params = useWorkspaceParams(routePage);
+  const [detailsId, setDetailsId] = useWorkspaceSelection(routePage, 'load', null);
   const { canvasRef, dockRef, padding } = useMapOverlays(isVisible);
-  const selectedDriver = drivers.find(driver => driver.id === selectedTruckId) || drivers[0];
+  const selectedDriver = drivers.find(driver => driver.id === (params.get('driver') || selectedTruckId)) || drivers[0];
   const hiddenAtRef = useRef(null);
   const previousTripRef = useRef(null);
   const { data: sessions, mutate: refreshSessions } = useWorkspaceQuery(
@@ -66,7 +68,8 @@ export default function FleetMap({ drivers, loads, isVisible = true, onOpenDocs,
   );
   const trips = useMemo(() => driverTrips(loads, selectedDriver?.id, sessions || EMPTY_POINTS), [loads, selectedDriver?.id, sessions]);
   const currentLoad = currentDriverLoad(trips, selectedDriver?.id);
-  const selectedTrip = selectedDriverTrip(trips, currentLoad, selectedLoadId);
+  const tripId = params.has('driver') ? params.get('trip') : selectedLoadId;
+  const selectedTrip = selectedDriverTrip(trips, currentLoad, tripId);
   const history = trips.filter(load => load.id !== currentLoad?.id);
   const isCurrentTrip = Boolean(currentLoad && selectedTrip?.id === currentLoad.id);
   const isActiveLoad = isActiveFleetLoad(selectedTrip, selectedDriver);
@@ -107,12 +110,17 @@ export default function FleetMap({ drivers, loads, isVisible = true, onOpenDocs,
   const linePoints = roadRoute?.data?.points || EMPTY_POINTS;
   const recordedFeatures = useMemo(() => isActiveLoad ? [] : mapboxLineFeatures(points, true), [isActiveLoad, points]);
   const statistics = knownLoadStatistics(selectedTrip);
-  const detailsLoad = trips.find(load => load.id === detailsId);
-  const closeDetails = useCallback(() => setDetailsId(null), []);
+  const detailsLoad = isVisible && trips.find(load => load.id === detailsId);
+  const closeDetails = useCallback(() => setDetailsId(null, { loadSection: null }), [setDetailsId]);
+  const chooseTrip = (id) => {
+    if (routePage && !updateWorkspaceRoute(routePage, { driver: selectedDriver?.id, trip: id })) return;
+    setSelectedLoadId(id);
+  };
   const chooseDriver = (driverId) => {
+    if (routePage && !updateWorkspaceRoute(routePage, { driver: driverId, trip: null, load: null, loadSection: null })) return;
     setSelectedTruckId(driverId);
     setSelectedLoadId(null);
-    setDetailsId(null);
+    if (!routePage) setDetailsId(null);
   };
 
   return (
@@ -128,9 +136,9 @@ export default function FleetMap({ drivers, loads, isVisible = true, onOpenDocs,
         </React.Suspense>
         <div className="fleet-map-mode" role="group" aria-label={t('map.selectLoad')}>
           <button type="button" className={isCurrentTrip ? 'is-active' : ''} aria-pressed={isCurrentTrip}
-            disabled={!currentLoad} onClick={() => setSelectedLoadId(currentLoad.id)}>{t('map.currentTrip')}</button>
+            disabled={!currentLoad} onClick={() => chooseTrip(currentLoad.id)}>{t('map.currentTrip')}</button>
           <button type="button" className={selectedTrip && !isCurrentTrip ? 'is-active' : ''} aria-pressed={Boolean(selectedTrip && !isCurrentTrip)}
-            disabled={!history.length} onClick={() => setSelectedLoadId(history.find(load => load.id === selectedLoadId)?.id || history[0].id)}>{t('map.historyMode')}</button>
+            disabled={!history.length} onClick={() => chooseTrip(history.find(load => load.id === tripId)?.id || history[0].id)}>{t('map.historyMode')}</button>
         </div>
         {selectedTrip && <div className="fleet-map-route-chip"><Route size={15} />
           <strong className="fleet-map-road-legend">{t('map.plannedRoute')}</strong>
@@ -160,11 +168,11 @@ export default function FleetMap({ drivers, loads, isVisible = true, onOpenDocs,
         </div>
         <div className="fleet-map-dock-action">
           {selectedTrip && <span className="fleet-map-trip-status">{loadStatusLabel(t, selectedTrip.databaseStatus || selectedTrip.status)}</span>}
-          <button type="button" disabled={!selectedTrip} onClick={() => setDetailsId(selectedTrip.id)}>{t('map.openTrip')}<ArrowRight size={17} /></button>
+          <button type="button" disabled={!selectedTrip} onClick={() => setDetailsId(selectedTrip.id, { driver: selectedDriver?.id, trip: selectedTrip.id, loadSection: null })}>{t('map.openTrip')}<ArrowRight size={17} /></button>
         </div>
       </section>
       {detailsLoad && <React.Suspense fallback={<div className="fleet-map-details-loading" role="status">{t('common.loading')}</div>}>
-        <LoadDetailsModal load={detailsLoad} driver={selectedDriver} onClose={closeDetails} onTrashLoad={onTrashLoad} onManageDocument={onManageDocument} onCompleteLoad={onCompleteLoad}
+        <LoadDetailsModal load={detailsLoad} driver={selectedDriver} onClose={closeDetails} onTrashLoad={onTrashLoad} onManageDocument={onManageDocument} onCompleteLoad={onCompleteLoad} routePage={routePage}
           onOpenDocs={onOpenDocs} />
       </React.Suspense>}
     </div>

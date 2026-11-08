@@ -4,6 +4,7 @@ import { ChevronLeft, ChevronRight, CirclePause, CirclePlay, Clock3, Filter, Loa
 import { formatDate, formatTime } from '../i18n/format';
 import { activeLoadsForDriver, driverRosterState, lastSeenKind, rosterStopAddress } from './driverRosterModel';
 import { useDeliveryMonitor } from '../hooks/useDeliveryMonitor.js';
+import { useWorkspaceSelection } from '../hooks/useWorkspaceRoute.js';
 import { deliveryMonitorProblemCount } from './deliveryMonitorModel.js';
 import { setDriverAccountStatus } from '../services/driverSettingsService.js';
 import LoadNumber from './LoadNumber.jsx';
@@ -14,6 +15,7 @@ import './delivery-monitor.css';
 const DeliveryMonitor = lazy(() => import('./DeliveryMonitor.jsx'));
 
 const PAGE_SIZE = 6;
+const VIEWS = ['drivers', 'delivery'];
 
 const driverState = driverRosterState;
 
@@ -29,7 +31,7 @@ function stopLabel(stop) {
   return [stop?.city, stop?.state].filter(Boolean).join(', ') || rosterStopAddress(stop) || '—';
 }
 
-export default function DriverRosterList({ drivers, loads, onOpenDriver, onPrefetchDriver, onAssignLoad, onOpenChat, onOpenLoad, canManageDriver = false, onWorkspaceRefresh, unreadChatsByDriver = {} }) {
+export default function DriverRosterList({ drivers, loads, onOpenDriver, onPrefetchDriver, onAssignLoad, onOpenChat, onOpenLoad, canManageDriver = false, onWorkspaceRefresh, unreadChatsByDriver = {}, routePage }) {
   const { t } = useTranslation();
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState('ALL');
@@ -40,7 +42,7 @@ export default function DriverRosterList({ drivers, loads, onOpenDriver, onPrefe
   const statusPending = useRef(false);
   const [statusNotice, setStatusNotice] = useState(null);
   const [page, setPage] = useState(1);
-  const [view, setView] = useState('drivers');
+  const [view, setView] = useWorkspaceSelection(routePage, 'view', 'drivers', VIEWS);
   const [demo, setDemo] = useState(false);
   const monitoring = useDeliveryMonitor(drivers, loads, demo);
   const problemCount = deliveryMonitorProblemCount(monitoring.rows);
