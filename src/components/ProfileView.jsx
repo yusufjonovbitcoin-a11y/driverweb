@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import MemberAvatar from './MemberAvatar.jsx';
+import SamsaraIntegrationPanel from './SamsaraIntegrationPanel.jsx';
 import {
   connectGmailIntegration,
   disconnectGmailIntegration,
@@ -313,6 +314,7 @@ export default function ProfileView({
 
       {activeSection === 'integrations' && canManageIntegrations && (
         <div className="profile-gmail-layout">
+          <SamsaraIntegrationPanel key={`${currentUser.id}:${currentUser.companyId}`} currentUser={currentUser} />
           <ProfileSectionHeading title={t('profile.gmailTitle')} description={t('profile.gmailDescription')} />
           <section aria-labelledby="gmail-integration-heading" aria-busy={gmailLoading || gmailSaving} className="rounded-2xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900 sm:p-6">
             <p role="status" aria-live="polite" className="sr-only">

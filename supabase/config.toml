@@ -103,3 +103,15 @@ verify_jwt = false
 [functions.native-call-action]
 # Short-lived HMAC capability; decline/status only, never unauthenticated accept.
 verify_jwt = false
+
+[functions.samsara-integration]
+# getUser + current company-admin profile + MFA checked in the handler.
+verify_jwt = false
+
+[functions.samsara-oauth-callback]
+# Provider redirect; expiring single-use server-issued state replaces JWT.
+verify_jwt = false
+
+[functions.samsara-sync]
+# Dedicated worker secret; never accept a public API key as authentication.
+verify_jwt = false

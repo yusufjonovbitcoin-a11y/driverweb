@@ -1,4 +1,40 @@
 {
+  "samsara": {
+    "description": "Connect your fleet to view vehicle GPS locations and driver hours of service.",
+    "connect": "Connect Samsara", "disconnect": "Disconnect", "reconnect": "Reconnect Samsara", "redirecting": "Opening Samsara…",
+    "connected": "Connected", "disconnected": "Not connected", "checking": "Checking…", "needsReconnect": "Reconnect required",
+    "vehicles": "Vehicles", "drivers": "Drivers", "gps": "GPS locations", "hos": "Hours of service",
+    "vehicle": "Vehicle", "driver": "Driver", "location": "Location", "gpsTime": "GPS recorded at", "driveLeft": "Driving left · h:mm", "shiftLeft": "Shift left · h:mm",
+    "available": "Available", "waiting": "Waiting for data", "noData": "No records available. Check the feed permissions above.",
+    "lastSync": "Last sync attempt", "sync": "Sync now", "syncing": "Syncing…", "retry": "Retry", "previous": "Previous", "next": "Next",
+    "syncHint": "Read-only sync every 2 minutes. Locations show the time recorded by Samsara. Driver–vehicle links come from Samsara HOS; T Fleets assignments and pay stay unchanged.",
+    "notices": {
+      "connected": "Samsara is connected. The first fleet sync is running.",
+      "disconnected": "Samsara disconnected. Saved fleet data and access tokens were removed.",
+      "queued": "Sync requested. You can continue using the web while it runs.",
+      "denied": "Samsara access was not approved. You can try connecting again.",
+      "invalid_state": "This connection link expired or was already used. Start a new connection.",
+      "failed": "Could not complete the connection. Check the app settings in Samsara and try again.",
+      "REVOKE_IN_SAMSARA": "Disconnected in T Fleets. Also remove T Fleets under Apps in Samsara to revoke the provider permission."
+    },
+    "errors": {
+      "REQUEST_FAILED": "Could not load Samsara. Check your connection and try again.",
+      "NOT_CONFIGURED": "Samsara server settings are not ready yet.",
+      "AUTH_REQUIRED": "Sign in again to manage this connection.",
+      "ADMIN_REQUIRED": "Only an active company administrator can manage Samsara.",
+      "MFA_REQUIRED": "Complete two-factor verification to continue.",
+      "SYNC_BUSY": "A sync is running. Try disconnecting after it finishes.",
+      "PARTIAL_SYNC": "Some feeds could not be updated. See their status below.",
+      "SCOPE_REQUIRED": "Permission or Samsara license required",
+      "RECONNECT_REQUIRED": "Access expired or was revoked. Reconnect Samsara.",
+      "RATE_LIMITED": "Samsara request limit reached. Sync will retry automatically.",
+      "PROVIDER_UNAVAILABLE": "Samsara is temporarily unavailable. Sync will retry automatically.",
+      "SYNC_LIMIT": "This fleet exceeded the current sync limit. Contact support.",
+      "INVALID_RESPONSE": "Samsara returned an unexpected response.",
+      "INTERNAL_ERROR": "Sync failed. Retry, or contact support if it continues.",
+      "DATABASE_ERROR": "Could not save Samsara data. Please try again."
+    }
+  },
   "driverDocuments": {
     "summary": "Loads: {{loads}} · Documents: {{documents}}",
     "search": "Search load number, document or route city",

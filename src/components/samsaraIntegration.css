@@ -1,0 +1,41 @@
+.samsara-panel { grid-column: 1 / -1; min-width: 0; padding: 24px; border: 1px solid var(--line); border-radius: var(--dispatch-radius-card, 14px); background: var(--surface); color: var(--ink); }
+.samsara-header { display: flex; align-items: flex-start; gap: 14px; }
+.samsara-symbol { display: grid; place-items: center; width: 46px; height: 46px; border-radius: 12px; background: #e8f0ff; color: #1854c7; flex: none; }
+.samsara-header h2 { margin: 0; font-size: 18px; font-weight: 750; }
+.samsara-header p, .samsara-actions p, .samsara-muted { color: var(--muted); font-size: 13px; line-height: 1.6; margin: 6px 0 0; }
+.samsara-status { margin-left: auto; flex: none; padding: 6px 10px; border-radius: 20px; background: var(--surface-soft, #e9eef5); color: var(--ink); font-size: 12px; font-weight: 650; }
+.samsara-status.is-active { background: #e2f4ec; color: #14684b; }
+.samsara-metrics { display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap: 12px; margin: 22px 0 12px; }
+.samsara-metrics > div { border: 1px solid var(--line); border-radius: 10px; padding: 14px; }
+.samsara-metrics dt { font-size: 12px; color: var(--muted); }
+.samsara-metrics dd { font-size: 13px; font-weight: 650; margin: 8px 0 0; }
+.samsara-actions { display: flex; justify-content: space-between; align-items: center; gap: 20px; border-top: 1px solid var(--line); margin-top: 22px; padding-top: 18px; }
+.samsara-actions p { max-width: 580px; }
+.samsara-actions > div, .samsara-fleet-switch, .samsara-pagination { display: flex; flex-wrap: wrap; gap: 8px; }
+.samsara-panel button { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 40px; border: 1px solid var(--line); border-radius: 8px; padding: 9px 14px; color: var(--ink); background: var(--surface); font-size: 12px; font-weight: 650; cursor: pointer; }
+.samsara-panel button.samsara-primary, .samsara-fleet-switch button[aria-pressed=true] { background: #2458d6; border-color: #2458d6; color: #fff; }
+.samsara-panel button:disabled { opacity: .55; cursor: default; }
+.samsara-panel :is(button, a, [tabindex]):focus-visible { outline: 2px solid #588bff; outline-offset: 3px; }
+.samsara-notice, .samsara-error { padding: 12px 14px; border-radius: 8px; font-size: 13px; line-height: 1.6; margin: 16px 0 0; background: #e8f0ff; color: #17429c; }
+.samsara-error { background: #fff1e4; color: #873f03; }
+.samsara-fleet { margin-top: 18px; }
+.samsara-table-scroll { overflow-x: auto; margin-top: 12px; }
+.samsara-panel table { border-collapse: collapse; width: 100%; font-size: 12px; text-align: left; }
+.samsara-panel :is(th, td) { border-bottom: 1px solid var(--line); padding: 12px; min-width: 120px; }
+.samsara-panel th { font-weight: 650; }
+.samsara-panel td { line-height: 1.6; }
+.samsara-panel th small { display: block; font-weight: 400; color: var(--muted); margin-top: 5px; }
+.samsara-panel td a { color: var(--accent, #2458d6); display: inline-flex; align-items: center; gap: 6px; }
+.samsara-pagination { align-items: center; justify-content: flex-end; margin-top: 12px; font-size: 12px; }
+.dark .samsara-symbol, .dark .samsara-notice { background: #203653; color: #b7d0ff; }
+.dark .samsara-status { background: #273749; }
+.dark .samsara-status.is-active { background: #133e35; color: #96e6c5; }
+.dark .samsara-error { background: #432d1d; color: #ffce9b; }
+@media (max-width: 700px) {
+  .samsara-panel { padding: 18px; }
+  .samsara-header { flex-wrap: wrap; }
+  .samsara-header > div { flex: 1; min-width: 160px; }
+  .samsara-status { margin-left: 60px; }
+  .samsara-metrics { grid-template-columns: repeat(2,minmax(0,1fr)); }
+  .samsara-actions { align-items: flex-start; flex-direction: column; gap: 12px; }
+}

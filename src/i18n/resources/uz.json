@@ -1,4 +1,40 @@
 {
+  "samsara": {
+    "description": "Transport GPS manzili va haydovchining qolgan ish vaqtini ko‘rish uchun avtoparkni ulang.",
+    "connect": "Samsara’ni ulash", "disconnect": "Ulanishni uzish", "reconnect": "Samsara’ni qayta ulash", "redirecting": "Samsara ochilmoqda…",
+    "connected": "Ulangan", "disconnected": "Ulanmagan", "checking": "Tekshirilmoqda…", "needsReconnect": "Qayta ulash kerak",
+    "vehicles": "Transportlar", "drivers": "Haydovchilar", "gps": "GPS manzillar", "hos": "Ish vaqti",
+    "vehicle": "Transport", "driver": "Haydovchi", "location": "Manzil", "gpsTime": "GPS qayd vaqti", "driveLeft": "Haydash qoldi · s:dd", "shiftLeft": "Smena qoldi · s:dd",
+    "available": "Mavjud", "waiting": "Ma’lumot kutilmoqda", "noData": "Hozircha ma’lumot yo‘q. Yuqoridagi ruxsatlarni tekshiring.",
+    "lastSync": "Oxirgi yangilash urinishi", "sync": "Hozir yangilash", "syncing": "Yangilanmoqda…", "retry": "Qayta urinish", "previous": "Oldingi", "next": "Keyingi",
+    "syncHint": "Ma’lumotlar har 2 daqiqada o‘qiladi. Manzilda Samsara qayd etgan GPS vaqti ko‘rsatiladi. Haydovchi–transport bog‘lanishi HOS’dan olinadi; T Fleets’dagi biriktirish va to‘lovlar o‘zgarmaydi.",
+    "notices": {
+      "connected": "Samsara ulandi. Avtopark ma’lumotlari birinchi marta olinmoqda.",
+      "disconnected": "Samsara uzildi. Saqlangan avtopark ma’lumotlari va kirish tokenlari o‘chirildi.",
+      "queued": "Yangilash boshlandi. Webda ishlashni davom ettirishingiz mumkin.",
+      "denied": "Samsara ruxsati tasdiqlanmadi. Qayta ulab ko‘rishingiz mumkin.",
+      "invalid_state": "Ulanish havolasi eskirgan yoki ishlatilgan. Ulanishni qayta boshlang.",
+      "failed": "Ulanishni yakunlab bo‘lmadi. Samsara ilova sozlamalarini tekshirib, qayta urining.",
+      "REVOKE_IN_SAMSARA": "T Fleets’da ulanish uzildi. Ruxsatni bekor qilish uchun Samsara’dagi Apps bo‘limidan ham T Fleets’ni olib tashlang."
+    },
+    "errors": {
+      "REQUEST_FAILED": "Samsara’ni yuklab bo‘lmadi. Internetni tekshirib, qayta urining.",
+      "NOT_CONFIGURED": "Samsara server sozlamalari hali tayyor emas.",
+      "AUTH_REQUIRED": "Ulanishni boshqarish uchun hisobga qayta kiring.",
+      "ADMIN_REQUIRED": "Samsara’ni faqat faol kompaniya administratori boshqaradi.",
+      "MFA_REQUIRED": "Ikki bosqichli tekshiruvdan o‘ting.",
+      "SYNC_BUSY": "Yangilash bajarilmoqda. Tugagach, ulanishni uzib ko‘ring.",
+      "PARTIAL_SYNC": "Ayrim ma’lumotlar yangilanmadi. Holati quyida ko‘rsatilgan.",
+      "SCOPE_REQUIRED": "Samsara ruxsati yoki litsenziyasi kerak",
+      "RECONNECT_REQUIRED": "Ruxsat tugagan yoki bekor qilingan. Samsara’ni qayta ulang.",
+      "RATE_LIMITED": "Samsara so‘rov chegarasiga yetildi. Yangilash avtomatik takrorlanadi.",
+      "PROVIDER_UNAVAILABLE": "Samsara vaqtincha ishlamayapti. Yangilash avtomatik takrorlanadi.",
+      "SYNC_LIMIT": "Avtopark joriy yangilash chegarasidan katta. Yordam xizmatiga murojaat qiling.",
+      "INVALID_RESPONSE": "Samsara kutilmagan javob qaytardi.",
+      "INTERNAL_ERROR": "Yangilashda xato. Qayta urining yoki yordam xizmatiga murojaat qiling.",
+      "DATABASE_ERROR": "Samsara ma’lumotlarini saqlab bo‘lmadi. Qayta urining."
+    }
+  },
   "driverDocuments": {
     "summary": "Yuklar: {{loads}} · Hujjatlar: {{documents}}",
     "search": "Yuk raqami, hujjat yoki marshrut shahri bo‘yicha qidirish",
