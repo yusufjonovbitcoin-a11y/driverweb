@@ -115,3 +115,7 @@ verify_jwt = false
 [functions.samsara-sync]
 # Dedicated worker secret; never accept a public API key as authentication.
 verify_jwt = false
+
+[functions.samsara-cameras]
+# Active company-admin, MFA, tenant-owned vehicle and retrieval checked in handler.
+verify_jwt = false

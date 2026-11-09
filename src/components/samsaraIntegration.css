@@ -31,6 +31,28 @@
 .dark .samsara-status { background: #273749; }
 .dark .samsara-status.is-active { background: #133e35; color: #96e6c5; }
 .dark .samsara-error { background: #432d1d; color: #ffce9b; }
+.samsara-camera { margin-top: 22px; padding: 20px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface-soft, #f6f8fc); }
+.samsara-camera-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+.samsara-camera h3 { display: flex; align-items: center; gap: 8px; margin: 0; font-size: 16px; }
+.samsara-camera h4 { margin: 16px 0 4px; font-size: 14px; }
+.samsara-camera fieldset { min-width: 0; padding: 0; border: 0; margin: 16px 0 0; display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px; }
+.samsara-camera label { display: flex; flex-direction: column; gap: 7px; flex: 1 1 180px; font-size: 12px; font-weight: 600; min-width: 0; }
+.samsara-camera :is(input, select) { min-height: 42px; min-width: 0; width: 100%; padding: 9px 10px; border: 1px solid var(--line); border-radius: 8px; color: var(--ink); background: var(--surface); font: inherit; }
+.samsara-camera :is(input, select, summary):focus-visible { outline: 2px solid #588bff; outline-offset: 3px; }
+.samsara-camera .samsara-error button { display: flex; margin-top: 10px; }
+.samsara-camera-grid { display: grid; grid-template-columns: repeat(auto-fill,minmax(min(260px,100%),1fr)); gap: 14px; margin: 14px 0; }
+.samsara-camera-media { min-width: 0; overflow: hidden; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }
+.samsara-camera-media :is(img, video) { display: block; width: 100%; height: auto; aspect-ratio: 16/9; object-fit: contain; background: #101927; }
+.samsara-camera-media > div { display: flex; flex-direction: column; padding: 12px; gap: 5px; font-size: 12px; }
+.samsara-camera-media time { color: var(--muted); }
+.samsara-camera-media > p { padding: 12px; }
+.samsara-panel button.samsara-camera-play { border: 0; border-radius: 0; width: 100%; aspect-ratio: 16/9; background: #172c47; color: #fff; }
+.samsara-camera :is(details, .samsara-camera-request) { margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--line); font-size: 13px; }
+.samsara-camera summary { cursor: pointer; font-weight: 650; padding: 6px 0; }
+.samsara-camera-history ul { list-style: none; margin: 10px 0 0; padding: 0; }
+.samsara-camera-history li { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--line); }
+.dark .samsara-camera { background: #101c2a; }
+.dark .samsara-camera :is(input, select) { color-scheme: dark; }
 @media (max-width: 700px) {
   .samsara-panel { padding: 18px; }
   .samsara-header { flex-wrap: wrap; }
@@ -38,4 +60,7 @@
   .samsara-status { margin-left: 60px; }
   .samsara-metrics { grid-template-columns: repeat(2,minmax(0,1fr)); }
   .samsara-actions { align-items: flex-start; flex-direction: column; gap: 12px; }
+  .samsara-camera { padding: 14px; }
+  .samsara-camera-header h3 { flex-wrap: wrap; }
+  .samsara-camera label { flex-basis: 100%; }
 }

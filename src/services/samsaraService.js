@@ -12,6 +12,17 @@ export async function samsaraRequest(action) {
   return data;
 }
 
+export async function samsaraCameraRequest(action, payload = {}) {
+  const { data, error } = await invokeAuthenticatedFunction(requireSupabase(), 'samsara-cameras', { ...payload, action });
+  if (error) {
+    let code = 'REQUEST_FAILED';
+    try { code = (await error.context?.json())?.error || code; } catch { /* No provider details. */ }
+    throw new Error(code);
+  }
+  if (data?.error) throw new Error(data.error);
+  return data;
+}
+
 export function validSamsaraAuthorizationUrl(input) {
   try {
     const url = new URL(input);

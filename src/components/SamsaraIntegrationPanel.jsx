@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import useSWR from 'swr';
 import { useTranslation } from 'react-i18next';
-import { Plug, Unplug, RefreshCw, Satellite, ArrowUpRight } from 'lucide-react';
+import { Plug, Unplug, RefreshCw, Satellite, ArrowUpRight, Camera } from 'lucide-react';
 import { samsaraRequest, validSamsaraAuthorizationUrl, hosDuration } from '../services/samsaraService';
 import { formatDateTime } from '../i18n/format';
 import './samsaraIntegration.css';
+import SamsaraCameraPanel from './SamsaraCameraPanel';
 
-function FleetTable({ connection, t }) {
+function FleetTable({ connection, t, onCamera }) {
   const [view, setView] = useState('vehicles');
   const [page, setPage] = useState(0);
   const vehicleNames = useMemo(() => new Map((connection.vehicles || []).map(v => [v.id, v.name])), [connection.vehicles]);
@@ -19,12 +20,13 @@ function FleetTable({ connection, t }) {
     {!rows.length ? <p className="samsara-muted">{t('samsara.noData')}</p> : <>
       <div className="samsara-table-scroll" role="region" aria-label={t(`samsara.${view}`)} tabIndex={0}>
         <table><caption className="sr-only">{t(`samsara.${view}`)}</caption>
-          <thead><tr>{(view === 'vehicles' ? ['vehicle', 'location', 'gpsTime'] : ['driver', 'vehicle', 'driveLeft', 'shiftLeft']).map(key => <th scope="col" key={key}>{t(`samsara.${key}`)}</th>)}</tr></thead>
+          <thead><tr>{(view === 'vehicles' ? ['vehicle', 'location', 'gpsTime', 'camera.title'] : ['driver', 'vehicle', 'driveLeft', 'shiftLeft']).map(key => <th scope="col" key={key}>{t(`samsara.${key}`)}</th>)}</tr></thead>
           <tbody>{rows.slice(visiblePage * 20, visiblePage * 20 + 20).map(row => <tr key={row.id}>
             <th scope="row">{row.name || row.id}{view === 'vehicles' && row.vin && <small>{row.vin}</small>}</th>
             {view === 'vehicles' ? <>
               <td>{row.latitude != null && row.longitude != null ? <a href={`https://www.google.com/maps/search/?api=1&query=${row.latitude},${row.longitude}`} target="_blank" rel="noreferrer">{row.location || `${row.latitude.toFixed(4)}, ${row.longitude.toFixed(4)}`}<ArrowUpRight size={14} aria-hidden="true" /></a> : '—'}</td>
               <td>{row.gpsAt ? formatDateTime(row.gpsAt) : '—'}</td>
+              <td><button type="button" disabled={connection.status !== 'active'} onClick={event => onCamera(row, event.currentTarget)}><Camera size={16} aria-hidden="true" />{t('samsara.camera.view')}</button></td>
             </> : <><td>{vehicleNames.get(row.vehicleId) || '—'}</td><td>{hosDuration(row.driveRemainingMs)}</td><td>{hosDuration(row.shiftRemainingMs)}</td></>}
           </tr>)}</tbody>
         </table>
@@ -38,7 +40,7 @@ function FleetTable({ connection, t }) {
   </div>;
 }
 
-export default function SamsaraIntegrationPanel({ currentUser, request = samsaraRequest }) {
+export default function SamsaraIntegrationPanel({ currentUser, request = samsaraRequest, cameraRequest }) {
   const { t } = useTranslation();
   const allowed = currentUser?.roleCode === 'company_admin';
   const { data, error, isLoading, mutate } = useSWR(allowed ? ['samsara', currentUser.id, currentUser.companyId] : null,
@@ -47,6 +49,8 @@ export default function SamsaraIntegrationPanel({ currentUser, request = samsara
   const busyRef = useRef(false);
   const mounted = useRef(true);
   const [actionError, setActionError] = useState('');
+  const [cameraVehicle, setCameraVehicle] = useState(null);
+  const cameraTrigger = useRef(null);
   const [notice, setNotice] = useState(() => new URLSearchParams(window.location.hash.split('?')[1]).get('samsara') || '');
   useEffect(() => {
     mounted.current = true;
@@ -102,13 +106,15 @@ export default function SamsaraIntegrationPanel({ currentUser, request = samsara
     {(connected || reconnect) && <>
       <dl className="samsara-metrics">{['vehicles', 'drivers', 'gps', 'hos'].map(feed => <div key={feed}><dt>{t(`samsara.${feed}`)}</dt><dd>{connection.capabilities?.[feed] === 'ok' ? t('samsara.available') : connection.capabilities?.[feed] ? translateError(connection.capabilities[feed]) : t('samsara.waiting')}</dd></div>)}</dl>
       <p className="samsara-muted">{t('samsara.lastSync')}: {connection.lastSyncedAt ? formatDateTime(connection.lastSyncedAt) : t('samsara.waiting')}{connection.syncing ? ` · ${t('samsara.syncing')}` : ''}</p>
-      {connection.lastSyncedAt && <FleetTable connection={connection} t={t} />}
+      {connected && cameraVehicle && <SamsaraCameraPanel key={cameraVehicle.id} vehicle={cameraVehicle} request={cameraRequest} onReconnect={() => act('connect')} onClose={() => { setCameraVehicle(null); cameraTrigger.current?.focus(); }} />}
+      {connection.lastSyncedAt && <FleetTable connection={connection} t={t} onCamera={(vehicle, trigger) => { cameraTrigger.current = trigger; setCameraVehicle(vehicle); }} />}
     </>}
     <footer className="samsara-actions">
       <p>{t('samsara.syncHint')}</p>
       <div>
         {error && <button type="button" disabled={Boolean(busy)} onClick={() => act('status')}><RefreshCw size={16} aria-hidden="true" />{t('samsara.retry')}</button>}
         {(connected || reconnect) && <button type="button" disabled={Boolean(busy) || connection.syncing} onClick={() => act('disconnect')}><Unplug size={16} aria-hidden="true" />{t('samsara.disconnect')}</button>}
+        {connected && <button type="button" disabled={Boolean(busy)} onClick={() => act('connect')}><Plug size={16} aria-hidden="true" />{t('samsara.camera.updatePermissions')}</button>}
         {connected ? <button type="button" className="samsara-primary" disabled={Boolean(busy) || connection.syncing} onClick={() => act('sync')}><RefreshCw size={16} aria-hidden="true" />{t(connection.syncing ? 'samsara.syncing' : 'samsara.sync')}</button>
           : <button type="button" className="samsara-primary" disabled={isLoading || Boolean(busy) || !data?.configured} onClick={() => act('connect')}><Plug size={16} aria-hidden="true" />{t(busy === 'connect' ? 'samsara.redirecting' : reconnect ? 'samsara.reconnect' : 'samsara.connect')}</button>}
       </div>

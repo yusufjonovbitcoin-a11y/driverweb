@@ -26,7 +26,7 @@ Four named secrets live in Supabase Vault: `samsara_client_id`,
 Do not put these values in VITE variables, committed SQL or logs. Changing the
 encryption key requires migrating existing ciphertext or reconnecting accounts.
 
-The three Edge Functions have gateway JWT verification disabled and perform their
+The four Edge Functions have gateway JWT verification disabled and perform their
 own authorization: getUser + active company-admin profile + MFA for management;
 single-use hashed, expiring state for callback; dedicated worker token for Cron.
 Return origins are explicitly allowlisted; only the integrations route is used.
@@ -66,3 +66,50 @@ requires the owner's OAuth approval; mocks are not proof of that approval.
 Official protocol: https://developers.samsara.com/docs/oauth-20
 HOS scope/schema: https://developers.samsara.com/reference/gethosclocks
 GPS snapshot: https://developers.samsara.com/reference/getvehiclestats
+
+## Cameras
+
+Each vehicle row has **View** under Cameras. An active company administrator can
+list already uploaded recordings for a selected camera and a past interval of at
+most 24 hours, including pagination. The form and recording labels explicitly use
+the browser device's IANA time zone (not the separate fleet display preference).
+The expanded request form asks for one still or a 15-second high-resolution clip.
+This uses Samsara media quota and requires camera hardware, retained footage and
+an eligible plan. It is not a live-stream feature. Auxiliary inputs only work
+where the vehicle has the corresponding cameras.
+
+In the Samsara developer app enable **Safety & Cameras → Read Media Retrieval**
+and **Write Media Retrieval**. Then use **Update permissions** on the connected
+T Fleets card and approve OAuth again. Read-only permission is sufficient to list
+existing recordings; Write is needed to request a fresh upload from a device.
+Missing permissions are reported independently of fleet telemetry.
+
+`samsara-cameras` checks the administrator, MFA, company-owned snapshot vehicle,
+and company + connection-generation ownership of every retrieval. The browser
+never receives the provider retrieval ID or OAuth token. The same lease as fleet
+sync serializes token refresh. `samsara_camera_requests` is service-role only with
+RLS, request UUID idempotency and a limit of five new requests/company/minute.
+An ambiguous provider POST is recorded as unknown and never automatically resent.
+Requests from older OAuth connections are inaccessible after reconnecting.
+
+Pending requests can resume from recent history. Only the selected request polls,
+every six seconds for at most two minutes; hidden tabs and closed panels do not
+poll. Offline devices may upload later. Repeat **Check again** to refresh status
+or expiring links. A successful OAuth connection is not proof of camera access.
+
+Signed media links expire at the provider (normally eight hours). They are served
+directly to native image/video elements over HTTPS from allowlisted Samsara/S3
+hosts, with no server-side arbitrary URL fetch. Videos are mounted on click with
+`preload="none"` and are removed on panel close. Media links are not persisted to
+local storage or the database. The app does not archive the actual footage.
+
+Camera verification:
+```sh
+npx deno test --no-lock supabase/functions/_shared/samsara-camera-core_test.ts supabase/functions/_shared/samsara-camera-server_test.ts
+npx deno check --no-lock supabase/functions/samsara-cameras/index.ts
+npx playwright test tests/ui/samsara.spec.js tests/ui/samsara-cameras.spec.js
+```
+Provider contracts:
+https://developers.samsara.com/reference/listuploadedmedia
+https://developers.samsara.com/reference/postmediaretrieval
+https://developers.samsara.com/reference/getmediaretrieval
